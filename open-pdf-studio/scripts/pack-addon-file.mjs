@@ -16,6 +16,7 @@ const editorVersion = JSON.parse(await readFile(path.join(here, '../package.json
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const VERSION = /^[A-Za-z0-9._+-]{1,64}$/;
 const HASH = /^[0-9a-fA-F]{64}$/;
+const MODULE = /^chunks\/(?!\.)[A-Za-z0-9_.-]{1,128}\.js$/;
 const MAX_MANIFEST = 1024 * 1024;
 const MAX_EDITION_FILES = 64;
 const MAX_FILE = 128 * 1024 * 1024;
@@ -83,6 +84,12 @@ export async function verifyEditionPackage(root, expectedEditorVersion = editorV
       (manifest.helper !== undefined && (typeof manifest.helper !== 'string' || !Object.hasOwn(manifest.files, manifest.helper)))) {
     throw new Error('Invalid edition package file list.');
   }
+  // An edition plug-in's further module files: listed, hashed chunks/<name>.js files.
+  if (manifest.modules !== undefined && (!Array.isArray(manifest.modules) || manifest.modules.length > 48 ||
+      new Set(manifest.modules).size !== manifest.modules.length ||
+      manifest.modules.some((name) => typeof name !== 'string' || !MODULE.test(name) || !Object.hasOwn(manifest.files, name)))) {
+    throw new Error('Invalid edition package module file list.');
+  }
   const native = manifest.helper !== undefined || names.some((name) => name.startsWith('bin/'));
   if (manifest.target === undefined ? native : !targetMatchesFormat(manifest.target)) {
     throw new Error('A native edition package needs a valid target OS and architecture.');
@@ -94,6 +101,7 @@ export async function verifyEditionPackage(root, expectedEditorVersion = editorV
     if (!file.isFile() || file.isSymbolicLink()) throw new Error(`Expected a regular add-on file: ${name}`);
     if (name === 'plugin.js' && (!file.size || file.size > 64 * 1024 * 1024)) throw new Error('Invalid plugin.js size.');
     if (name === 'plugin.css' && file.size > 16 * 1024 * 1024) throw new Error('Invalid plugin.css size.');
+    if (manifest.modules?.includes(name) && (!file.size || file.size > 64 * 1024 * 1024)) throw new Error(`Invalid module file size: ${name}`);
     if (file.size > MAX_FILE) throw new Error(`${name} is larger than 128 MiB.`);
     if (await sha256(path.join(root, name)) !== manifest.files[name].toLowerCase()) throw new Error(`Add-on hash mismatch: ${name}`);
     if (name === manifest.helper && manifest.target?.os !== 'windows' && process.platform !== 'win32' && !(file.mode & 0o111)) {

@@ -9,8 +9,11 @@
 //
 // Every panel in a host stays mounted (switching tabs keeps scroll positions
 // and the thumbnail container); a panel moved to another host remounts there.
+// Start-up mounts only each host's active panel; the others (and the code
+// files of their bodies) follow once the editor is ready and idle, or as
+// soon as one is shown.
 
-import { For, Show, createEffect, on, onMount, untrack } from 'solid-js';
+import { For, Show, createEffect, createSignal, on, onMount, untrack } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import {
   workspaceLayout, getHost, getPanelHost, setHostSize, saveWorkspaceLayout, showPanel, hidePanel,
@@ -32,6 +35,17 @@ import {
 } from '../../stores/elementVisibilityStore.js';
 
 const isRtl = () => document.documentElement.dir === 'rtl';
+
+// Whether the inactive panels may mount: after `ocudraw:ready` and an idle
+// moment (at most 2 s later), so their bodies do not load on the way to ready.
+const [inactivePanelsMount, setInactivePanelsMount] = createSignal(typeof window === 'undefined');
+if (typeof window !== 'undefined') {
+  window.addEventListener('ocudraw:ready', () => {
+    const go = () => setInactivePanelsMount(true);
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 2000 });
+    else setTimeout(go, 200);
+  }, { once: true });
+}
 
 function HostEdge(props) {
   const { t } = useTranslation('common');
@@ -119,6 +133,9 @@ function SizeSlider(props) {
 function PanelSlot(props) {
   const { t } = useTranslation('common');
   const entry = () => getPanelEntry(props.panelId);
+  // Once mounted a body stays mounted (as before); see the note at the top.
+  const [mounted, setMounted] = createSignal(false);
+  createEffect(() => { if (props.active || inactivePanelsMount()) setMounted(true); });
   const zoom = () => clampPanelZoom(state.preferences?.panelZoom?.[props.panelId] ?? 1);
   const setZoom = (value) => {
     if (!state.preferences) return;
@@ -131,7 +148,7 @@ function PanelSlot(props) {
         <PanelHeader panelId={props.panelId} actions={headerActions(props.panelId, t)} />
       </Show>
       <div class="ws-panel-body">
-        <Show when={entry()?.component}>
+        <Show when={mounted() && entry()?.component}>
           <Dynamic component={entry().component} />
         </Show>
       </div>

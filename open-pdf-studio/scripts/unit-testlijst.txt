@@ -499,6 +499,7 @@ js/tools/addon-box-tools-browser.test.mjs
 js/tools/addon-box-tools-foundation.test.mjs
 js/pdf/stream-async-iterator.test.mjs
 js/plugin/host-capability.test.mjs
+js/plugin/module-link.test.mjs
 js/sets/register-context.test.mjs
 js/sets/set-revision-summary.test.mjs
 js/sets/sheet-metadata-review.test.mjs
