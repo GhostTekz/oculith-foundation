@@ -753,28 +753,20 @@ async function processDocumentThumbnail(docId) {
 // Composite plugin/Solid-store annotations on top of a rendered thumbnail
 // dataURL. Returns a new dataURL with annotations overlayed. If the page has
 // no annotations, returns the input dataURL unchanged (zero-cost early-exit).
-async function overlayAnnotationsOnDataURL(dataURL, pageNum, width, height, scale, doc) {
+function overlayAnnotationsOnCanvas(ctx, pageNum, scale, doc) {
   // Overlay the OWNING document's annotations, not the active one's (see
   // renderThumbnailToDataURL) — otherwise a background thumbnail got the
   // active document's annotations painted on it.
   if (!doc) doc = getActiveDocument();
   const annotations = (doc?.annotations || []).filter(a => a.page === pageNum);
+  if (annotations.length === 0) return;
   annotations.sort((a, b) => Number(!!edition.rendering?.isUnderlay?.(b)) - Number(!!edition.rendering?.isUnderlay?.(a)));
-  if (annotations.length === 0) return dataURL;
+  ctx.save();
   try {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src = dataURL;
-    });
-    ctx.drawImage(img, 0, 0, width, height);
-    ctx.save();
-    ctx.scale(scale, scale);
+    // Page coordinates from the canvas origin, whatever the page render left.
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
     annotations.forEach(a => {
       try { drawAnnotation(ctx, a); }
       catch (e) {
@@ -783,12 +775,20 @@ async function overlayAnnotationsOnDataURL(dataURL, pageNum, width, height, scal
         console.warn(`[Thumbnails] drawAnnotation failed page ${pageNum} id=${a?.id ?? '?'} type=${a?.type ?? '?'}:`, e);
       }
     });
-    ctx.restore();
-    return canvas.toDataURL('image/jpeg', 0.7);
   } catch (e) {
     console.warn(`[Thumbnails] overlay failed for page ${pageNum}:`, e);
-    return dataURL;
+  } finally {
+    ctx.restore();
   }
+}
+
+// Draw the markups straight onto the thumbnail canvas, then encode once.
+// The old route encoded the page to a JPEG data URL, decoded it into an
+// <img>, drew it with the markups onto a second canvas and encoded again:
+// two JPEG generations and a decode per thumbnail with markups.
+function thumbnailDataURL(canvas, ctx, pageNum, scale, doc) {
+  overlayAnnotationsOnCanvas(ctx, pageNum, scale, doc);
+  return canvas.toDataURL('image/jpeg', 0.7);
 }
 
 // Render a single page thumbnail — prefers replaying JS-cached vector commands
@@ -857,14 +857,8 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum, doc) {
           if (_blank) {
             console.log(`[thumb] p${pageNum} JS-replay leeg → val terug op Rust-pad`);
           } else {
-            const dataURL = canvas.toDataURL('image/jpeg', 0.7);
             // Overlay annotations on top (same as Rust path).
-            try {
-              const composited = await overlayAnnotationsOnDataURL(dataURL, pageNum, w, h, scale, doc);
-              return { dataURL: composited, width: w, height: h };
-            } catch {
-              return { dataURL, width: w, height: h };
-            }
+            return { dataURL: thumbnailDataURL(canvas, ctx, pageNum, scale, doc), width: w, height: h };
           }
         }
       }
@@ -889,11 +883,9 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum, doc) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(best.bitmap, 0, 0, w, h);
-        const dataURL = canvas.toDataURL('image/jpeg', 0.7);
         const page = await pdfDoc.getPage(pageNum);
         const viewport = page.getViewport({ scale: 1, rotation: (page.rotate + rotation) % 360 });
-        const composited = await overlayAnnotationsOnDataURL(dataURL, pageNum, w, h, w / viewport.width, doc);
-        return { dataURL: composited, width: w, height: h };
+        return { dataURL: thumbnailDataURL(canvas, ctx, pageNum, w / viewport.width, doc), width: w, height: h };
       }
     } catch { /* a cache miss still has the worker path */ }
   }
@@ -932,9 +924,7 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum, doc) {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(src, 0, 0, w, h);
-      const dataURL = canvas.toDataURL('image/jpeg', 0.7);
-      const composited = await overlayAnnotationsOnDataURL(dataURL, pageNum, w, h, w / viewport.width, doc);
-      return { dataURL: composited, width: w, height: h };
+      return { dataURL: thumbnailDataURL(canvas, ctx, pageNum, w / viewport.width, doc), width: w, height: h };
     } catch (e) {
       console.warn(`[Thumbnails] Worker thumbnail failed for page ${pageNum}:`, e);
       return { deferred: 'cancelled' };

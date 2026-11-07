@@ -32,7 +32,7 @@ const locale = (taal) => JSON.parse(lees(`../../i18n/locales/${taal}/statusbar.j
 test('the Navigation bar is the last child of the canvas column', () => {
   const mainView = app.slice(app.indexOf('<div class="main-view">'), app.indexOf('<OrderedDockedPalettes side="right" />'));
   // #pdf-container sits in the MultiView wrapper (display: contents unsplit).
-  assert.match(mainView, /<CompareView \/>\s*<\/div>\s*<\/div>\s*<NavigationBar \/>\s*<\/div>\s*$/);
+  assert.match(mainView, /<Show when=\{compareUsed\(\)\}><CompareView \/><\/Show>\s*<\/div>\s*<\/div>\s*<NavigationBar \/>\s*<\/div>\s*$/);
   assert.equal(app.match(/<NavigationBar \/>/g).length, 1);
   assert.match(navBar, /<Show when=\{isToolbarVisible\('navigation'\) && hasPdf\(\)\}>/);
   assert.match(navCss, /\.nav-bar \{[^}]*height: 34px;/);

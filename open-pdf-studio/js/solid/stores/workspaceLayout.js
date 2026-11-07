@@ -150,7 +150,9 @@ const PROFILES = {
     },
     toolbars: toolbars({ markup: false, measure: false }),
     workflow: 'sheets',
-    workflows: ['sheets', 'compare', 'output', 'review', 'view'],
+    workflows: ['sheets', 'review', 'compare', 'output', 'view'],
+    // Page work only: no workflow tab an edition or add-on adds.
+    addOnWorkflows: false,
   }),
 };
 
@@ -175,9 +177,20 @@ function editionProfile(def) {
   }
   if (typeof def.workflow === 'string') base.workflow = def.workflow;
   if (Array.isArray(def.workflows)) base.workflows = [...def.workflows];
+  delete base.addOnWorkflows;
   return base;
 }
 for (const def of EDITION_PROFILES) PROFILES[def.id] = () => editionProfile(def);
+
+const NO_ADDON_WORKFLOWS = new Set(PROFILE_IDS.filter((id) => PROFILES[id]().addOnWorkflows === false));
+
+/**
+ * Does this profile show the workflow tabs an edition or add-on adds? A
+ * built-in profile can leave them out (addOnWorkflows: false).
+ */
+export function profileShowsAddOnWorkflows(id) {
+  return !NO_ADDON_WORKFLOWS.has(id);
+}
 
 const isHost = (h) => HOSTS.includes(h);
 const isPanel = (id) => PANEL_IDS.includes(id);

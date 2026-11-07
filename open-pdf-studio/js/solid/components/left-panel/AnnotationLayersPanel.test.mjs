@@ -13,7 +13,8 @@ const paneel = lees('./AnnotationLayersPanel.jsx');
 const dialoog = lees('../dialogs/AnnotationLayerDeleteDialog.jsx');
 const store = lees('../../stores/annotationLayersStore.js');
 const app = lees('../../App.jsx');
-const lint = lees('../ribbon/ViewTab.jsx');
+// The former View ribbon button id still reaches the panel (commands/ribbon-buttons.js).
+const lint = lees('../../commands/ribbon-buttons.js');
 // De panelen staan in de paneelhosts (werkruimte); het register noemt ze.
 const links = lees('../panels/panelRegistry.js');
 const dialogHost = lees('../DialogHost.jsx');
@@ -29,10 +30,8 @@ test('één paneel Lagen: de markeringslagen staan in de tab links, niet los ern
   // Markeringslagen boven, PDF-lagen eronder.
   assert.ok(pdfLagen.indexOf('<AnnotationLayersPanel />') < pdfLagen.indexOf('id="layers-pdf-section"'));
   assert.match(links, /id: 'layers', title: 'properties:leftPanel\.layersTab'/);
-  // De knop in Beeld > Panelen blijft en opent die tab (geen wisselknop).
-  assert.match(lint, /id="ribbon-annotation-layers"/);
-  // Via de opdracht van Venster > Panelen; { reveal: true } opent alleen.
-  assert.match(lint, /onClick=\{\(\) => runCommand\('window\.panel\.annotationLayers', \{ reveal: true \}\)\}/);
+  // Via de opdracht van Venster > Panelen; { reveal: true } opent alleen (geen wisselknop).
+  assert.match(lint, /'ribbon-annotation-layers': \['window\.panel\.annotationLayers', \{ reveal: true \}\]/);
   const venster = lees('../../commands/window.js');
   assert.match(venster, /SHOWN_AS = \{ annotationLayers: 'layers' \}/);
   assert.match(venster, /annotationLayers: \(\) => import\('\.\.\/stores\/annotationLayersStore\.js'\)\.then\(\(m\) => m\.showAnnotationLayersPanel\(\)\)/);

@@ -39,9 +39,9 @@ function _key(filePath, pageNum, rotation, zoomBucket) {
 // We round UP to the next power of 2 so we always have at least the requested
 // resolution.
 //
-// For WHOLE-PAGE bitmaps the caller caps targetScale at MAX_BITMAP_AXIS_PX
-// / maxAxisPt before invoking (see bitmap-orchestrator.js:51), so this can
-// never produce a bucket large enough to blow the 4096 px PDFium cap.
+// Rounding up means a bucket can exceed a scale that was capped before the
+// call (an A1 sheet capped at 4.865 lands in bucket 8, about 6700 px). Whole-
+// page renders therefore render at wholePageRenderScale(), never at a bucket.
 //
 // For TILE bitmaps the caller passes viewport.zoom * dpr unbounded. Here
 // the bucket can grow with zoom — but the tile bitmap pixel size is bounded
@@ -73,6 +73,52 @@ export function computeZoomBucket(targetScale) {
   if (targetScale <= 32) return 32;
   if (targetScale <= 64) return 64;
   return 128;
+}
+
+// PDFium / browser canvas axis limit for whole-page bitmaps. A frame within
+// it also fits the worker's 64 MB shared-memory slot.
+export const MAX_WHOLE_PAGE_AXIS_PX = 4096;
+
+/**
+ * The scale a whole-page bitmap is rendered at for `targetScale` (zoom * dpr):
+ * the target, clamped so the longest axis stays within `maxAxisPx`, and
+ * rounded DOWN to 3 decimals so it is a stable cache key. The native side
+ * sizes the bitmap as ceil(pt * f32 scale); the loop steps down while that
+ * would still land a pixel above the cap.
+ */
+export function wholePageRenderScale(targetScale, maxAxisPt, maxAxisPx = MAX_WHOLE_PAGE_AXIS_PX) {
+  if (!Number.isFinite(targetScale) || targetScale <= 0 || !(maxAxisPt > 0)) return 0;
+  const capped = Math.min(targetScale, maxAxisPx / maxAxisPt);
+  let scale = Math.max(1, Math.floor(capped * 1000)) / 1000;
+  const f32 = Math.fround;
+  while (scale > 0.001 && Math.ceil(f32(f32(maxAxisPt) * f32(scale))) > maxAxisPx) {
+    scale = Math.round(scale * 1000 - 1) / 1000;
+  }
+  return scale;
+}
+
+function _exactKeyScale(exactScale) {
+  return Math.round(exactScale * 1000) / 1000;
+}
+
+function _exactBucket(exactScale) {
+  return `x${_exactKeyScale(exactScale)}`;
+}
+
+/**
+ * A cached whole-page bitmap of this page rendered within `tolerance` of
+ * `scale` (any key: bucket, exact or progressive), or null.
+ */
+export function getCachedBitmapNearScale(filePath, pageNum, rotation, scale, tolerance = 0.02) {
+  if (!filePath || sourceWriteActive(filePath) || !(scale > 0)) return null;
+  const exact = getCachedBitmap(filePath, pageNum, rotation, _exactBucket(scale));
+  if (exact) return exact;
+  const prefix = `${filePath}:${pageNum}:${(rotation || 0) % 360}:`;
+  for (const [key, entry] of _cache) {
+    if (!key.startsWith(prefix) || key.endsWith(`:${PREVIEW_BUCKET}`) || !(entry?.scale > 0)) continue;
+    if (Math.abs(entry.scale / scale - 1) <= tolerance) return getCachedBitmap(filePath, pageNum, rotation, key.slice(prefix.length));
+  }
+  return null;
 }
 
 export function getCachedBitmap(filePath, pageNum, rotation, zoomBucket) {
@@ -119,25 +165,34 @@ export function setPreviewBitmap(filePath, pageNum, rotation, bitmap, w, h, scal
   return setCachedBitmapEntry(filePath, pageNum, rotation, PREVIEW_BUCKET, bitmap, w, h, scale, sourceRevision);
 }
 
-// Find the best available cached bitmap for a target bucket: prefer exact
-// match, otherwise the nearest available bucket (lower preferred for speed,
-// higher acceptable as fallback during downscale), and the preview last.
+// Find the best available cached bitmap for a target scale: prefer an exact
+// key match, otherwise the entry whose render scale is nearest in log space
+// (lower preferred on a tie, higher acceptable as fallback during downscale),
+// and the preview last. Entries are compared by the scale they were actually
+// rendered at, so exact-scale and progressive bitmaps count as fallbacks too.
 export function getBestAvailableBitmap(filePath, pageNum, rotation, targetBucket) {
   const exact = getCachedBitmap(filePath, pageNum, rotation, targetBucket);
   if (exact) return exact;
-  // Search by proximity (in log space) to targetBucket. Includes the higher
-  // buckets that computeZoomBucket can now produce so a tile prefetched at
-  // scale=1.0 (bucket=1) is still findable as a fallback at zoom 16x or
-  // higher (bucket=16 or 32).
-  const buckets = [0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128];
-  const sorted = buckets.slice().sort((a, b) =>
-    Math.abs(Math.log2(a) - Math.log2(targetBucket)) -
-    Math.abs(Math.log2(b) - Math.log2(targetBucket))
-  );
-  for (const b of sorted) {
-    const e = getCachedBitmap(filePath, pageNum, rotation, b);
-    if (e) return e;
+  if (!filePath || sourceWriteActive(filePath) || !(targetBucket > 0)) {
+    return getCachedBitmap(filePath, pageNum, rotation, PREVIEW_BUCKET);
   }
+  const prefix = `${filePath}:${pageNum}:${(rotation || 0) % 360}:`;
+  const target = Math.log2(targetBucket);
+  let bestBucket = null;
+  let bestDistance = Infinity;
+  let bestScale = Infinity;
+  for (const [key, entry] of _cache) {
+    if (!key.startsWith(prefix) || !(entry?.scale > 0)) continue;
+    const bucket = key.slice(prefix.length);
+    if (bucket === PREVIEW_BUCKET) continue;
+    const distance = Math.abs(Math.log2(entry.scale) - target);
+    if (distance < bestDistance - 1e-9 || (Math.abs(distance - bestDistance) <= 1e-9 && entry.scale < bestScale)) {
+      bestBucket = bucket;
+      bestDistance = distance;
+      bestScale = entry.scale;
+    }
+  }
+  if (bestBucket !== null) return getCachedBitmap(filePath, pageNum, rotation, bestBucket);
   return getCachedBitmap(filePath, pageNum, rotation, PREVIEW_BUCKET);
 }
 
@@ -196,6 +251,15 @@ export function ensureBitmap(filePath, pageNum, rotation, zoomBucket) {
 }
 
 /**
+ * Render at `renderScale` and cache under `cacheBucket`. For callers whose
+ * bucket key was rounded up past the axis cap: the key stays the bucket, the
+ * pixels stay within the cap.
+ */
+export function ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderScale) {
+  return _ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderScale);
+}
+
+/**
  * Sharpness "settle" upgrade: render at the EXACT zoom*dpr the screen needs,
  * instead of the next power-of-2 bucket above it. computeZoomBucket() rounds
  * UP so PDFium always has at least enough resolution, but that means the
@@ -204,11 +268,12 @@ export function ensureBitmap(filePath, pageNum, rotation, zoomBucket) {
  * softening text at every zoom that doesn't land exactly on a bucket
  * boundary (100%, 200%, 400% @ 2x DPR; off-bucket levels like 150% get the
  * blur). Cached under the rounded exact scale so repeated settles at the
- * same zoom hit the cache instead of re-rendering.
+ * same zoom hit the cache instead of re-rendering. The key has its own
+ * namespace (`x<scale>`), so it never collides with a bucket key whose entry
+ * was rendered at a different scale.
  */
 export function ensureExactBitmap(filePath, pageNum, rotation, exactScale) {
-  const roundedScale = Math.round(exactScale * 1000) / 1000;
-  return _ensureBitmapAtScale(filePath, pageNum, rotation, roundedScale, roundedScale);
+  return _ensureBitmapAtScale(filePath, pageNum, rotation, _exactBucket(exactScale), _exactKeyScale(exactScale));
 }
 
 /**

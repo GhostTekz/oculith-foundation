@@ -399,6 +399,8 @@ js/solid/commands/menus.test.mjs
 js/solid/commands/workflows.test.mjs
 js/solid/commands/palette.test.mjs
 js/solid/commands/go-to-sheet.test.mjs
+js/solid/commands/shortcut-registry.test.mjs
+js/solid/commands/markup-actions.test.mjs
 js/solid/components/menubar/menuModel.test.mjs
 js/annotations/raceway.test.mjs
 js/pdf/raceway-roundtrip.test.mjs
@@ -469,6 +471,8 @@ js/annotations/markup-rtree.test.mjs
 js/annotations/hit-rtree.test.mjs
 js/tools/pdf-snap-index.test.mjs
 js/pdf/bitmap-lifetime.test.mjs
+js/pdf/zoom-settle-render.test.mjs
+js/pdf/outline-bookmarks.test.mjs
 js/pdf/page-frame.test.mjs
 js/pdf/page-canvas-context.test.mjs
 js/pdf/scaled-page-copy.test.mjs

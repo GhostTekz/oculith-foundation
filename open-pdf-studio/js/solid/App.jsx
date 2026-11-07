@@ -1,7 +1,6 @@
 import { isMobile } from '../core/platform.js';
 import MobileApp from './MobileApp.jsx';
 import MenuBar from './components/menubar/MenuBar.jsx';
-import Ribbon from './components/ribbon/Ribbon.jsx';
 import DocumentTabs from './components/DocumentTabs.jsx';
 import CanvasScrollbars from './components/CanvasScrollbars.jsx';
 import FindBar from './components/FindBar.jsx';
@@ -27,7 +26,6 @@ import BoxSizeOverlay from './components/BoxSizeOverlay.jsx';
 import SketchModeBar from './components/SketchModeBar.jsx';
 import TourCoach from './components/TourCoach.jsx';
 import { startTour } from '../tour/tours.js';
-import CompareView from './components/compare/CompareView.jsx';
 import { DockedToolPalette, FloatingToolPalette, DockTargets, PaletteContextMenu } from './components/ToolPalette.jsx';
 import { DockedExtPalette, FloatingExtPalette, ExtDockTargets } from './components/ExtensionToolPalette.jsx';
 import { DockedSymbolPalette, FloatingSymbolPalette, SymbolSettingsDialog } from './components/SymbolPalette.jsx';
@@ -42,7 +40,13 @@ import { isTauri } from '../core/platform.js';
 import { state } from '../core/state.js';
 import { edition } from '../editions/active.js';
 import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../core/sessie-herstel.js';
-import { For, ErrorBoundary, Show } from 'solid-js';
+import { For, ErrorBoundary, Show, createEffect, createSignal, lazy } from 'solid-js';
+import { compareActive } from '../compare/compare-store.js';
+
+// Compare mode is rare: its view (and the compare engine it pulls in) loads
+// the first time a comparison starts, then stays mounted.
+const CompareView = lazy(() => import('./components/compare/CompareView.jsx'));
+const [compareUsed, setCompareUsed] = createSignal(false);
 
 function OrderedDockedPalettes(props) {
   const order = () => props.side === 'left' ? leftOrder() : rightOrder();
@@ -78,18 +82,12 @@ function OrderedDockedPalettes(props) {
 function DesktopApp() {
   const { t } = useTranslation('common');
   const extPalettes = () => getRegisteredPalettes();
+  createEffect(() => { if (compareActive()) setCompareUsed(true); });
 
   return (
     <>
       <MenuBar />
 
-      {/* The ribbon is retired (plan-review menus and toolbars); it stays
-          available behind the legacyRibbon preference for one release. */}
-      <Show when={state.preferences.legacyRibbon === true}>
-        <div class="ribbon-container">
-          <Ribbon />
-        </div>
-      </Show>
       {/* Workflow tabs, their tools and Quick Access (the 'standard' toolbar). */}
       <WorkflowBar />
       <PropertiesToolbar />
@@ -157,7 +155,7 @@ function DesktopApp() {
                 <div id="continuous-container" class="continuous-container"></div>
               </div>
               <CanvasScrollbars />
-              <CompareView />
+              <Show when={compareUsed()}><CompareView /></Show>
             </div>
           </div>
           <NavigationBar />

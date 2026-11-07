@@ -390,7 +390,7 @@ const RESTART_DEBOUNCE_MS = 300;
 export async function ensureProgressiveBitmapForCurrentView() {
   const { viewport } = await import('./pdf-viewport.js');
   const { invoke } = await import('../core/platform.js');
-  const { computeZoomBucket, getBestAvailableBitmap, getCachedBitmap, setCachedBitmapEntry, ensureBitmap } =
+  const { computeZoomBucket, getBestAvailableBitmap, getCachedBitmap, setCachedBitmapEntry, ensureBitmapAtScale, wholePageRenderScale } =
     await import('./page-bitmap-cache.js');
 
   if (!viewport.active || !viewport.filePath || viewport.pageType !== 'raster') return;
@@ -494,7 +494,7 @@ export async function ensureProgressiveBitmapForCurrentView() {
     }
   } catch {
     _inflightKey = null;
-    const e = await ensureBitmap(filePath, pageNum, rotation, cacheBucket);
+    const e = await ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, wholePageRenderScale(renderScale, maxAxisPt, MAX_BITMAP_AXIS_PX));
     if (actueel() && e && e.bitmap) { viewport.currentBitmap = e.bitmap; viewport.dirty = true; }
     return;
   }
@@ -631,7 +631,7 @@ export async function ensureProgressiveBitmapForCurrentView() {
     perfMark(`run-GEFAALD na ${tilesDone} tegels`);
     console.warn('[prog] tegel-fout — terugval naar whole-page render');
     if (_inflightKey === runKey) _inflightKey = null;
-    const e = await ensureBitmap(filePath, pageNum, rotation, cacheBucket);
+    const e = await ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, wholePageRenderScale(renderScale, maxAxisPt, MAX_BITMAP_AXIS_PX));
     if (actueel() && e && e.bitmap) { viewport.currentBitmap = e.bitmap; viewport.dirty = true; }
     return;
   }

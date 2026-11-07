@@ -208,15 +208,15 @@ test('tools, list names and snapshot wiring', () => {
   assert.match(shot, /export async function snapshotRegion\(pageNum, rect\)/);
   assert.match(shot, /canvas = await _renderRegionHighRes\(pageNum, appRect\)/, 'same high-res region render');
   assert.match(lees('../tools/keyboard-handlers.js'), /placeLastScreenshotAsOverlay\(\{ opacity: 1, offset: 10 \}\)/, 'Ctrl+V places the snapshot');
-  // The Markup ribbon runs the registry commands, which select the tool.
-  const ribbon = lees('../solid/components/ribbon/DrawingTab.jsx');
+  // Tools > Markup runs the registry commands, which select the tool.
+  const ribbon = lees('../solid/commands/menus.js');
   const tools = lees('../solid/commands/tools.js');
   for (const t of ['polygon', 'cloudPolyline', 'typewriter', 'hyperlink', 'flag']) {
     assert.match(tools, new RegExp(`\\['${t}', '${t}', \\w+Icon\\]`), `tools.markup.${t} selects ${t}`);
-    assert.match(ribbon, new RegExp(`onClick=\\{\\(\\) => runCommand\\('tools\\.markup\\.${t}'\\)\\}`), `Markup ribbon: ${t}`);
+    assert.match(ribbon, new RegExp(`'tools\\.markup\\.${t}'`), `Tools > Markup: ${t}`);
   }
   assert.match(lees('../solid/commands/edit.js'), /id: 'edit\.snapshot'[\s\S]*?run: \(\) => useTool\('snapshot'\)/);
-  assert.match(ribbon, /onClick=\{\(\) => runCommand\('edit\.snapshot'\)\}/, 'Markup ribbon: snapshot');
+  assert.match(ribbon, /'edit\.snapshot'/, 'Edit > Snapshot');
   for (const taal of ['en', 'nl']) {
     const types = JSON.parse(lees(`../i18n/locales/${taal}/properties.json`)).types;
     for (const k of ['typewriter', 'hyperlink', 'flag']) assert.ok(types[k], `${taal} types.${k}`);

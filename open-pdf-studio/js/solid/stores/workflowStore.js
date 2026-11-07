@@ -8,7 +8,7 @@
 import { createSignal } from 'solid-js';
 import { state } from '../../core/state.js';
 import { savePreferences } from '../../core/preferences.js';
-import { workspaceLayout } from './workspaceLayout.js';
+import { workspaceLayout, profileShowsAddOnWorkflows } from './workspaceLayout.js';
 import { imageSelected } from './imageEditStore.js';
 import { WORKFLOWS, getWorkflow, visibleWorkflowIds } from '../commands/workflows.js';
 
@@ -29,7 +29,8 @@ const CONDITIONS = {
 
 /** The workflow tabs the current profile shows (ids, tab order). */
 export function shownWorkflowIds() {
-  return visibleWorkflowIds(workspaceLayout().workflows);
+  const layout = workspaceLayout();
+  return visibleWorkflowIds(layout.workflows, { addOns: profileShowsAddOnWorkflows(layout.profile) });
 }
 
 /** The contextual workflow ids whose condition holds now. */

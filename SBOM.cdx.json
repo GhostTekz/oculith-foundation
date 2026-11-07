@@ -16,7 +16,7 @@
       },
       {
         "name": "ocudraw:cargoLockSha256",
-        "value": "416262c00430ee6dbef79e583f14dfccbbc25351d570db6ef8820c8725c6fd17"
+        "value": "258eb8ab5d292d6b8f4dc063bf3a8b452a41116f066b79655b5b12ecde81cf01"
       },
       {
         "name": "ocudraw:npmLockSha256",
@@ -4935,34 +4935,6 @@
     },
     {
       "type": "library",
-      "name": "filetime",
-      "version": "0.2.29",
-      "bom-ref": "pkg:cargo/filetime@0.2.29",
-      "purl": "pkg:cargo/filetime@0.2.29",
-      "licenses": [
-        {
-          "license": {
-            "name": "MIT/Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "find-msvc-tools",
       "version": "0.1.12",
       "bom-ref": "pkg:cargo/find-msvc-tools@0.1.12",
@@ -8771,34 +8743,6 @@
     },
     {
       "type": "library",
-      "name": "minisign-verify",
-      "version": "0.2.5",
-      "bom-ref": "pkg:cargo/minisign-verify@0.2.5",
-      "purl": "pkg:cargo/minisign-verify@0.2.5",
-      "licenses": [
-        {
-          "license": {
-            "name": "MIT"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "miniz_oxide",
       "version": "0.8.9",
       "bom-ref": "pkg:cargo/miniz_oxide@0.8.9",
@@ -9667,34 +9611,6 @@
     },
     {
       "type": "library",
-      "name": "objc2-osa-kit",
-      "version": "0.3.2",
-      "bom-ref": "pkg:cargo/objc2-osa-kit@0.3.2",
-      "purl": "pkg:cargo/objc2-osa-kit@0.3.2",
-      "licenses": [
-        {
-          "license": {
-            "name": "Zlib OR Apache-2.0 OR MIT"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "objc2-quartz-core",
       "version": "0.3.2",
       "bom-ref": "pkg:cargo/objc2-quartz-core@0.3.2",
@@ -10067,34 +9983,6 @@
         {
           "license": {
             "name": "MIT"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "osakit",
-      "version": "0.3.1",
-      "bom-ref": "pkg:cargo/osakit@0.3.1",
-      "purl": "pkg:cargo/osakit@0.3.1",
-      "licenses": [
-        {
-          "license": {
-            "name": "MIT OR Apache-2.0"
           }
         }
       ],
@@ -14763,34 +14651,6 @@
     },
     {
       "type": "library",
-      "name": "tar",
-      "version": "0.4.46",
-      "bom-ref": "pkg:cargo/tar@0.4.46",
-      "purl": "pkg:cargo/tar@0.4.46",
-      "licenses": [
-        {
-          "license": {
-            "name": "MIT OR Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "target-lexicon",
       "version": "0.12.16",
       "bom-ref": "pkg:cargo/target-lexicon@0.12.16",
@@ -15215,34 +15075,6 @@
       "version": "2.4.3",
       "bom-ref": "pkg:cargo/tauri-plugin-store@2.4.3",
       "purl": "pkg:cargo/tauri-plugin-store@2.4.3",
-      "licenses": [
-        {
-          "license": {
-            "name": "Apache-2.0 OR MIT"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "tauri-plugin-updater",
-      "version": "2.10.1",
-      "bom-ref": "pkg:cargo/tauri-plugin-updater@2.10.1",
-      "purl": "pkg:cargo/tauri-plugin-updater@2.10.1",
       "licenses": [
         {
           "license": {
@@ -21007,34 +20839,6 @@
     },
     {
       "type": "library",
-      "name": "xattr",
-      "version": "1.6.1",
-      "bom-ref": "pkg:cargo/xattr@1.6.1",
-      "purl": "pkg:cargo/xattr@1.6.1",
-      "licenses": [
-        {
-          "license": {
-            "name": "MIT OR Apache-2.0"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "xkeysym",
       "version": "0.2.1",
       "bom-ref": "pkg:cargo/xkeysym@0.2.1",
@@ -21487,34 +21291,6 @@
       "version": "2.4.2",
       "bom-ref": "pkg:cargo/zip@2.4.2",
       "purl": "pkg:cargo/zip@2.4.2",
-      "licenses": [
-        {
-          "license": {
-            "name": "MIT"
-          }
-        }
-      ],
-      "properties": [
-        {
-          "name": "ocudraw:inventory",
-          "value": "Cargo.lock external package"
-        },
-        {
-          "name": "ocudraw:source",
-          "value": "registry+https://github.com/rust-lang/crates.io-index"
-        },
-        {
-          "name": "ocudraw:noticePath",
-          "value": "open-pdf-studio/src-tauri/package-notices/rust-third-party-notices.txt"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "zip",
-      "version": "4.6.1",
-      "bom-ref": "pkg:cargo/zip@4.6.1",
-      "purl": "pkg:cargo/zip@4.6.1",
       "licenses": [
         {
           "license": {

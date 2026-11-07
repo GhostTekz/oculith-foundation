@@ -91,9 +91,11 @@ test('multi-selection menu keeps every former item (align/distribute/order now u
 test('page menu keeps every former item and ends with Properties', () => {
   for (const key of ['page.addBookmark', 'page.addImage', 'page.addStickyNote', 'page.findMenu', 'page.firstPage',
     'page.goTo', 'page.handTool', 'page.lastPage', 'page.nextPage', 'page.previousPage', 'page.printMenu',
-    'page.propertiesMenu', 'page.searchMenu', 'page.selectText', 'page.snapshotTool']) {
+    'page.propertiesMenu', 'page.selectText', 'page.snapshotTool']) {
     assert.ok(page.includes(`t('${key}')`), key);
   }
+  // Search opens the Search panel (its own command and key), not a second find bar.
+  assert.ok(page.includes('<CommandMenuItem id="window.panel.search" />'), 'Search panel');
   for (const key of ['copy', 'cut', 'delete', 'deselect', 'paste', 'pasteInPlace', 'select']) {
     assert.ok(page.includes(`tCommon('${key}')`), key);
   }
@@ -102,8 +104,7 @@ test('page menu keeps every former item and ends with Properties', () => {
   assert.ok(page.slice(lastItem).includes("t('page.propertiesMenu')"), 'Properties is the last item');
 });
 
-test('Arrange ▸ covers every command of the old ribbon Arrange tab', () => {
-  const tab = lees('./ribbon/ArrangeTab.jsx');
+test('Arrange ▸ covers every command of the former ribbon Arrange tab', () => {
   const tabToCommand = {
     'arr-align-left': 'alignLeft', 'arr-align-center': 'alignCenter', 'arr-align-right': 'alignRight',
     'arr-align-top': 'alignTop', 'arr-align-middle': 'alignMiddle', 'arr-align-bottom': 'alignBottom',
@@ -116,8 +117,7 @@ test('Arrange ▸ covers every command of the old ribbon Arrange tab', () => {
     'arr-bring-forward': 'bringForward', 'arr-bring-front': 'bringToFront',
     'arr-send-backward': 'sendBackward', 'arr-send-back': 'sendToBack',
   };
-  const tabIds = [...tab.matchAll(/id="(arr-[\w-]+)"/g)].map((m) => m[1]).filter((id) => id !== 'arr-align-to' && id !== 'arr-align-to-menu');
-  assert.equal(tabIds.length, Object.keys(tabToCommand).length, 'every Arrange tab button is mapped');
+  const tabIds = Object.keys(tabToCommand);
   const ids = arrangeMenuIds();
   const registered = lees('../commands/arrange.js');
   for (const tabId of tabIds) {

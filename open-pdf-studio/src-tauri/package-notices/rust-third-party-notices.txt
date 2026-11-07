@@ -11,8 +11,8 @@ Standard templates may have copyright placeholders; package authors and source
 links below provide attribution context and do not replace a legal review.
 This graph includes development, build, and platform-specific dependencies.
 
-Cargo.lock SHA-256: 416262c00430ee6dbef79e583f14dfccbbc25351d570db6ef8820c8725c6fd17
-External packages: 780
+Cargo.lock SHA-256: 258eb8ab5d292d6b8f4dc063bf3a8b452a41116f066b79655b5b12ecde81cf01
+External packages: 772
 
 ==============================================================================
 acadrust@0.5.5
@@ -12177,18 +12177,6 @@ SOFTWARE.
 
 
 ==============================================================================
-filetime@0.2.29
-Declared license: MIT/Apache-2.0
-Source: https://github.com/alexcrichton/filetime
-Authors: Alex Crichton <alex@alexcrichton.com>
-
---- filetime@0.2.29: LICENSE-APACHE (SHA-256 a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2) ---
-Identical source text is printed earlier in this bundle.
-
---- filetime@0.2.29: LICENSE-MIT (SHA-256 378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397) ---
-Identical source text is printed earlier in this bundle.
-
-==============================================================================
 find-msvc-tools@0.1.12
 Declared license: MIT OR Apache-2.0
 Source: https://github.com/rust-lang/cc-rs
@@ -17872,74 +17860,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 ==============================================================================
-minisign-verify@0.2.5
-Declared license: MIT
-Source: https://github.com/jedisct1/rust-minisign-verify
-Authors: Frank Denis <github@pureftpd.org>
-
---- minisign-verify@0.2.5: LICENSE (SHA-256 42c8695fbc468866d9756be99af0ba4e37d733f8daa3c8827c8d80b8bec1b2f9) ---
-Copyright (c) 2019-2025 Frank Denis
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
---
-
-Code in the src/crypto folder is derived from the rust-crypto project:
-https://github.com/DaGenix/rust-crypto
-
-Original ISC license follows:
-
-Copyright (c) 2006-2009 Graydon Hoare
-Copyright (c) 2009-2013 Mozilla Foundation
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-
-==============================================================================
 miniz_oxide@0.8.9
 Declared license: MIT OR Zlib OR Apache-2.0
 Source: https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
@@ -19206,19 +19126,6 @@ These files are repository context; they were absent from this crate archive.
 Identical source text is printed earlier in this bundle.
 
 ==============================================================================
-objc2-osa-kit@0.3.2
-Declared license: Zlib OR Apache-2.0 OR MIT
-Source: https://github.com/madsmtm/objc2
-Authors: (not declared)
-No root license file in crate archive; standard text in appendix: Apache-2.0, MIT, Zlib
-
-Upstream repository revision: https://github.com/madsmtm/objc2 @ 7b1abfd750a2cacaea71d6a56ecfb83cb7de560b
-These files are repository context; they were absent from this crate archive.
-
---- Upstream: https://github.com/madsmtm/objc2/blob/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md (SHA-256 7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54) ---
-Identical source text is printed earlier in this bundle.
-
-==============================================================================
 objc2-quartz-core@0.3.2
 Declared license: Zlib OR Apache-2.0 OR MIT
 Source: https://github.com/madsmtm/objc2
@@ -19820,43 +19727,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-
-
-==============================================================================
-osakit@0.3.1
-Declared license: MIT OR Apache-2.0
-Source: https://github.com/mdevils/rust-osakit
-Authors: Marat Dulin <mdevils@gmail.com>
-
---- osakit@0.3.1: LICENSE-APACHE (SHA-256 62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a) ---
-Identical source text is printed earlier in this bundle.
-
---- osakit@0.3.1: LICENSE-MIT (SHA-256 5fb3573f6e7198ff6c203dbbd58d1da4bec9e8c5a828edefd9e98587d0443471) ---
-Copyright (c) 2024 Marat Dulin
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
 
 
 ==============================================================================
@@ -25859,43 +25729,6 @@ SOFTWARE.
 
 
 ==============================================================================
-tar@0.4.46
-Declared license: MIT OR Apache-2.0
-Source: https://github.com/composefs/tar-rs
-Authors: Alex Crichton <alex@alexcrichton.com>
-
---- tar@0.4.46: LICENSE-APACHE (SHA-256 a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2) ---
-Identical source text is printed earlier in this bundle.
-
---- tar@0.4.46: LICENSE-MIT (SHA-256 8ca6b96cea9e67c6c5c63f452c31bd396db8bd2406231fdea5d48ef462b48077) ---
-Copyright (c) The tar-rs Project Contributors
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-
-==============================================================================
 target-lexicon@0.12.16
 Declared license: Apache-2.0 WITH LLVM-exception
 Source: https://github.com/bytecodealliance/target-lexicon
@@ -26246,21 +26079,6 @@ Identical source text is printed earlier in this bundle.
 Identical source text is printed earlier in this bundle.
 
 --- tauri-plugin-store@2.4.3: LICENSE_MIT (SHA-256 89ff9689dcf9dd53968785d05a26f7898bb169dbfcada8d032b3e68cf0d55607) ---
-Identical source text is printed earlier in this bundle.
-
-==============================================================================
-tauri-plugin-updater@2.10.1
-Declared license: Apache-2.0 OR MIT
-Source: https://github.com/tauri-apps/plugins-workspace
-Authors: Tauri Programme within The Commons Conservancy
-
---- tauri-plugin-updater@2.10.1: LICENSE.spdx (SHA-256 eb8a6c84630461b352badcab1dbe5d0168c56d377358b2b8c86b51003272d5ef) ---
-Identical source text is printed earlier in this bundle.
-
---- tauri-plugin-updater@2.10.1: LICENSE_APACHE-2.0 (SHA-256 0cec06e0e55fbc3dc5cee4fca9b607f66cb8f4e4dbcf3b3c013594dd156732e9) ---
-Identical source text is printed earlier in this bundle.
-
---- tauri-plugin-updater@2.10.1: LICENSE_MIT (SHA-256 89ff9689dcf9dd53968785d05a26f7898bb169dbfcada8d032b3e68cf0d55607) ---
 Identical source text is printed earlier in this bundle.
 
 ==============================================================================
@@ -31042,18 +30860,6 @@ Identical source text is printed earlier in this bundle.
 Identical source text is printed earlier in this bundle.
 
 ==============================================================================
-xattr@1.6.1
-Declared license: MIT OR Apache-2.0
-Source: https://github.com/Stebalien/xattr
-Authors: Steven Allen <steven@stebalien.com>
-
---- xattr@1.6.1: LICENSE-APACHE (SHA-256 a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2) ---
-Identical source text is printed earlier in this bundle.
-
---- xattr@1.6.1: LICENSE-MIT (SHA-256 8b427f5bc501764575e52ba4f9d95673cf8f6d80a86d0d06599852e1a9a20a36) ---
-Identical source text is printed earlier in this bundle.
-
-==============================================================================
 xkeysym@0.2.1
 Declared license: MIT OR Apache-2.0 OR Zlib
 Source: https://github.com/notgull/xkeysym
@@ -31806,15 +31612,6 @@ SOFTWARE.
 
 Some files in the "tests/data" subdirectory of this repository are under other
 licences; see files named LICENSE.*.txt for details.
-
-==============================================================================
-zip@4.6.1
-Declared license: MIT
-Source: https://github.com/zip-rs/zip2.git
-Authors: Mathijs van de Nes <git@mathijs.vd-nes.nl>, Marli Frost <marli@frost.red>, Ryan Levick <ryan.levick@gmail.com>, Chris Hennick <hennickc@amazon.com>
-
---- zip@4.6.1: LICENSE (SHA-256 04dc52136d82400b11df5f474949863a70a5d05d2278dec45b99c479494450a6) ---
-Identical source text is printed earlier in this bundle.
 
 ==============================================================================
 zip@8.6.0

@@ -107,12 +107,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // chain mechanism as the wall tool.
   lineContinue: false,
 
-  // Ribbon collapsed state: when true the ribbon body is hidden and only the
-  // tab strip is shown (toggled by the chevron at the end of the tab strip).
-  ribbonCollapsed: false,
-  // The ribbon is replaced by the plan-review menu bar; true shows the old
-  // ribbon under it (Preferences > Page Display), for one release.
-  legacyRibbon: false,
   workspaceProfile: 'markup',
   workspacePanelSizes: {},
   // plan-review workspace layout (js/solid/stores/workspaceLayout.js). null

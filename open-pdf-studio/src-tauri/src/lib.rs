@@ -4,6 +4,7 @@
 #![recursion_limit = "256"]
 
 mod atomic_file;
+pub mod byte_lru;
 mod addon_management;
 mod edition_helper;
 mod display_list_cache;
@@ -100,19 +101,72 @@ fn addon_opened_files_take(state: tauri::State<OpenedAddonFiles>) -> Vec<String>
 // Store locked file handles to prevent other apps from writing
 struct LockedFiles(Mutex<HashMap<String, File>>);
 
-// Cache PDF file bytes to avoid re-reading from disk on every render call
-struct PdfBytesCache(Mutex<HashMap<String, Arc<Vec<u8>>>>);
+// Cache PDF file bytes to avoid re-reading from disk on every render call.
+// Byte-bounded LRU: a long session over many large sets no longer keeps
+// every file it ever opened. The newest file always stays, however large.
+const PDF_BYTES_CACHE_MAX_BYTES: usize = 768 * 1024 * 1024;
+const PDF_BYTES_CACHE_MAX_ENTRIES: usize = 16;
+
+struct PdfBytes {
+    files: byte_lru::ByteLru<String, Arc<Vec<u8>>>,
+    // Bumped by every removal. A read that ran outside the lock enters the
+    // cache only if nothing was invalidated meanwhile, so a save can never
+    // be followed by an older read landing in the cache.
+    epoch: u64,
+}
+
+struct PdfBytesCache(Mutex<PdfBytes>);
+
+impl Default for PdfBytesCache {
+    fn default() -> Self {
+        Self(Mutex::new(PdfBytes {
+            files: byte_lru::ByteLru::new(PDF_BYTES_CACHE_MAX_ENTRIES, PDF_BYTES_CACHE_MAX_BYTES),
+            epoch: 0,
+        }))
+    }
+}
+
+impl PdfBytesCache {
+    fn remove(&self, path: &str) -> Result<(), String> {
+        let mut cache = self.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
+        cache.files.remove(path);
+        cache.epoch += 1;
+        Ok(())
+    }
+
+    fn clear(&self) -> Result<(), String> {
+        let mut cache = self.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
+        cache.files.clear();
+        cache.epoch += 1;
+        Ok(())
+    }
+}
 
 /// The file's bytes, from the cache or read once. Shared, not copied: a
-/// clone per call was a full copy of the file (hundreds of MB on a set),
-/// made while the cache lock was held.
+/// clone per call was a full copy of the file (hundreds of MB on a set).
+/// The read runs without the cache lock, so a cold read of one large file
+/// does not hold up every other document's lookups.
 fn cached_pdf_bytes(bytes_cache: &PdfBytesCache, path: &str) -> Result<Arc<Vec<u8>>, String> {
-    let mut bm = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
-    if let Some(cached) = bm.get(path) {
-        return Ok(cached.clone());
-    }
+    let epoch = {
+        let mut cache = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
+        if let Some(cached) = cache.files.get(path) {
+            return Ok(cached.clone());
+        }
+        cache.epoch
+    };
     let read = Arc::new(fs::read(path).map_err(|e| format!("Read: {}", e))?);
-    bm.insert(path.to_string(), read.clone());
+    let mut cache = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
+    if cache.epoch != epoch {
+        // Invalidated while reading: use this read once, cache nothing.
+        return Ok(read);
+    }
+    if let Some(cached) = cache.files.get(path) {
+        return Ok(cached.clone()); // a concurrent read won the race
+    }
+    let size = read.len();
+    let evicted = cache.files.insert(path.to_string(), read.clone(), size);
+    drop(cache);
+    drop(evicted);
     Ok(read)
 }
 
@@ -134,7 +188,16 @@ const TILE_SCENE_CACHE_CAP: usize = 2;
 /// Cache for already-rendered thumbnails. Keyed by (path, page, max_width, rotation).
 /// Hits return instantly without touching the renderer or JPEG encoder, which
 /// makes scrolling back to previously-rendered pages essentially free.
-struct ThumbnailCache(Mutex<HashMap<(String, u32, u32, i32), String>>);
+/// Bounded: a long session no longer keeps every thumbnail it rendered.
+struct ThumbnailCache(Mutex<byte_lru::ByteLru<(String, u32, u32, i32), String>>);
+const THUMBNAIL_CACHE_MAX_BYTES: usize = 32 * 1024 * 1024;
+const THUMBNAIL_CACHE_MAX_ENTRIES: usize = 2048;
+
+impl Default for ThumbnailCache {
+    fn default() -> Self {
+        Self(Mutex::new(byte_lru::ByteLru::new(THUMBNAIL_CACHE_MAX_ENTRIES, THUMBNAIL_CACHE_MAX_BYTES)))
+    }
+}
 
 /// Cache for `analyze_page_type` results. Keyed by (path, page_index). The
 /// underlying lopdf classifier is cheap on most pages but for construction
@@ -3041,6 +3104,27 @@ mod native_render_save_race_tests {
     use std::fs::{FileTimes, OpenOptions};
     use std::sync::atomic::Ordering;
 
+    #[test]
+    fn a_cache_hit_returns_the_rendered_frame_bytes() {
+        let pixmaps = pdfium_renderer::PixmapCacheState::default();
+        let key = ("drawing.pdf".to_string(), 0, 10_000, 0);
+        let frame = pdfium_renderer::frame_rgba(2, 1, &[9, 8, 7, 6, 5, 4, 3, 2]);
+        let (cached, generation) = pixmaps.lookup_for_render(&key, &[]);
+        assert!(cached.is_none());
+        cache_rendered_frame(&pixmaps, generation, &key, 2, 1, &frame);
+        assert!(pixmaps.lookup_for_render(&key, &[]).0.is_none(), "a first render is not copied in");
+        cache_rendered_frame(&pixmaps, generation, &key, 2, 1, &frame);
+        let hit = pixmaps.lookup_for_render(&key, &[]).0.expect("second render of the key is cached");
+        assert_eq!(hit.framed(), frame.as_slice());
+        assert_eq!((hit.width, hit.height), (2, 1));
+        // A save drops it again.
+        pixmaps.0.lock().unwrap().as_mut().unwrap().remove_path("drawing.pdf");
+        assert!(pixmaps.lookup_for_render(&key, &[]).0.is_none());
+        cache_rendered_frame(&pixmaps, generation, &key, 2, 1, &frame);
+        cache_rendered_frame(&pixmaps, generation, &key, 2, 1, &frame);
+        assert!(pixmaps.lookup_for_render(&key, &[]).0.is_none(), "a render from before the save never enters");
+    }
+
     #[tokio::test]
     async fn in_process_response_is_rejected_after_invalidation() {
         let pixmaps = pdfium_renderer::PixmapCacheState::default();
@@ -3123,14 +3207,14 @@ mod native_render_save_race_tests {
         let pool = Arc::new(tokio::sync::OnceCell::new());
         assert!(pool.set(worker_pool::WorkerPool::new(vec![worker.clone()])).is_ok());
         let pixmaps = Arc::new(pdfium_renderer::PixmapCacheState::default());
-        let red_pixels = pool.get().unwrap().render(&path, 0, 1.0, 0, &[]).await.unwrap().2;
+        let red_pixels = pool.get().unwrap().render(&path, 0, 1.0, 0, &[]).await.unwrap().rgba().to_vec();
         let held = worker.request_lock.lock().await;
         let task_pool = pool.clone();
         let task_pixmaps = pixmaps.clone();
         let task_path = path.clone();
         let render = tokio::spawn(async move {
             let generation = task_pixmaps.snapshot_generation(&task_path).unwrap();
-            let old = task_pool.get().unwrap().render(&task_path, 0, 1.0, 0, &[]).await.unwrap().2;
+            let old = task_pool.get().unwrap().render(&task_path, 0, 1.0, 0, &[]).await.unwrap().rgba().to_vec();
             assert!(!accept_render_generation(&task_path, generation, &task_pixmaps, &task_pool).await.unwrap());
             let mut fresh = Vec::new();
             let mut accepted = false;
@@ -3138,7 +3222,7 @@ mod native_render_save_race_tests {
             // It may race with the first retry, as it can in the command.
             for _ in 1..MAX_RENDER_GENERATION_ATTEMPTS {
                 let fresh_generation = task_pixmaps.snapshot_generation(&task_path).unwrap();
-                fresh = task_pool.get().unwrap().render(&task_path, 0, 1.0, 0, &[]).await.unwrap().2;
+                fresh = task_pool.get().unwrap().render(&task_path, 0, 1.0, 0, &[]).await.unwrap().rgba().to_vec();
                 if accept_render_generation(&task_path, fresh_generation, &task_pixmaps, &task_pool).await.unwrap() {
                     accepted = true;
                     break;
@@ -3176,6 +3260,32 @@ mod native_render_save_race_tests {
         child.as_mut().unwrap().wait().await.unwrap();
         drop(child);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+/// Keep a copy of a fresh full-page frame in the pixmap cache, but only when
+/// the cache will retain it (see `PixmapCache::should_store`): the copy is
+/// made outside the cache lock and skipped for one-off and oversized frames.
+fn cache_rendered_frame(
+    pixmap_cache: &pdfium_renderer::PixmapCacheState,
+    generation: Option<u64>,
+    key: &pdfium_renderer::PixmapKey,
+    width: u32,
+    height: u32,
+    framed: &[u8],
+) {
+    let Some(generation) = generation else { return };
+    let wanted = pixmap_cache.0.lock().ok()
+        .and_then(|mut guard| guard.as_mut().map(|cache| cache.should_store(generation, key, framed.len())))
+        .unwrap_or(false);
+    if !wanted {
+        return;
+    }
+    let pixmap = Arc::new(pdfium_renderer::CachedPixmap::from_framed(width, height, framed.to_vec()));
+    if let Ok(mut guard) = pixmap_cache.0.lock() {
+        if let Some(cache) = guard.as_mut() {
+            cache.insert_if_generation(generation, key.clone(), pixmap);
+        }
     }
 }
 
@@ -3217,10 +3327,8 @@ async fn render_pdf_page(
         let cached = if annot_appearance.is_some() { None } else { cached };
         let pixmap_generation = if annot_appearance.is_some() { None } else { render_generation };
         if let Some(cached) = cached {
-            let mut data = Vec::with_capacity(8 + cached.rgba.len());
-            data.extend_from_slice(&cached.width.to_le_bytes());
-            data.extend_from_slice(&cached.height.to_le_bytes());
-            data.extend_from_slice(&cached.rgba);
+            // One copy: the IPC response owns its bytes.
+            let data = cached.framed().to_vec();
             if accept_render_generation(&path, response_generation, &pixmap_cache, &pool).await? {
                 return Ok(tauri::ipc::Response::new(data));
             }
@@ -3236,19 +3344,11 @@ async fn render_pdf_page(
             };
             match worker_render {
                 Ok(bitmap) => {
-                    // The pool returns the wire format already; only the
-                    // pixmap cache needs its own copy of the pixels.
-                    if let Some(generation) = pixmap_generation {
-                        if let Ok(mut guard) = pixmap_cache.0.lock() {
-                            if let Some(cache) = guard.as_mut() {
-                                cache.insert_if_generation(generation, cache_key.clone(), std::sync::Arc::new(pdfium_renderer::CachedPixmap {
-                                    width: bitmap.width, height: bitmap.height,
-                                    rgba: std::sync::Arc::new(bitmap.rgba().to_vec()),
-                                }));
-                            }
-                        }
-                    }
+                    // The pool returns the wire format already; the pixmap
+                    // cache copies it only when it will keep it.
+                    let (width, height) = (bitmap.width, bitmap.height);
                     let data = bitmap.into_framed();
+                    cache_rendered_frame(&pixmap_cache, pixmap_generation, &cache_key, width, height, &data);
                     if accept_render_generation(&path, response_generation, &pixmap_cache, &pool).await? {
                         return Ok(tauri::ipc::Response::new(data));
                     }
@@ -3300,21 +3400,9 @@ async fn render_pdf_page(
             annot_appearance,
         )?;
 
-        let rgba_arc = std::sync::Arc::new(rgba);
-        if let Some(generation) = pixmap_generation {
-            if let Ok(mut guard) = pixmap_cache.0.lock() {
-                if let Some(cache) = guard.as_mut() {
-                    cache.insert_if_generation(generation, cache_key.clone(), std::sync::Arc::new(pdfium_renderer::CachedPixmap {
-                        width, height, rgba: rgba_arc.clone(),
-                    }));
-                }
-            }
-        }
-
-        let mut data = Vec::with_capacity(8 + rgba_arc.len());
-        data.extend_from_slice(&width.to_le_bytes());
-        data.extend_from_slice(&height.to_le_bytes());
-        data.extend_from_slice(&rgba_arc);
+        let data = pdfium_renderer::frame_rgba(width, height, &rgba);
+        drop(rgba);
+        cache_rendered_frame(&pixmap_cache, pixmap_generation, &cache_key, width, height, &data);
         if accept_render_generation(&path, response_generation, &pixmap_cache, &pool).await? {
             return Ok(tauri::ipc::Response::new(data));
         }
@@ -3716,14 +3804,13 @@ async fn page_content_size(path: String, page_index: u32) -> Result<u64, String>
 
 #[tauri::command]
 async fn render_thumbnail(
+    app: tauri::AppHandle,
     path: String,
     page_index: u32,
     max_width: u32,
     rotation: Option<i32>,
     ocg_visibility: Option<Vec<ocg_render_copy::LayerVisibility>>,
     skip_images: Option<bool>,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
-    pdfium_cache: tauri::State<'_, pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
     thumb_cache: tauri::State<'_, ThumbnailCache>,
 ) -> Result<String, String> {
@@ -3741,35 +3828,41 @@ async fn render_thumbnail(
 
     let cache_key = (path.clone(), page_index, max_width, extra_rot);
     if let Some(Some(cached)) = pixmap_cache.with_generation(&path, render_generation, || {
-        thumb_cache.0.lock().ok().and_then(|tc| tc.get(&cache_key).cloned())
+        thumb_cache.0.lock().ok().and_then(|mut tc| tc.get(&cache_key).cloned())
     }) {
         return Ok(cached);
     }
 
-    let bytes = cached_pdf_bytes(&bytes_cache, &path)?;
-
-    let render_bytes = if visibility.is_empty() { bytes } else {
-        std::sync::Arc::new(ocg_render_copy::render_copy(&bytes, &visibility)
-            .map_err(|e| format!("OCG thumbnail render copy: {e}"))?)
-    };
-    let handle = pdfium_renderer::get_or_load_pdfium_doc_for_render(
-        &path,
-        render_bytes,
-        &pdfium_cache,
-        &pixmap_cache,
-        render_generation,
-    )?;
-
-    let data_url = pdfium_renderer::render_thumbnail_to_json(
-        handle.document(),
-        page_index,
-        max_width,
-        extra_rot,
-    )?;
+    // The file read, the in-process PDFium render (under the global PDFium
+    // lock) and the JPEG encode are blocking work: run them on the blocking
+    // pool, not on an async runtime thread that other commands need.
+    let task_app = app.clone();
+    let task_path = path.clone();
+    let data_url = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let bytes_cache = task_app.state::<PdfBytesCache>();
+        let pdfium_cache = task_app.state::<pdfium_renderer::PdfiumDocCache>();
+        let pixmap_cache = task_app.state::<pdfium_renderer::PixmapCacheState>();
+        let bytes = cached_pdf_bytes(&bytes_cache, &task_path)?;
+        let render_bytes = if visibility.is_empty() { bytes } else {
+            std::sync::Arc::new(ocg_render_copy::render_copy(&bytes, &visibility)
+                .map_err(|e| format!("OCG thumbnail render copy: {e}"))?)
+        };
+        let handle = pdfium_renderer::get_or_load_pdfium_doc_for_render(
+            &task_path,
+            render_bytes,
+            &pdfium_cache,
+            &pixmap_cache,
+            render_generation,
+        )?;
+        pdfium_renderer::render_thumbnail_to_json(handle.document(), page_index, max_width, extra_rot)
+    })
+    .await
+    .map_err(|e| format!("Thumbnail task: {e}"))??;
 
     pixmap_cache.with_generation(&path, render_generation, || {
         if let Ok(mut tc) = thumb_cache.0.lock() {
-            tc.insert(cache_key, data_url.clone());
+            let size = data_url.len() + path.len();
+            tc.insert(cache_key, data_url.clone(), size);
         }
     });
     Ok(data_url)
@@ -4021,7 +4114,7 @@ async fn invalidate_pdf_cache(
     pool: tauri::State<'_, Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
     background: Option<bool>,
 ) -> Result<bool, String> {
-    bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.remove(&path);
+    bytes_cache.remove(&path)?;
     evict_display_list_path(&path, &handle_cache, &page_type_cache, &scene_cache)?;
     let removed = evict_pdfium_render_path(&path, &pdfium_cache, &pixmap_cache, &thumb_cache)?;
     // Dropping a PDFium document takes the global FFI lock. Keep that work
@@ -4094,7 +4187,7 @@ async fn release_pdf_document(
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
     pool: tauri::State<'_, Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<bool, String> {
-    bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.remove(&path);
+    bytes_cache.remove(&path)?;
     evict_display_list_path(&path, &handle_cache, &page_type_cache, &scene_cache)?;
     let removed = evict_pdfium_render_path(&path, &pdfium_cache, &pixmap_cache, &thumb_cache)?;
     let had_doc = removed.is_some();
@@ -4150,7 +4243,7 @@ fn clear_pdf_cache(
     pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<pdfium_renderer::PixmapCacheState>,
 ) -> Result<bool, String> {
-    bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.clear();
+    bytes_cache.clear()?;
     clear_display_list_caches(&handle_cache, &page_type_cache, &scene_cache)?;
     // Close the documents off the UI thread (see release_pdf_document).
     let handles = pixmap_cache.clear_with_doc_cache(&pdfium_cache, || {
@@ -4343,10 +4436,10 @@ pub fn run(opts: StartupOpts) {
         .manage(LockedFiles(Mutex::new(HashMap::new())))
         .manage(file_range::FileRanges::default())
         .manage(print_instelling::PrinterDevmodes::default())
-        .manage(PdfBytesCache(Mutex::new(HashMap::new())))
+        .manage(PdfBytesCache::default())
         .manage(DocHandleCache(Mutex::new(display_list_cache::GenerationCache::default())))
         .manage(TileSceneCache(Mutex::new(Vec::new())))
-        .manage(ThumbnailCache(Mutex::new(HashMap::new())))
+        .manage(ThumbnailCache::default())
         .manage(PageTypeCache(Mutex::new(HashMap::new())))
         .manage(pdfium_renderer::PdfiumDocCache::default())
         .manage(pdfium_renderer::PixmapCacheState::default())

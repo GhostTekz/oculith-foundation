@@ -210,8 +210,7 @@
     "panels": "Panels",
     "showPropertiesPanel": "Show Properties Panel by default",
     "showToolPalette": "Show Tool Palette by default",
-    "showScrollbars": "Canvas-schuifbalken tonen",
-    "legacyRibbon": "Klassiek lint onder de menubalk tonen"
+    "showScrollbars": "Canvas-schuifbalken tonen"
   },
   "measurement": {
     "distanceDefaults": "Standaardwaarden afstand",

@@ -209,8 +209,7 @@
     "showScrollbars": "Show canvas scrollbars",
     "panels": "Panels",
     "showPropertiesPanel": "Show Properties Panel by default",
-    "showToolPalette": "Show Tool Palette by default",
-    "legacyRibbon": "Show the classic ribbon under the menu bar"
+    "showToolPalette": "Show Tool Palette by default"
   },
   "fileAssoc": {
     "defaultPdfApplication": "Default PDF Application",

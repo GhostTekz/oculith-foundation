@@ -199,6 +199,12 @@
     "mac": "Tonen in Finder",
     "linux": "Map met bestand openen"
   },
+  "systemGrid": {
+    "addOpening": "Sparing toevoegen",
+    "panelItem": "Paneel: {{name}}",
+    "otherComponent": "Ander component…",
+    "otherComponentCurrent": "Ander component… (nu: {{name}})"
+  },
   "gevelelement": {
     "addMullionHere": "Stijl hier toevoegen",
     "removeMullion": "Dichtstbijzijnde stijl verwijderen",

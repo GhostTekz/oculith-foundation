@@ -59,7 +59,12 @@ const CORE_COMMAND_IDS = new Set(`format.applyStyle format.applyStylePreset form
   view.actualSize view.rotateLeft view.rotateRight view.firstPage view.previousPage
   view.nextPage view.lastPage view.goToSheet view.thinLines view.readerMode view.keystrokes
   view.menuBar tools.visualSearch window.leftPanel window.hidePanels
-  window.autoHidePanelAccess window.fullScreen tools.lineStyles`
+  window.autoHidePanelAccess window.fullScreen tools.lineStyles edit.addReply edit.reviewHistory
+  edit.lockMarkup edit.markMarkup edit.printableMarkup edit.copyToPages tools.assemblies
+  format.setDefaultStyle format.applyDefaultStyle tools.measure.convertToMeasurement
+  edit.convertToPolyline edit.convertToPolygon tools.measure.calibrateFromLine edit.exportMarkupImage
+  document.addBookmark document.replacePages document.insertFromFile tools.markup.highlightText
+  tools.markup.strikeoutText tools.markup.underlineText`
   .split(/\s+/).filter(Boolean));
 const CORE_DIALOG_IDS = new Set(`doc-properties preferences new-doc insert-page
   style-type-editor tekeninstellingen systeemtypen systeem-paneel-component

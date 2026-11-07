@@ -140,14 +140,14 @@ test('Multiply copies save as separate PDF markups', async () => {
   assert.deepEqual(tops, [812, 752, 692], 'original plus two copies, 60 pt apart');
 });
 
-test('wiring: shortcut, ribbon, dialog, i18n', () => {
+test('wiring: shortcut, menu, dialog, i18n', () => {
   const lees = (p) => fs.readFileSync(new URL(p, import.meta.url), 'utf8');
   assert.match(lees('./shortcut-table.js'), /\{ id: 'formatPainter', keys: 'Ctrl\+Shift\+C', category: 'markup', command: 'formatPainter' \}/);
   assert.match(lees('./keyboard-handlers.js'), /formatPainter: \(\) => \{ if \(!isPdfAReadOnly\(\)\) startFormatPainter\(\); \}/);
   assert.match(lees('./tools/format-painter-tool.js'), /setTool\('formatPainter'\);\n\s*if \(state\.currentTool !== 'formatPainter'\) return;[^\n]*\n\s*armFormatPainter\(sel\);/);
-  const ribbon = lees('../solid/components/ribbon/DrawingTab.jsx');
-  assert.match(ribbon, /id="dr-format-painter"[\s\S]*onClick=\{\(\) => runCommand\('edit\.formatPainter'\)\}/);
-  assert.match(ribbon, /id="dr-multiply"[\s\S]*onClick=\{\(\) => runCommand\('edit\.multiply'\)\}/);
+  const menus = lees('../solid/commands/menus.js');
+  assert.match(menus, /'edit\.formatPainter'/);
+  assert.match(menus, /'edit\.multiply'/);
   const edit = lees('../solid/commands/edit.js');
   assert.match(edit, /id: 'edit\.formatPainter'[\s\S]*?m\.startFormatPainter\(\)/);
   assert.match(edit, /id: 'edit\.multiply'[\s\S]*?m\.openDialog\('multiply'\)/);

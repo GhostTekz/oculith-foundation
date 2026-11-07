@@ -78,7 +78,7 @@ function updateButtons() {}
 // ---- Thumbnail refresh on annotation change ----
 // Every committed annotation mutation (add/delete/modify/clear/bulk) flows
 // through execute()/undo()/redo(). Page thumbnails composite the live
-// annotations on top of the page bitmap (see overlayAnnotationsOnDataURL in
+// annotations on top of the page bitmap (see overlayAnnotationsOnCanvas in
 // left-panel.js), so a mutation must re-render the affected page's thumbnail.
 // We debounce to coalesce rapid edits (drag-resize, property sliders, repeated
 // deletes) into a single refresh, and we only invalidate the pages the command

@@ -189,15 +189,15 @@ test('markups list, CSV and PDF rows name the new types with their unit', () => 
 test('every new tool name is registered and the kind creators set their kind', async () => {
   const registry = await readFile(new URL('../tools/tools/index.js', import.meta.url), 'utf8');
   const registered = new Set([...registry.matchAll(/registerTool\('([^']+)'/gu)].map(m => m[1]));
-  // The Measure ribbon tab runs the tools.measure.* commands (commands/tools.js),
-  // which select the tool: one implementation for menus, toolbars and ribbon.
-  const ribbon = await readFile(new URL('../solid/components/ribbon/MeasureTab.jsx', import.meta.url), 'utf8');
+  // The Measure workflow tab and Tools > Measure run the tools.measure.*
+  // commands (commands/tools.js), which select the tool: one implementation.
+  const ribbon = await readFile(new URL('../solid/commands/menus.js', import.meta.url), 'utf8');
   const commands = await readFile(new URL('../solid/commands/tools.js', import.meta.url), 'utf8');
   const table = commands.slice(commands.indexOf('const MEASURE_TOOLS = ['), commands.indexOf('];', commands.indexOf('const MEASURE_TOOLS = [')));
   const toolOf = new Map([...table.matchAll(/\['(\w+)', '(\w+)', \w+\]/gu)].map(m => [m[1], m[2]]));
-  const used = [...ribbon.matchAll(/runCommand\('tools\.measure\.(\w+)'\)/gu)].map(m => toolOf.get(m[1])).filter(Boolean);
+  const used = [...ribbon.matchAll(/'tools\.measure\.(\w+)'/gu)].map(m => toolOf.get(m[1])).filter(Boolean);
   for (const name of ['measurePolylength', 'measureVolume', 'measureArc', 'measureRadius3']) {
-    assert.ok(used.includes(name), `${name} has a ribbon button`);
+    assert.ok(used.includes(name), `${name} is in Tools > Measure`);
   }
   for (const name of used) assert.ok(registered.has(name), `${name} is registered`);
   openDocument({ measureScale: MM_100 });

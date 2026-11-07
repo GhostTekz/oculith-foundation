@@ -152,10 +152,10 @@ test('every scale entry point is the Set Scale dialog', () => {
   // The pick tool drops the draft on deactivation, so the draft is stored
   // only after the switch to the pick tool.
   assert.ok(dialog.indexOf("setTool('calibrationPick')") < dialog.indexOf('rememberSetScaleDraft({'), 'draft after setTool');
-  // The ribbon buttons, the Tools > Measure menu and the palette all run the
-  // one tools.measure.setScale command.
+  // The workflow toolbar, the Tools > Measure menu and the palette all run
+  // the one tools.measure.setScale command.
   assert.match(read('../solid/commands/tools.js'), /id: 'tools\.measure\.setScale'[\s\S]*?m\.showSetScaleDialog\(\)/u);
-  for (const ribbon of ['../solid/components/ribbon/MeasureTab.jsx', '../solid/components/ribbon/DrawingTab.jsx']) {
-    assert.match(read(ribbon), /onClick=\{\(\) => runCommand\('tools\.measure\.setScale'\)\}/u, ribbon);
+  for (const src of ['../solid/commands/workflows.js', '../solid/commands/menus.js']) {
+    assert.match(read(src), /'tools\.measure\.setScale'/u, src);
   }
 });

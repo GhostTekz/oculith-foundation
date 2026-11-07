@@ -138,7 +138,6 @@ tesseract-rs = { version = "0.4", default-features = false, features = ["use-sys
 tesseract-rs = { version = "0.4", default-features = false, features = ["build-tesseract"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-tauri-plugin-updater = "2"
 # Drag-out window detach — desktop only (the crate has no mobile platform
 # backend and fails to compile for Android/iOS).
 tauri-plugin-drag = "2.1.1"

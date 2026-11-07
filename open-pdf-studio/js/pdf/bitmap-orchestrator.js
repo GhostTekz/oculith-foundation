@@ -2,7 +2,7 @@
 //
 // Thin wrapper that reads viewport state and triggers async fills for the
 // current view. Delegates the actual work:
-//   - whole-page raster -> ensureBitmap() in page-bitmap-cache.js
+//   - whole-page raster -> ensureExactBitmap() in page-bitmap-cache.js
 //   - visible-region high-zoom augment -> invoke('render_pdf_page_region')
 //     + tile-cache.js
 //
@@ -15,7 +15,14 @@
 // overwrite a newer one (e.g. zoom-in while a previous render is pending).
 
 import { holdShownPage, viewport } from './pdf-viewport.js';
-import { computeZoomBucket, ensureBitmap, ensureExactBitmap, getBestAvailableBitmap } from './page-bitmap-cache.js';
+import {
+    MAX_WHOLE_PAGE_AXIS_PX,
+    computeZoomBucket,
+    ensureExactBitmap,
+    getBestAvailableBitmap,
+    getCachedBitmapNearScale,
+    wholePageRenderScale,
+} from './page-bitmap-cache.js';
 import { tileCacheFindCovering, tileCacheGet, tileCacheSet } from './tile-cache.js';
 import { neighborTileRegion, tileCoversViewport, visiblePdfRegion } from './tile-coverage.js';
 import { rectNaarPagina, viewportGeometrie } from './weergave-rotatie.js';
@@ -44,7 +51,7 @@ import {
 // PDFium / browser canvas axis limit. Above this, we cap the whole-page
 // bitmap resolution and rely on the tile augment for crispness in the
 // visible region.
-const MAX_BITMAP_AXIS_PX = 4096;
+const MAX_BITMAP_AXIS_PX = MAX_WHOLE_PAGE_AXIS_PX;
 
 // Tile region buffer: extend the visible region by this fraction on each
 // side, and snap region origin to a grid of this step. Small pans within
@@ -134,7 +141,7 @@ export async function ensureBitmapForCurrentView() {
             viewport.filePath,
             viewport.pageNum,
             viewport.rotation,
-            computeZoomBucket(capScale),
+            wholePageRenderScale(capScale, maxAxisPt, MAX_BITMAP_AXIS_PX),
         );
         if (fallback) {
             viewport.currentBitmap = fallback.bitmap;
@@ -145,46 +152,41 @@ export async function ensureBitmapForCurrentView() {
 
     const myGen = ++_bitmapGen;
 
-    // Cap so PDFium never has to render above the 4096 px axis limit.
-    const exactScale = Math.min(targetScale, capScale);
-    const cappedBucket = computeZoomBucket(exactScale);
-    // computeZoomBucket is monotonic, so the capped bucket is always <= the requested one
-    const useBucket = cappedBucket;
+    // One render per settle, at the exact zoom * dpr, clamped AFTER rounding
+    // so the frame stays within the 4096 px axis cap (and the worker's
+    // shared-memory slot). This function only runs once zoom/pan has been
+    // still for a moment (pdf-viewport.js's _kickOrchestratorAfterZoom
+    // debounce), so the old intermediate power-of-two bucket render bought
+    // no responsiveness: it rendered the page twice per settle, and on a
+    // dense sheet each full render costs the same at any scale.
+    const renderScale = wholePageRenderScale(targetScale, maxAxisPt, MAX_BITMAP_AXIS_PX);
+    const filePathNow = viewport.filePath;
+    const pageNum = viewport.pageNum;
+    const rotation = viewport.rotation;
+
+    // Already rendered at (about) this scale: draw it, nothing to fetch.
+    const ready = getCachedBitmapNearScale(filePathNow, pageNum, rotation, renderScale);
+    if (ready && ready.bitmap) {
+        viewport.currentBitmap = ready.bitmap;
+        viewport.dirty = true;
+        return;
+    }
 
     // Synchronous: show the best already-cached bitmap immediately. Handles
     // the "zoom-in while async render is in flight" case — we never blank
-    // out the page while we wait for the higher bucket.
-    const fallback = getBestAvailableBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, useBucket);
+    // out the page while we wait for the exact render.
+    const fallback = getBestAvailableBitmap(filePathNow, pageNum, rotation, renderScale);
     if (fallback) {
         viewport.currentBitmap = fallback.bitmap;
         viewport.dirty = true;
     }
 
-    // Async: fetch the exact bucket. ensureBitmap dedups concurrent calls.
-    const entry = await ensureBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, useBucket);
+    // Async: fetch the exact scale. ensureExactBitmap dedups concurrent calls.
+    const exactEntry = await ensureExactBitmap(filePathNow, pageNum, rotation, renderScale);
     if (myGen !== _bitmapGen || !sourceRenderCurrent(filePath, sourceRevision)) return;
-    if (entry && entry.bitmap) {
-        viewport.currentBitmap = entry.bitmap;
+    if (exactEntry && exactEntry.bitmap) {
+        viewport.currentBitmap = exactEntry.bitmap;
         viewport.dirty = true;
-    }
-
-    // Sharpness settle: the bucket is rounded UP to the next power of 2, so
-    // pdf-viewport.js's drawImage() almost always resamples this bitmap down
-    // a little to fit the screen — soft text at any zoom that doesn't land
-    // exactly on a bucket boundary. ensureBitmapForCurrentView() itself only
-    // runs once zoom/pan has been still for a bit (see pdf-viewport.js's
-    // _kickOrchestratorAfterZoom debounce), so this is already a "the user
-    // stopped moving" event — safe to spend one more render getting the
-    // EXACT resolution, without slowing down the zoom/pan itself. Skipped
-    // when the bucket is already within 2% of exact (bucket boundaries,
-    // e.g. 100%/200%/400% @ 2x DPR — nothing to upgrade).
-    if (useBucket / exactScale > 1.02) {
-        const exactEntry = await ensureExactBitmap(viewport.filePath, viewport.pageNum, viewport.rotation, exactScale);
-        if (myGen !== _bitmapGen || !sourceRenderCurrent(filePath, sourceRevision)) return;
-        if (exactEntry && exactEntry.bitmap) {
-            viewport.currentBitmap = exactEntry.bitmap;
-            viewport.dirty = true;
-        }
     }
 }
 
