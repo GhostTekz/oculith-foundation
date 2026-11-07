@@ -11,7 +11,7 @@ use app_lib::pdfium_renderer::{
 };
 
 #[test]
-fn pdfium_renders_barn_page_one() {
+fn pdfium_renders_sample_page_one() {
     let pdf_path = match std::env::var("OPEN_PDF_STUDIO_TEST_PDF") {
         Ok(p) => p,
         Err(_) => {
@@ -51,5 +51,5 @@ fn pdfium_renders_barn_page_one() {
         .count();
     assert!(non_white > 100, "Page is mostly white — render likely empty");
 
-    println!("BARN page 1 rendered: {}x{} px, {} non-white pixels", w, h, non_white);
+    println!("Sample page 1 rendered: {}x{} px, {} non-white pixels", w, h, non_white);
 }

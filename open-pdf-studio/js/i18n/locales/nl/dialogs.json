@@ -1221,6 +1221,7 @@
     "deny": "Weigeren",
     "always": "Altijd in deze sessie",
     "viewLog": "Logboek...",
-    "openLog": "Logboek gereedschap bekijken..."
+    "openLog": "Logboek gereedschap bekijken...",
+    "failed": "Gereedschap van de invoegtoepassing \"{{id}}\" ontbreekt: {{message}}"
   }
 }

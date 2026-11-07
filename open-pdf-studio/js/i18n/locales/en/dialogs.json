@@ -1221,6 +1221,7 @@
     "deny": "Deny",
     "always": "Always for this session",
     "viewLog": "Tool log...",
-    "openLog": "View tool log..."
+    "openLog": "View tool log...",
+    "failed": "Tools from the add-on \"{{id}}\" are missing: {{message}}"
   }
 }

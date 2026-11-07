@@ -11,7 +11,7 @@ Oculith Draw Foundation is made by [Oculith](https://oculith.io). The source is 
 3. Save reusable tools in the [Tool Chest](GUIDE.md#tool-chest), and review your work in the [Markups List](GUIDE.md#markups-list).
 4. To build the app yourself, follow [Building from source](BUILDING.md).
 5. To work on the code, read the [architecture](ARCHITECTURE.md), [add-on interface](ADDONS.md), and [file format](FILE-FORMAT.md).
-6. For the current merged source and release-check status, read the [development baseline](DEVELOPMENT-BASELINE.md).
+6. For where this commit stands, read [Status](STATUS.md). The [development baseline](DEVELOPMENT-BASELINE.md) is the 30 October check record.
 
 ## Documents
 
@@ -38,6 +38,18 @@ How an installed add-on adds tools to the AI link (MCP): the versioned registrat
 ### [PDF layers](PDF-LAYERS.md)
 
 Showing and hiding the drawing's own layers (optional content groups) from the Layers panel, what each output route (display, print, export, save, snapping, CAD export) does with that view, and the current limits.
+
+### [Status](STATUS.md)
+
+Where `main` stands: the latest continuous-integration result, the last installer run, and a readiness scorecard. Scores are a self-assessment with a written basis.
+
+### [Development philosophy](PHILOSOPHY.md)
+
+Why Foundation stays a complete local drawing tool, how add-ons stay separate, and why the review path comes before new tools.
+
+### [Workspace](UI.md)
+
+The map of the window: menu bar, toolbars, panel hosts, profiles, and the Pages tool window. Command steps stay in the user guide.
 
 ### [Building from source](BUILDING.md)
 

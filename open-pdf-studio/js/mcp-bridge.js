@@ -838,7 +838,7 @@ async function _captureCanvasState(x, y) {
 }
 
 /** Navigate the active document to a specific page (1-based). Exposed for
- *  AI-driven test setups that need a deterministic page (e.g. BARN p.2). */
+ *  AI-driven test setups that need a deterministic page (e.g. page 2 of a sample set). */
 async function handleGoToPage(params) {
   const pageNum = Number(params?.page);
   if (!Number.isInteger(pageNum) || pageNum < 1) {
