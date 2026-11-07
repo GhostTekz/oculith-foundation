@@ -763,26 +763,11 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-size: var(--ox-fs-xs);
 }
 
-/* Narrow windows: the side panels slide over the drawing instead of
-   squeezing it (the access bars stay in the flow). */
-@media (max-width: 1100px) {
-  .content { isolation: isolate; }
-  .content .ws-host-left .ws-host-panel-wrap,
-  .content .ws-host-right .ws-host-panel-wrap {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 30;
-    max-width: calc(100vw - 88px);
-    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.3);
-  }
-  .content .ws-host-left .ws-host-panel-wrap { left: 36px; }
-  .content .ws-host-right .ws-host-panel-wrap { right: 36px; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3); }
-  .content .ws-host-edge-left,
-  .content .ws-host-edge-right { display: none; }
-  [dir='rtl'] .content .ws-host-left .ws-host-panel-wrap { left: auto; right: 36px; }
-  [dir='rtl'] .content .ws-host-right .ws-host-panel-wrap { right: auto; left: 36px; }
-}
+/* The side panels stay in the flow and never take more than 40% of the
+   window: in a narrow or half-screen window the drawing (and the welcome
+   card) keeps the rest, where an open panel laid over it would hide it. */
+.content .ws-host-left .ws-host-panel,
+.content .ws-host-right .ws-host-panel { max-width: max(200px, 40vw); }
 
 .workspace-profile-picker { position: relative; align-self: center; margin-left: auto; }
 .workspace-profile-toggle {
