@@ -18,7 +18,7 @@ fn main() {
     pdfium_renderer::init_pdfium(&dylib_dir).expect("init_pdfium failed");
 
     let bytes = std::fs::read(pdf_path).expect("read pdf");
-    let cache = pdfium_renderer::PdfiumDocCache(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let cache = pdfium_renderer::PdfiumDocCache::default();
     let handle = pdfium_renderer::get_or_load_pdfium_doc_with_bytes(
         pdf_path,
         std::sync::Arc::new(bytes),

@@ -2,7 +2,7 @@
 // markups each arrange command needs. Pure data (no Solid, no app state) so
 // node tests can check it; commands/arrange.js registers the commands.
 //
-// Every command of the old ribbon Arrange tab (ribbon/ArrangeTab.jsx) is here:
+// Every command of the former ribbon Arrange tab is here:
 // align, distribute, size, z-order, rotate and reflect.
 
 export const ARRANGE_MENU = Object.freeze([

@@ -51,7 +51,18 @@ opt-level = 3
 # Release builds: whole-program optimisation across crates (thin LTO) and one
 # codegen unit, so lopdf parsing and the render paths inline across crate
 # boundaries. Panics stay unwinding: a panicking command must not take the
-# app down.
+# app down. The symbol tables are stripped (about 18 % of the app binary):
+# nothing in the build, notices or crash reporting reads them, and a panic
+# message still names its source file and line. Build `--profile profiling`
+# for symbolised profiles and backtraces.
 [profile.release]
 lto = "thin"
 codegen-units = 1
+strip = "symbols"
+
+# Release code with line-table debug info and symbols, for perf/samply,
+# heaptrack and readable backtraces: `cargo build --profile profiling`.
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = "none"

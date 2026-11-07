@@ -19,6 +19,8 @@ import './capture.js';
 import './visual-search.js';
 import './line-styles.js';
 import './set-batch-link.js';
+// The context-menu actions (replies, lock, default style, …) for the palette.
+import './markup-actions.js';
 // Previous / Next View, Dimmer and Dark Mode (Navigation bar work package).
 import '../../ui/chrome/navigation-commands.js';
 import './multiview.js';

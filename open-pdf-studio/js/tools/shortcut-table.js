@@ -124,7 +124,7 @@ export const SHORTCUTS = [
   { id: 'line', keys: 'L', category: 'tools', tool: 'line' },
   { id: 'arrow', keys: 'A', category: 'tools', tool: 'arrow' },
   { id: 'rectangle', keys: 'R', category: 'tools', tool: 'box' },
-  { id: 'ellipse', keys: 'E', category: 'tools', tool: 'circle' },
+  { id: 'ellipse', keys: 'E', category: 'tools', tool: 'ellipse' },
   { id: 'cloud', keys: 'C', category: 'tools', tool: 'cloud' },
   { id: 'cloudPolyline', keys: 'K', category: 'tools', tool: 'cloudPolyline' },
   { id: 'callout', keys: 'Q', category: 'tools', tool: 'callout' },
@@ -158,7 +158,7 @@ export const SHORTCUTS = [
   { id: 'perimeter', keys: 'Shift+Alt+P', category: 'measure', tool: 'measurePerimeter' },
   { id: 'volume', keys: 'Shift+Alt+V', category: 'measure', tool: 'measureVolume' },
   { id: 'diameter', keys: 'Shift+Alt+D', category: 'measure', tool: 'diameter' },
-  { id: 'radius', keys: 'Shift+Alt+U', category: 'measure', tool: 'measureRadius3' },
+  { id: 'radius3', keys: 'Shift+Alt+U', category: 'measure', tool: 'measureRadius3' },
   { id: 'angle', keys: 'Shift+Alt+G', category: 'measure', tool: 'measureAngle' },
   { id: 'count', keys: 'Shift+Alt+C', category: 'measure', tool: 'count' },
   // the external editor: J = Dynamic Fill.
@@ -233,6 +233,9 @@ export const SHORTCUTS = [
   { id: 'unsplit', keys: 'Ctrl+Shift+2', category: 'view', builtin: true, run: 'view.unsplit' },
   { id: 'previousView', keys: 'Alt+ArrowLeft', category: 'view', builtin: true },
   { id: 'nextView', keys: 'Alt+ArrowRight', category: 'view', builtin: true },
+  // Go to Sheet: main.js still blocks the webview's own Ctrl+J (its
+  // downloads/console key); that only prevents the default, so this runs.
+  { id: 'goToSheet', keys: 'Ctrl+J', category: 'view', builtin: true, run: 'view.goToSheet' },
   { id: 'nextDocument', keys: ['Ctrl+Tab', 'Ctrl+Shift+Tab'], display: 'Ctrl+(Shift+)Tab', category: 'view', builtin: true },
 
   // Workspace: panels (the external editor keys) and the menu bar mnemonics.

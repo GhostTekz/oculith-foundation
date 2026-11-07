@@ -60,7 +60,7 @@ test('no command is lost: every command from before the workflow toolbar still e
 });
 
 test('every workflow tool is a registered command with an icon and en/nl labels', () => {
-  assert.deepEqual(wf.WORKFLOW_IDS, ['review', 'markup', 'measure', 'takeoff', 'sheets', 'compare', 'output', 'view']);
+  assert.deepEqual(wf.WORKFLOW_IDS, ['sheets', 'review', 'markup', 'measure', 'takeoff', 'compare', 'output', 'view']);
   for (const workflow of wf.WORKFLOWS) {
     for (const lang of ['en', 'nl']) {
       assert.equal(typeof translate(lang, workflow.label), 'string', `${lang} ${workflow.label}`);
@@ -92,18 +92,47 @@ test('the workflows group the jobs: counting in Takeoff, scale in Measure, pages
   assert.ok(has('compare', 'document.compare') && has('compare', 'view.splitVertical'));
   assert.ok(has('output', 'file.print') && has('output', 'file.export'));
   assert.ok(has('selection', 'arrange.bringToFront') && wf.getWorkflow('selection').contextual === 'selection');
+  // Opening the set is the first step: Sheets ▸ Set.
+  const set = wf.getWorkflow('sheets').groups[0];
+  assert.equal(set.id, 'set');
+  assert.deepEqual(set.items, ['file.open', 'file.openRecent', 'batch.combine', 'file.import', 'view.goToSheet']);
+  // Page preparation, not page setup, holds OCR; Spaces and Area are areas, not runs or finds.
+  const groupOf = (workflowId, id) => wf.getWorkflow(workflowId).groups.find((g) => g.items.includes(id))?.id;
+  assert.equal(groupOf('sheets', 'document.ocr'), 'prepare');
+  assert.equal(groupOf('takeoff', 'window.panel.spaces'), 'areas');
+  assert.equal(groupOf('takeoff', 'tools.measure.area'), 'areas');
+  assert.equal(groupOf('takeoff', 'tools.visualSearch'), 'count');
+  assert.equal(groupOf('output', 'batch.combine'), undefined, 'Combine opens a set (Sheets)');
+});
+
+test('workflow groups hold 2 to 8 tools, a tab at most 5 groups, and a tool once per tab', () => {
+  for (const workflow of wf.BUILTIN_WORKFLOWS) {
+    if (!workflow.contextual) assert.ok(workflow.groups.length <= 5, `${workflow.id}: ${workflow.groups.length} groups`);
+    const seen = new Set();
+    for (const group of workflow.groups) {
+      if (!workflow.contextual) assert.ok(group.items.length >= 2 && group.items.length <= 8, `${workflow.id}.${group.id}: ${group.items.length}`);
+      for (const id of group.items) {
+        assert.ok(!seen.has(id), `${workflow.id}: ${id} twice`);
+        seen.add(id);
+      }
+    }
+  }
 });
 
 test('an edition workflow goes after the tab it names, a taken id is ignored, Tools gets its submenu', () => {
   const extra = { id: 'trade', label: 'common:workflow.takeoff', icon: '<svg/>', after: 'takeoff', groups: [{ id: 'g', label: 'x', items: ['file.open'] }] };
   const composed = wf.composeWorkflows(wf.BUILTIN_WORKFLOWS, [extra, { ...extra, id: 'review' }]);
   assert.deepEqual(composed.filter((w) => !w.contextual).map((w) => w.id),
-    ['review', 'markup', 'measure', 'takeoff', 'trade', 'sheets', 'compare', 'output', 'view']);
+    ['sheets', 'review', 'markup', 'measure', 'takeoff', 'trade', 'compare', 'output', 'view']);
   const noAfter = wf.composeWorkflows(wf.BUILTIN_WORKFLOWS, [{ ...extra, after: 'nope' }]);
   assert.equal(noAfter.findIndex((w) => w.id === 'trade'), noAfter.findIndex((w) => w.contextual) - 1, 'before the contextual tabs');
   // Profiles limit the tabs; an edition's tab shows unless the list names its own.
   assert.deepEqual(wf.visibleWorkflowIds(['view', 'review']), ['review', 'view']);
   assert.deepEqual(wf.visibleWorkflowIds(null), wf.WORKFLOW_IDS);
+  // A profile can leave the edition and add-on tabs out (Document does).
+  assert.deepEqual(wf.visibleWorkflowIds(null, { addOns: false }), wf.WORKFLOW_IDS);
+  assert.equal(wl.profileShowsAddOnWorkflows('document'), false);
+  assert.ok(wl.PROFILE_IDS.filter((id) => id !== 'document').every((id) => wl.profileShowsAddOnWorkflows(id)));
   // Foundation has no edition workflow, so Tools has no extra submenu.
   const tools = MENUS.find((m) => m.id === 'tools');
   assert.ok(!tools.items.some((i) => i.submenu && !i.submenu.startsWith('common:menu.')));
@@ -149,7 +178,7 @@ test('the workflow tab follows the profile; a picked tab is remembered until the
   profiles.applyWorkspaceProfile('quantityTakeoff', false);
   assert.equal(store.activeWorkflow(), 'takeoff');
   profiles.applyWorkspaceProfile('basic', false);
-  assert.deepEqual(store.shownWorkflowIds(), ['review', 'markup', 'measure', 'sheets', 'output', 'view']);
+  assert.deepEqual(store.shownWorkflowIds(), ['sheets', 'review', 'markup', 'measure', 'output', 'view']);
   assert.equal(store.activeWorkflow(), 'review');
   // A tab the profile does not show falls back to the profile's own.
   state.preferences.activeWorkflow = 'compare';

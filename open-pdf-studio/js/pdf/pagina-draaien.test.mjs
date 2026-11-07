@@ -109,16 +109,16 @@ test('lint, sneltoets, mobiele knop en contextmenu draaien via deze module', () 
   const bron = (pad) => readFileSync(new URL(pad, import.meta.url), 'utf8');
   // De knoppen op het tabblad Beeld draaien sinds #200 alleen de weergave
   // (weergave-draaien.js), niet de pagina's; zie weergave-draaien.test.mjs.
-  // Het lint en Document > Pagina's draaien lopen via de opdrachten in
+  // De werkstroombalk en Document > Pagina's draaien lopen via de opdrachten in
   // commands/document.js (één implementatie).
   for (const pad of ['../solid/commands/document.js',
     '../tools/keyboard-handlers.js', '../solid/MobileApp.jsx']) {
     assert.match(bron(pad), /draaiVanafKnop\(/, pad);
     assert.doesNotMatch(bron(pad), /\brotatePage\(/, pad);
   }
-  const lint = bron('../solid/components/ribbon/OrganizeTab.jsx');
-  assert.match(lint, /runCommand\('document\.rotatePagesLeft'\)/);
-  assert.match(lint, /runCommand\('document\.rotatePagesRight'\)/);
+  const lint = bron('../solid/commands/workflows.js');
+  assert.match(lint, /'document\.rotatePagesLeft'/);
+  assert.match(lint, /'document\.rotatePagesRight'/);
   const menu = bron('../solid/components/ContextMenu.jsx');
   assert.match(menu, /draaiPaginas\(-90, pages\(\)\)/);
   assert.match(menu, /draaiPaginas\(90, pages\(\)\)/);

@@ -128,7 +128,8 @@ impl Renderer {
     /// Cache-lookup met verversing: hit alleen als pad + mtime + lengte +
     /// gekozen OCG-stand
     /// overeenkomen (het bestand kan herschreven zijn door opslaan van
-    /// annotaties). Miss → lees + parse en evict de oudste boven de cap.
+    /// annotaties). Miss → lees + parse en evict de minst recent gebruikte
+    /// boven de cap.
     /// De parse van een zwaar CAD-document kost seconden — deze cache is
     /// wat regio-tegels goedkoop maakt.
     fn get_or_load(&mut self, path: &str, requested: &[LayerVisibility]) -> Result<usize> {
@@ -138,7 +139,14 @@ impl Renderer {
         let mut len = meta.len();
 
         if let Some(i) = self.cache.iter().position(|c| c.path == path && c.mtime == mtime && c.len == len && c.visibility == visibility) {
-            return Ok(i);
+            // A hit becomes the most recent entry, so the cap evicts the
+            // least recently used document rather than the first opened.
+            let last = self.cache.len() - 1;
+            if i != last {
+                let entry = self.cache.remove(i);
+                self.cache.push(entry);
+            }
+            return Ok(last);
         }
         // Verouderde versie van hetzelfde pad weggooien.
         self.cache.retain(|c| c.path != path);

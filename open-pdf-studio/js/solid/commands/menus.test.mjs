@@ -1,5 +1,5 @@
 // The menu bar and the command registry (docs/WORKSPACE-SPEC.md §4, §7
-// WP1): every ribbon button runs a registry command that a menu also
+// WP1): every former ribbon button id runs a registry command that a menu also
 // offers, every menu entry names a registered command, labels exist in en
 // and nl, the command palette finds commands by their menu wording, and no
 // key is bound to two different actions. Runs the real registry and state
@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 register('../../core/app-test-hooks.mjs', import.meta.url);
 const { installeerBrowserStubs } = await import('../../core/app-test-hooks.mjs');
@@ -23,8 +23,6 @@ const { PANEL_SHORTCUTS } = await import('./window.js');
 const { TOOL_OF_COMMAND } = await import('./tools.js');
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
-const RIBBON_DIR = new URL('../components/ribbon/', import.meta.url);
-const tabFiles = readdirSync(RIBBON_DIR).filter((f) => /Tab\.jsx$/.test(f) && f !== 'RibbonTab.jsx');
 
 const locale = (lang, ns) => JSON.parse(read(`../../i18n/locales/${lang}/${ns}.json`).replace(/^﻿/, ''));
 const bundles = {};
@@ -35,53 +33,6 @@ function translate(lang, key) {
 }
 const tEn = (key) => translate('en', key) ?? key;
 
-// Handlers in the ribbon tabs that only drive the tab's own UI (open a
-// dropdown, a local dialog) and are not commands. Anything else must run a
-// registry command.
-const UI_LOCAL = [
-  'setMoreOpen(!moreOpen())', // FormatTab: style gallery "more" dropdown
-  'setToolsOpen(!toolsOpen())', // FormatTab: style tools dropdown
-  'openCreateDialog', // FormatTab: name dialog for a new style preset
-  '{ setToolsOpen(false); setManageOpen(true); }', // FormatTab: manage presets dialog
-  'setCreateOpen(false)', 'confirmCreate', 'setManageOpen(false)', // FormatTab dialogs
-  'deleteStylePreset(p.id)', // FormatTab: manage-presets dialog row
-  'setAlignMenuOpen(!alignMenuOpen())', // ArrangeTab: "align to" dropdown
-];
-
-function handlers(source) {
-  const out = [];
-  const re = /\bon(?:Main)?Click=\{/g;
-  let m;
-  while ((m = re.exec(source))) {
-    let depth = 0;
-    let i = m.index + m[0].length - 1;
-    for (; i < source.length; i++) {
-      if (source[i] === '{') depth++;
-      else if (source[i] === '}' && --depth === 0) break;
-    }
-    out.push(source.slice(m.index + m[0].length, i).trim());
-  }
-  return out;
-}
-
-test('every ribbon onClick runs a registry command that a menu offers', () => {
-  const menuIds = menuCommandIds();
-  let commands = 0;
-  for (const file of tabFiles) {
-    for (const body of handlers(read(`../components/ribbon/${file}`))) {
-      const run = body.match(/runCommand\('([\w.]+)'/);
-      if (!run) {
-        assert.ok(UI_LOCAL.some((h) => body === h || body === `() => ${h}`), `${file}: handler is not a command: ${body}`);
-        continue;
-      }
-      commands++;
-      assert.ok(reg.getCommand(run[1]), `${file}: ${run[1]} is registered`);
-      assert.ok(menuIds.has(run[1]), `${file}: ${run[1]} is in menus.js`);
-    }
-  }
-  assert.ok(commands >= 190, `all ribbon buttons are commands (${commands})`);
-});
-
 test('the File backstage runs registry commands from the menus', () => {
   const src = read('../components/app-menu/AppMenu.jsx');
   const ids = [...src.matchAll(/runCommand\('([\w.]+)'\)/g)].map((m) => m[1]);
@@ -90,20 +41,17 @@ test('the File backstage runs registry commands from the menus', () => {
   assert.doesNotMatch(src, /showNewDocDialog|savePDFAs|showPrintDialog|closeWindow/, 'no second implementation');
 });
 
-test('RIBBON_BUTTON_COMMANDS matches the ribbon buttons', () => {
-  const found = {};
-  for (const file of tabFiles) {
-    const src = read(`../components/ribbon/${file}`);
-    for (const m of src.matchAll(/id="([\w-]+)"/g)) {
-      const next = src.slice(m.index + m[0].length).search(/<[A-Za-z/]/);
-      const tag = src.slice(m.index, m.index + m[0].length + (next < 0 ? src.length : next));
-      const run = tag.match(/runCommand\('([\w.]+)'/);
-      if (run) found[m[1]] = run[1];
-    }
+test('RIBBON_BUTTON_COMMANDS: every former ribbon button id runs a registered command from a menu', () => {
+  // The ribbon is gone; callers that still name its button ids (the MCP
+  // bridge's 'ribbon:#<id>') reach the same commands through this map.
+  const menuIds = menuCommandIds();
+  const ids = Object.values(RIBBON_BUTTON_COMMANDS).map((v) => (Array.isArray(v) ? v[0] : v));
+  assert.ok(ids.length >= 150, `${ids.length} buttons`);
+  for (const id of ids) {
+    assert.ok(reg.getCommand(id), `${id} is registered`);
+    assert.ok(menuIds.has(id), `${id} is in menus.js`);
   }
-  const map = Object.fromEntries(Object.entries(RIBBON_BUTTON_COMMANDS).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
-  assert.deepEqual(map, found);
-  assert.equal(RIBBON_BUTTON_COMMANDS['arr-send-back'], 'arrange.sendToBack', 'the id the construction-overview skill names');
+  assert.equal(RIBBON_BUTTON_COMMANDS['arr-send-back'], 'arrange.sendToBack');
 });
 
 test('every menu entry names a registered command, and every command is in a menu', () => {
@@ -209,11 +157,10 @@ test('Alt+B and Alt+T are the panels; the other menu letters open their menu', (
 test('the menu bar replaces the title bar and the ribbon in the layout', () => {
   const app = read('../App.jsx');
   assert.match(app, /<MenuBar \/>/);
-  assert.doesNotMatch(app, /<TitleBar \/>/);
-  assert.match(app, /<Show when=\{state\.preferences\.legacyRibbon === true\}>\s*<div class="ribbon-container">\s*<Ribbon \/>/);
+  assert.doesNotMatch(app, /<TitleBar \/>|<Ribbon \/>|legacyRibbon/);
   const top = app.slice(app.indexOf('<MenuBar />'), app.indexOf('<DocumentTabs />'));
-  assert.ok(top.indexOf('<PropertiesToolbar />') > top.indexOf('</Show>'), 'Properties toolbar directly under the menu row');
-  assert.equal(read('../../core/constants.ts').match(/legacyRibbon: (\w+),/)?.[1], 'false');
+  assert.ok(top.indexOf('<PropertiesToolbar />') > top.indexOf('<WorkflowBar />'), 'Properties toolbar under the workflow toolbar');
+  assert.doesNotMatch(read('../../core/constants.ts'), /legacyRibbon|ribbonCollapsed/);
 });
 
 test('the right vertical toolbar lists registered tool commands only', async () => {

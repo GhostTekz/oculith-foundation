@@ -52,12 +52,6 @@ export default function PageDisplayTab(props) {
             <span>{t('pageDisplay.showToolPalette')}</span>
           </label>
         </div>
-        <div class="pref-row pref-checkbox-row">
-          <label class="pref-checkbox-label">
-            <input type="checkbox" checked={p.legacyRibbon[0]()} onChange={e => p.legacyRibbon[1](e.target.checked)} />
-            <span>{t('pageDisplay.legacyRibbon')}</span>
-          </label>
-        </div>
       </fieldset>
     </>
   );

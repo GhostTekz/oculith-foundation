@@ -135,9 +135,31 @@ impl Drop for PdfiumDocumentHandle {
     }
 }
 
-/// Document-handle cache. Tauri state. Keyed by full file path.
-#[derive(Default)]
-pub struct PdfiumDocCache(pub Mutex<HashMap<String, Arc<PdfiumDocumentHandle>>>);
+/// Document-handle cache. Tauri state. Keyed by full file path. Bounded by
+/// count (LRU): every open document holds PDFium parse state in this process.
+pub struct PdfiumDocCache(pub Mutex<DocMap<PdfiumDocumentHandle>>);
+
+pub type DocMap<T> = crate::byte_lru::ByteLru<String, Arc<T>>;
+const PDFIUM_DOC_CACHE_MAX_DOCS: usize = 6;
+
+pub fn new_doc_map<T>() -> DocMap<T> {
+    crate::byte_lru::ByteLru::new(PDFIUM_DOC_CACHE_MAX_DOCS, usize::MAX)
+}
+
+impl Default for PdfiumDocCache {
+    fn default() -> Self {
+        Self(Mutex::new(new_doc_map()))
+    }
+}
+
+/// Insert a document, and close what the bound evicted off this thread:
+/// closing a PDFium document waits for the global FFI lock.
+fn insert_doc<T: Send + Sync + 'static>(map: &mut DocMap<T>, path: &str, handle: Arc<T>) {
+    let evicted = map.insert(path.to_string(), handle, 0);
+    if !evicted.is_empty() {
+        std::thread::spawn(move || drop(evicted));
+    }
+}
 
 /// Get an Arc-wrapped PdfiumDocumentHandle for `path`. Reads bytes from
 /// disk on cache miss. For the production hot path where bytes are already
@@ -147,7 +169,7 @@ pub fn get_or_load_pdfium_doc(
     cache: &PdfiumDocCache,
 ) -> Result<Arc<PdfiumDocumentHandle>, String> {
     {
-        let map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
+        let mut map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
         if let Some(h) = map.get(path) {
             return Ok(h.clone());
         }
@@ -162,7 +184,7 @@ pub fn get_or_load_pdfium_doc(
     if let Some(existing) = map.get(path) {
         return Ok(existing.clone());
     }
-    map.insert(path.to_string(), handle.clone());
+    insert_doc(&mut map, path, handle.clone());
     Ok(handle)
 }
 
@@ -174,7 +196,7 @@ pub fn get_or_load_pdfium_doc_with_bytes(
     cache: &PdfiumDocCache,
 ) -> Result<Arc<PdfiumDocumentHandle>, String> {
     {
-        let map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
+        let mut map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
         if let Some(h) = map.get(path) {
             return Ok(h.clone());
         }
@@ -186,7 +208,7 @@ pub fn get_or_load_pdfium_doc_with_bytes(
     if let Some(existing) = map.get(path) {
         return Ok(existing.clone());
     }
-    map.insert(path.to_string(), handle.clone());
+    insert_doc(&mut map, path, handle.clone());
     Ok(handle)
 }
 
@@ -207,12 +229,13 @@ pub fn get_or_load_pdfium_doc_for_render(
 
 fn get_or_load_at_generation<T, F>(
     path: &str,
-    cache: &Mutex<HashMap<String, Arc<T>>>,
+    cache: &Mutex<DocMap<T>>,
     pixmap_cache: &PixmapCacheState,
     generation: Option<u64>,
     load: F,
 ) -> Result<Arc<T>, String>
 where
+    T: Send + Sync + 'static,
     F: FnOnce() -> Result<Arc<T>, String>,
 {
     let Some(generation) = generation else {
@@ -223,7 +246,7 @@ where
     {
         let guard = pixmap_cache.0.lock().map_err(|e| format!("Pixmap cache lock: {}", e))?;
         if guard.as_ref().is_some_and(|c| c.is_current(path, generation)) {
-            let map = cache.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
+            let mut map = cache.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
             if let Some(handle) = map.get(path) {
                 return Ok(handle.clone());
             }
@@ -237,7 +260,7 @@ where
         if let Some(existing) = map.get(path) {
             return Ok(existing.clone());
         }
-        map.insert(path.to_string(), handle.clone());
+        insert_doc(&mut map, path, handle.clone());
     }
     Ok(handle)
 }
@@ -409,29 +432,83 @@ pub fn apply_annotation_appearance(page: &PdfPage, names: &[String], indices: &[
 
 // ─── Tauri-layer pixmap cache ─────────────────────────────────────────────────
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
-/// A fully-rendered RGBA pixmap. Stored Arc-wrapped so cache hits clone
-/// cheaply (atomic refcount) — the wire copy still happens at IPC time,
-/// but the buffer lives once in memory regardless of how many concurrent
-/// renders hold a handle.
+pub type PixmapKey = (String, u32, u32, i32);
+
+/// A fully-rendered pixmap in the IPC wire format of the render commands:
+/// `[width u32 LE][height u32 LE][RGBA bytes]`. Stored Arc-wrapped so cache
+/// hits clone cheaply (atomic refcount); a hit still makes the one copy the
+/// IPC response needs (`tauri::ipc::Response` owns a `Vec`), straight from
+/// these bytes.
 pub struct CachedPixmap {
     pub width: u32,
     pub height: u32,
-    pub rgba: Arc<Vec<u8>>,
+    framed: Vec<u8>,
 }
 
-/// Bounded-FIFO cache of fully-rendered pixmaps. Key: (path, page_idx,
+impl CachedPixmap {
+    /// Takes wire-format bytes (header + RGBA) as they are.
+    pub fn from_framed(width: u32, height: u32, framed: Vec<u8>) -> Self {
+        debug_assert_eq!(framed.len(), 8 + width as usize * height as usize * 4);
+        Self { width, height, framed }
+    }
+
+    /// Frames bare RGBA pixels (one copy).
+    pub fn from_rgba(width: u32, height: u32, rgba: &[u8]) -> Self {
+        Self { width, height, framed: frame_rgba(width, height, rgba) }
+    }
+
+    /// The RGBA pixels, without the size header.
+    pub fn rgba(&self) -> &[u8] {
+        &self.framed[8..]
+    }
+
+    /// The wire-format bytes (size header + RGBA).
+    pub fn framed(&self) -> &[u8] {
+        &self.framed
+    }
+
+    /// Bytes this entry holds.
+    pub fn byte_len(&self) -> usize {
+        self.framed.len()
+    }
+}
+
+/// `[width u32 LE][height u32 LE][rgba]` in one allocation.
+pub fn frame_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+    let mut framed = Vec::with_capacity(8 + rgba.len());
+    framed.extend_from_slice(&width.to_le_bytes());
+    framed.extend_from_slice(&height.to_le_bytes());
+    framed.extend_from_slice(rgba);
+    framed
+}
+
+/// Byte-bounded LRU cache of fully-rendered pixmaps. Key: (path, page_idx,
 /// scale_q = round(scale*10000), rotation). An entry limit alone does not
 /// bound memory when construction sheets produce large RGBA buffers.
 const PIXMAP_CACHE_MAX_ENTRIES: usize = 40;
 // The page keeps its own bitmap caches; this one only spares a re-render
 // of a page just shown, so it stays small (it was 256 MB of duplicates).
 const PIXMAP_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
+// Keys rendered once but not stored (see `should_store`).
+const PIXMAP_CACHE_SEEN_KEYS: usize = 64;
+
+struct PixmapEntry {
+    pixmap: Arc<CachedPixmap>,
+    tick: u64,
+}
 
 pub struct PixmapCache {
-    map: HashMap<(String, u32, u32, i32), Arc<CachedPixmap>>,
-    order: VecDeque<(String, u32, u32, i32)>,
+    map: HashMap<PixmapKey, PixmapEntry>,
+    // Recency order: tick -> key. A hit moves the key to a new tick.
+    order: BTreeMap<u64, PixmapKey>,
+    next_tick: u64,
+    bytes: usize,
+    // Keys rendered once and sent without a cache copy. The webview keeps
+    // its own bitmap of every frame, so a frame is only worth a copy here
+    // once the same key is asked for again.
+    seen: VecDeque<PixmapKey>,
     max_entries: usize,
     max_bytes: usize,
     // Tokens are unique across documents and invalidations. Removing a path
@@ -448,7 +525,10 @@ impl PixmapCache {
     fn with_limits(max_entries: usize, max_bytes: usize) -> Self {
         Self {
             map: HashMap::new(),
-            order: VecDeque::with_capacity(max_entries),
+            order: BTreeMap::new(),
+            next_tick: 0,
+            bytes: 0,
+            seen: VecDeque::with_capacity(PIXMAP_CACHE_SEEN_KEYS),
             max_entries,
             max_bytes,
             path_generations: HashMap::new(),
@@ -456,8 +536,19 @@ impl PixmapCache {
         }
     }
 
-    pub fn get(&self, key: &(String, u32, u32, i32)) -> Option<Arc<CachedPixmap>> {
-        self.map.get(key).cloned()
+    fn bump_tick(&mut self) -> u64 {
+        self.next_tick += 1;
+        self.next_tick
+    }
+
+    /// A cached pixmap; a hit becomes the most recently used entry.
+    pub fn get(&mut self, key: &PixmapKey) -> Option<Arc<CachedPixmap>> {
+        let tick = self.bump_tick();
+        let entry = self.map.get_mut(key)?;
+        self.order.remove(&entry.tick);
+        entry.tick = tick;
+        self.order.insert(tick, key.clone());
+        Some(entry.pixmap.clone())
     }
 
     pub fn generation(&mut self, path: &str) -> u64 {
@@ -472,28 +563,58 @@ impl PixmapCache {
         self.path_generations.get(path) == Some(&generation)
     }
 
+    /// Whether a fresh render of `key` (`bytes` long) should be copied into
+    /// the cache. False for a frame the cache would refuse anyway, and for
+    /// the first render of a key: that one is only remembered, so the copy
+    /// is made when the key comes back.
+    pub fn should_store(&mut self, generation: u64, key: &PixmapKey, bytes: usize) -> bool {
+        if bytes > self.max_bytes || !self.is_current(&key.0, generation) {
+            return false;
+        }
+        if self.map.contains_key(key) {
+            return true;
+        }
+        if let Some(pos) = self.seen.iter().position(|k| k == key) {
+            self.seen.remove(pos);
+            return true;
+        }
+        if self.seen.len() >= PIXMAP_CACHE_SEEN_KEYS {
+            self.seen.pop_front();
+        }
+        self.seen.push_back(key.clone());
+        false
+    }
+
+    fn remove_key(&mut self, key: &PixmapKey) {
+        if let Some(old) = self.map.remove(key) {
+            self.order.remove(&old.tick);
+            self.bytes -= old.pixmap.byte_len();
+        }
+    }
+
     /// Only cache a render if no invalidation occurred since it began.
     /// The caller holds the cache mutex for both this check and the insert.
     pub fn insert_if_generation(
         &mut self,
         generation: u64,
-        key: (String, u32, u32, i32),
+        key: PixmapKey,
         value: Arc<CachedPixmap>,
     ) -> bool {
         if !self.is_current(&key.0, generation) {
             return false;
         }
-        if value.rgba.len() > self.max_bytes {
-            self.map.remove(&key);
-            self.order.retain(|old| old != &key);
+        self.remove_key(&key);
+        if value.byte_len() > self.max_bytes {
             return true; // Valid render, but too large to retain.
         }
-        self.map.insert(key.clone(), value);
-        self.order.retain(|old| old != &key);
-        self.order.push_back(key);
-        while self.order.len() > self.max_entries || self.stats().1 > self.max_bytes {
-            if let Some(old) = self.order.pop_front() {
-                self.map.remove(&old);
+        let tick = self.bump_tick();
+        self.bytes += value.byte_len();
+        self.order.insert(tick, key.clone());
+        self.map.insert(key, PixmapEntry { pixmap: value, tick });
+        while self.map.len() > self.max_entries || self.bytes > self.max_bytes {
+            let Some((_, oldest)) = self.order.pop_first() else { break };
+            if let Some(old) = self.map.remove(&oldest) {
+                self.bytes -= old.pixmap.byte_len();
             }
         }
         true
@@ -503,18 +624,23 @@ impl PixmapCache {
         self.path_generations.clear();
         self.map.clear();
         self.order.clear();
+        self.seen.clear();
+        self.bytes = 0;
     }
 
     /// Alle pixmaps van één document weg (document gesloten).
     pub fn remove_path(&mut self, path: &str) {
         self.path_generations.remove(path);
-        self.map.retain(|k, _| k.0 != path);
-        self.order.retain(|k| k.0 != path);
+        let keys: Vec<PixmapKey> = self.map.keys().filter(|k| k.0 == path).cloned().collect();
+        for key in &keys {
+            self.remove_key(key);
+        }
+        self.seen.retain(|k| k.0 != path);
     }
 
+    /// (entries, bytes held).
     pub fn stats(&self) -> (usize, usize) {
-        let bytes: usize = self.map.values().map(|v| v.rgba.len()).sum();
-        (self.map.len(), bytes)
+        (self.map.len(), self.bytes)
     }
 }
 
@@ -527,7 +653,7 @@ impl PixmapCacheState {
     /// pixmap or generation token for them, even when the path/page matches.
     pub fn lookup_for_render(
         &self,
-        key: &(String, u32, u32, i32),
+        key: &PixmapKey,
         visibility: &[LayerVisibility],
     ) -> (Option<Arc<CachedPixmap>>, Option<u64>) {
         if !visibility.is_empty() { return (None, None); }
@@ -583,7 +709,7 @@ impl PixmapCacheState {
     fn remove_path_with_cache<T>(
         &self,
         path: &str,
-        cache: &Mutex<HashMap<String, Arc<T>>>,
+        cache: &Mutex<DocMap<T>>,
         evict_related: impl FnOnce() -> Result<(), String>,
     ) -> Result<Option<Arc<T>>, String> {
         let mut guard = self.0.lock().map_err(|e| format!("Pixmap cache lock: {}", e))?;
@@ -606,7 +732,7 @@ impl PixmapCacheState {
             cache.clear();
         }
         let handles = doc_cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?
-            .drain().map(|(_, handle)| handle).collect();
+            .drain();
         evict_related()?;
         Ok(handles)
     }
@@ -620,16 +746,12 @@ mod pixmap_cache_tests {
     use ocg_render_copy::LayerVisibility;
 
     fn pixmap(byte: u8) -> Arc<CachedPixmap> {
-        Arc::new(CachedPixmap {
-            width: 1,
-            height: 1,
-            rgba: Arc::new(vec![byte; 4]),
-        })
+        Arc::new(CachedPixmap::from_rgba(1, 1, &[byte; 4]))
     }
 
     #[test]
     fn byte_budget_evicts_large_pixmaps_even_below_entry_limit() {
-        let mut cache = PixmapCache::with_limits(40, 8);
+        let mut cache = PixmapCache::with_limits(40, 24);
         let key = |page| ("drawing.pdf".to_string(), page, 10_000, 0);
         let generation = cache.generation("drawing.pdf");
         for page in 0..3 {
@@ -638,12 +760,49 @@ mod pixmap_cache_tests {
         assert!(cache.get(&key(0)).is_none());
         assert!(cache.get(&key(1)).is_some());
         assert!(cache.get(&key(2)).is_some());
-        assert_eq!(cache.stats(), (2, 8));
-        assert!(cache.insert_if_generation(generation, key(3), Arc::new(CachedPixmap {
-            width: 1, height: 1, rgba: Arc::new(vec![0; 9]),
-        })));
+        assert_eq!(cache.stats(), (2, 24));
+        assert!(cache.insert_if_generation(generation, key(3), Arc::new(CachedPixmap::from_rgba(1, 7, &[0; 28]))));
         assert!(cache.get(&key(3)).is_none(), "an oversized render must not be retained");
-        assert_eq!(cache.stats(), (2, 8));
+        assert_eq!(cache.stats(), (2, 24));
+    }
+
+    #[test]
+    fn a_hit_makes_an_entry_most_recent() {
+        let mut cache = PixmapCache::with_limits(2, 1 << 20);
+        let key = |page| ("drawing.pdf".to_string(), page, 10_000, 0);
+        let generation = cache.generation("drawing.pdf");
+        cache.insert_if_generation(generation, key(0), pixmap(0));
+        cache.insert_if_generation(generation, key(1), pixmap(1));
+        assert!(cache.get(&key(0)).is_some());
+        cache.insert_if_generation(generation, key(2), pixmap(2));
+        assert!(cache.get(&key(0)).is_some(), "the recently used entry stays");
+        assert!(cache.get(&key(1)).is_none(), "the least recently used entry goes");
+        assert_eq!(cache.stats(), (2, 24));
+        cache.remove_path("drawing.pdf");
+        assert_eq!(cache.stats(), (0, 0));
+    }
+
+    #[test]
+    fn a_frame_is_copied_in_only_when_its_key_comes_back() {
+        let mut cache = PixmapCache::with_limits(40, 100);
+        let key = ("drawing.pdf".to_string(), 0, 10_000, 0);
+        let generation = cache.generation("drawing.pdf");
+        assert!(!cache.should_store(generation, &key, 12), "first render: remembered, not copied");
+        assert!(cache.should_store(generation, &key, 12), "second render of the key: stored");
+        assert!(!cache.should_store(generation, &("drawing.pdf".to_string(), 1, 10_000, 0), 101), "too large for the cache");
+        let other = ("drawing.pdf".to_string(), 2, 10_000, 0);
+        assert!(!cache.should_store(generation, &other, 12));
+        cache.remove_path("drawing.pdf");
+        let generation = cache.generation("drawing.pdf");
+        assert!(!cache.should_store(generation, &other, 12), "invalidation forgets remembered keys");
+        assert!(!cache.should_store(generation + 1, &other, 12), "stale generation");
+    }
+
+    #[test]
+    fn cached_frames_keep_the_wire_header() {
+        let pixmap = CachedPixmap::from_rgba(2, 1, &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(pixmap.framed(), &[2, 0, 0, 0, 1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(pixmap.rgba(), &[1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
     #[test]
@@ -704,7 +863,7 @@ mod pixmap_cache_tests {
         );
         let generation = cache.generation(path);
         assert!(cache.insert_if_generation(generation, key.clone(), pixmap(2)));
-        assert_eq!(cache.get(&key).unwrap().rgba.as_slice(), &[2, 2, 2, 2]);
+        assert_eq!(cache.get(&key).unwrap().rgba(), &[2, 2, 2, 2]);
     }
 
     #[test]
@@ -731,7 +890,7 @@ mod pixmap_cache_tests {
 
         assert!(!cache.insert_if_generation(first_generation, first.clone(), pixmap(1)));
         assert!(cache.insert_if_generation(second_generation, second.clone(), pixmap(2)));
-        assert_eq!(cache.get(&second).unwrap().rgba[0], 2);
+        assert_eq!(cache.get(&second).unwrap().rgba()[0], 2);
         assert_ne!(cache.generation(&first.0), first_generation);
 
         cache.clear();
@@ -747,13 +906,13 @@ mod pixmap_cache_tests {
         let generation = generation.unwrap();
         state.0.lock().unwrap().as_mut().unwrap()
             .insert_if_generation(generation, key.clone(), pixmap(1));
-        assert_eq!(state.lookup_for_render(&key, &[]).0.unwrap().rgba[0], 1);
+        assert_eq!(state.lookup_for_render(&key, &[]).0.unwrap().rgba()[0], 1);
         let selected = [LayerVisibility { object_number: 6, generation: 0, visible: true }];
         assert!(state.lookup_for_render(&key, &selected).0.is_none());
         assert!(state.generation_for_visibility("drawing.pdf", &selected).is_none());
         // Without a generation token, selected output cannot enter this map;
         // default-state output remains available to a later default request.
-        assert_eq!(state.lookup_for_render(&key, &[]).0.unwrap().rgba[0], 1);
+        assert_eq!(state.lookup_for_render(&key, &[]).0.unwrap().rgba()[0], 1);
     }
 
     #[test]
@@ -779,7 +938,7 @@ mod pixmap_cache_tests {
     #[test]
     fn old_document_load_cannot_reenter_cache_after_invalidation() {
         let pixmaps = Arc::new(PixmapCacheState::default());
-        let documents = Arc::new(Mutex::new(HashMap::<String, Arc<u8>>::new()));
+        let documents = Arc::new(Mutex::new(super::new_doc_map::<u8>()));
         let generation = pixmaps.snapshot_generation("drawing.pdf");
         let (started_tx, started_rx) = mpsc::channel();
         let (resume_tx, resume_rx) = mpsc::channel();
@@ -830,8 +989,8 @@ mod pixmap_cache_tests {
     #[test]
     fn selected_render_bypasses_default_document_cache_even_during_invalidation() {
         let pixmaps = Arc::new(PixmapCacheState::default());
-        let documents = Arc::new(Mutex::new(HashMap::<String, Arc<u8>>::new()));
-        documents.lock().unwrap().insert("drawing.pdf".into(), Arc::new(1));
+        let documents = Arc::new(Mutex::new(super::new_doc_map::<u8>()));
+        documents.lock().unwrap().insert("drawing.pdf".into(), Arc::new(1), 0);
         let (started_tx, started_rx) = mpsc::channel();
         let (resume_tx, resume_rx) = mpsc::channel();
         let p = Arc::clone(&pixmaps);
@@ -854,7 +1013,7 @@ mod pixmap_cache_tests {
     #[test]
     fn in_flight_thumbnail_cannot_repopulate_after_invalidation() {
         let pixmaps = Arc::new(PixmapCacheState::default());
-        let documents = Mutex::new(HashMap::<String, Arc<u8>>::new());
+        let documents = Mutex::new(super::new_doc_map::<u8>());
         let thumbnails = Arc::new(Mutex::new(HashMap::<(String, u32, u32, i32), String>::new()));
         let path = "drawing.pdf";
         let key = (path.to_string(), 0, 200, 0);
@@ -893,7 +1052,7 @@ mod pixmap_cache_tests {
     #[test]
     fn final_worker_barrier_evicts_results_cached_during_invalidation() {
         let pixmaps = PixmapCacheState::default();
-        let documents = Mutex::new(HashMap::<String, Arc<u8>>::new());
+        let documents = Mutex::new(super::new_doc_map::<u8>());
         let thumbnails = Mutex::new(HashMap::<String, String>::new());
         let path = "drawing.pdf";
         let key = (path.to_string(), 0, 10_000, 0);

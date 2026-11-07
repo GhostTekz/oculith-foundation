@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "cargoLockSha256": "416262c00430ee6dbef79e583f14dfccbbc25351d570db6ef8820c8725c6fd17",
+  "cargoLockSha256": "258eb8ab5d292d6b8f4dc063bf3a8b452a41116f066b79655b5b12ecde81cf01",
   "metadataCommand": "cargo metadata --locked --format-version 1",
-  "packageCount": 786,
+  "packageCount": 778,
   "missingLicenseMetadata": [],
   "packages": [
     {
@@ -1406,14 +1406,6 @@
       "licenseFileField": null
     },
     {
-      "name": "filetime",
-      "version": "0.2.29",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "MIT/Apache-2.0",
-      "licenseFileField": null
-    },
-    {
       "name": "find-msvc-tools",
       "version": "0.1.12",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -2502,14 +2494,6 @@
       "licenseFileField": null
     },
     {
-      "name": "minisign-verify",
-      "version": "0.2.5",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "MIT",
-      "licenseFileField": null
-    },
-    {
       "name": "miniz_oxide",
       "version": "0.8.9",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -2766,14 +2750,6 @@
       "licenseFileField": null
     },
     {
-      "name": "objc2-osa-kit",
-      "version": "0.3.2",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "Zlib OR Apache-2.0 OR MIT",
-      "licenseFileField": null
-    },
-    {
       "name": "objc2-quartz-core",
       "version": "0.3.2",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -2915,14 +2891,6 @@
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "workspace": false,
       "licenseField": "MIT",
-      "licenseFileField": null
-    },
-    {
-      "name": "osakit",
-      "version": "0.3.1",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "MIT OR Apache-2.0",
       "licenseFileField": null
     },
     {
@@ -4262,14 +4230,6 @@
       "licenseFileField": null
     },
     {
-      "name": "tar",
-      "version": "0.4.46",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "MIT OR Apache-2.0",
-      "licenseFileField": null
-    },
-    {
       "name": "target-lexicon",
       "version": "0.12.16",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -4408,14 +4368,6 @@
     {
       "name": "tauri-plugin-store",
       "version": "2.4.3",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "Apache-2.0 OR MIT",
-      "licenseFileField": null
-    },
-    {
-      "name": "tauri-plugin-updater",
-      "version": "2.10.1",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "workspace": false,
       "licenseField": "Apache-2.0 OR MIT",
@@ -6046,14 +5998,6 @@
       "licenseFileField": null
     },
     {
-      "name": "xattr",
-      "version": "1.6.1",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "MIT OR Apache-2.0",
-      "licenseFileField": null
-    },
-    {
       "name": "xkeysym",
       "version": "0.2.1",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -6184,14 +6128,6 @@
     {
       "name": "zip",
       "version": "2.4.2",
-      "source": "registry+https://github.com/rust-lang/crates.io-index",
-      "workspace": false,
-      "licenseField": "MIT",
-      "licenseFileField": null
-    },
-    {
-      "name": "zip",
-      "version": "4.6.1",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "workspace": false,
       "licenseField": "MIT",

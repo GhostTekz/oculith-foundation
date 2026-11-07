@@ -87,16 +87,11 @@ test('een nieuw document begint rechtop', () => {
 });
 
 test('de knoppen op Beeld draaien de weergave; Bewerken & combineren en de sneltoets draaien pagina\'s', () => {
-  // Lint en menu's lopen via de opdrachten: Beeld > Weergave draaien in
+  // Werkstroombalk en menu's lopen via de opdrachten: Beeld > Weergave draaien in
   // commands/view.js, Document > Pagina's draaien in commands/document.js.
-  const beeld = bron('../solid/components/ribbon/ViewTab.jsx');
-  assert.match(beeld, /runCommand\('view\.rotateLeft'\)/);
-  assert.match(beeld, /runCommand\('view\.rotateRight'\)/);
-  assert.doesNotMatch(beeld, /draaiVanafKnop\(|\brotatePage\(/);
-  assert.match(beeld, /t\('view\.rotateViewLeft'\)/);
-  assert.match(beeld, /t\('view\.rotateViewRight'\)/);
-  // Geen bewerking: ook bij een alleen-lezen PDF/A-document beschikbaar.
-  assert.doesNotMatch(beeld, /isPdfAReadOnly/);
+  const beeld = bron('../solid/commands/workflows.js');
+  assert.match(beeld, /'view\.rotateLeft'/);
+  assert.match(beeld, /'view\.rotateRight'/);
   const opdrachten = bron('../solid/commands/view.js');
   assert.match(opdrachten, /draaiWeergave\(-90\)/);
   assert.match(opdrachten, /draaiWeergave\(90\)/);

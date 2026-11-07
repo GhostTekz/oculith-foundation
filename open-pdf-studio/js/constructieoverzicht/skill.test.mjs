@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 import { CONSTRUCTIEOVERZICHT_SKILL, CONSTRUCTIEOVERZICHT_PROMPT } from './skill.js';
 import { PLATTEGROND_PROMPT } from '../plattegrond/skill.js';
@@ -34,12 +34,12 @@ test('elke genoemde MCP-opdracht bestaat in de gereedschapslijst', () => {
   for (const naam of genoemd) assert.ok(namen.has(naam), `${naam} staat niet in mcp-stdio/tools.json`);
 });
 
-test('elke genoemde lintknop bestaat', () => {
-  const map = new URL('../solid/components/ribbon/', import.meta.url);
-  const lint = readdirSync(map).filter((f) => f.endsWith('.jsx')).map((f) => readFileSync(new URL(f, map), 'utf8')).join('\n');
-  const knoppen = alle(/ribbon:#([\w-]+)/g);
-  assert.deepEqual(knoppen.sort(), ['arr-send-back']);
-  for (const id of knoppen) assert.ok(lint.includes(`id="${id}"`), `geen lintknop met id ${id}`);
+test('elke genoemde opdracht bestaat in het opdrachtenregister', () => {
+  const opdrachten = ['../solid/commands/arrange.js', '../solid/commands/menus.js'].map(lees).join('\n');
+  const genoemd = alle(/cmd:([\w.]+)/g);
+  assert.deepEqual(genoemd.sort(), ['arrange.sendToBack']);
+  assert.deepEqual(alle(/ribbon:#([\w-]+)/g), [], 'geen lintknoppen meer (het lint is weg)');
+  for (const id of genoemd) assert.ok(opdrachten.includes(`'${id}'`), `geen opdracht ${id}`);
 });
 
 test('elke genoemde lijnstijl kent de tekenroutine', () => {

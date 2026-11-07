@@ -64,14 +64,15 @@ async fn selected_ocg_full_and_region_match_fallback_without_touching_source() {
             false,
         ),
     ] {
-        let (ww, wh, worker_full) = pool.render(path_str, 0, 1.0, 0, &visibility).await.unwrap();
+        let full = pool.render(path_str, 0, 1.0, 0, &visibility).await.unwrap();
+        let (ww, wh, worker_full) = (full.width, full.height, full.rgba().to_vec());
         let bytes = if visibility.is_empty() {
             source.clone()
         } else {
             render_copy(&source, &visibility).unwrap()
         };
         let generation = if visibility.is_empty() {
-            pixmaps.snapshot_generation()
+            pixmaps.snapshot_generation(path_str)
         } else {
             None
         };
@@ -117,7 +118,7 @@ async fn selected_ocg_full_and_region_match_fallback_without_touching_source() {
                 "{label} thumbnail white pixel {thumb_blue:?}");
         }
 
-        let (rw, rh, worker_region) = pool
+        let region = pool
             .render_region(
                 path_str,
                 0,
@@ -132,6 +133,7 @@ async fn selected_ocg_full_and_region_match_fallback_without_touching_source() {
             )
             .await
             .unwrap();
+        let (rw, rh, worker_region) = (region.width, region.height, region.rgba().to_vec());
         let (frw, frh, fallback_region) =
             render_page_region_to_rgba(handle.document(), 0, 1.0, 0, 50.0, 50.0, 50.0, 50.0)
                 .unwrap();

@@ -1,7 +1,7 @@
-// Ribbon button DOM id → registry command id, for callers that still name
-// the old ribbon buttons (the MCP bridge's 'ribbon:#<id>' commands) while the
-// ribbon is not shown. Tested against the ribbon tab sources
-// (commands/menus.test.mjs), so it cannot drift.
+// Button DOM id of the former ribbon → registry command id, for callers that
+// still name the old ribbon buttons (the MCP bridge's 'ribbon:#<id>'
+// commands). The ribbon itself was removed; commands/menus.test.mjs checks
+// that every target is a registered command in a menu.
 
 export const RIBBON_BUTTON_COMMANDS = Object.freeze({
   // ArrangeTab.jsx

@@ -27,8 +27,8 @@ test('en and nl have the same Set Scale keys, none empty, nl translated', () => 
 
 test('every Set Scale key used in the code exists', () => {
   const en = Object.fromEntries(flat(block('en')));
-  const sources = ['../solid/components/dialogs/SetScaleDialog.jsx', '../solid/components/dialogs/ScaleEquationEditor.jsx',
-    '../solid/components/ribbon/MeasureTab.jsx', '../solid/components/ribbon/DrawingTab.jsx'].map(read).join('\n');
+  const sources = ['../solid/components/dialogs/SetScaleDialog.jsx', '../solid/components/dialogs/ScaleEquationEditor.jsx']
+    .map(read).join('\n');
   const used = new Set([...sources.matchAll(/'setScale\.([\w.]+)'/gu)].map(m => m[1]));
   // Error keys come from set-scale-form.js.
   for (const key of ['invalidEquation', 'range.empty', 'range.syntax', 'range.outOfRange']) used.add(key);

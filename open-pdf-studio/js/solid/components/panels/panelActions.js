@@ -32,6 +32,9 @@ function refreshContent(panelId) {
     .catch(() => {});
 }
 
+/** Is this panel on screen (active in its host, the host open)? For add-on commands' checked state. */
+export { panelShown } from '../../stores/leftPanelStore.js';
+
 /** Bring a panel up wherever it lives (a hidden one returns to its default host). */
 export function activatePanel(panelId) {
   showPanel(panelId);

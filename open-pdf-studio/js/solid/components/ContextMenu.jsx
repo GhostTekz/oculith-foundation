@@ -13,7 +13,7 @@ import {
   bookmarkIcon, stickyNoteIcon, imageIcon, handToolIcon,
   snapshotIcon, selectTextPageIcon, pageCutIcon, pageCopyIcon,
   pagePasteIcon, pageDeleteIcon, selectAllIcon, deselectIcon, goToIcon,
-  printIcon, findIcon, searchIcon,
+  printIcon, findIcon,
 } from '../data/contextMenuIcons.js';
 import { lucide } from '../data/lucideIcons.js';
 import { getCommand, isCommandEnabled, runCommand, commandLabel } from '../commands/index.js';
@@ -508,7 +508,7 @@ function AnnotationMenuContent() {
     if (v.kind === 'systeem') {
       return (
         <>
-          <MenuItem label="Sparing toevoegen" onClick={sparingToevoegen} />
+          <MenuItem label={t('systemGrid.addOpening')} onClick={sparingToevoegen} />
           <Separator />
         </>
       );
@@ -540,16 +540,16 @@ function AnnotationMenuContent() {
       return (
         <>
           {assortiment.map((pt) => (
-            <MenuItem label={`Paneel: ${pt.naam}`} checkbox checked={huidig === pt.id}
+            <MenuItem label={t('systemGrid.panelItem', { name: pt.naam })} checkbox checked={huidig === pt.id}
               onClick={() => zet(pt.id)} />
           ))}
           <MenuItem label={huidig === 'component'
-            ? `Ander component… (nu: ${rawOv?.naam || rawOv?.symbolId})`
-            : 'Ander component…'}
+            ? t('systemGrid.otherComponentCurrent', { name: rawOv?.naam || rawOv?.symbolId })
+            : t('systemGrid.otherComponent')}
             checkbox checked={huidig === 'component'}
             onClick={anderComponent} />
           <Show when={sparingToevoegen}>
-            <MenuItem label="Sparing toevoegen" onClick={sparingToevoegen} />
+            <MenuItem label={t('systemGrid.addOpening')} onClick={sparingToevoegen} />
           </Show>
           <Separator />
         </>
@@ -1154,10 +1154,8 @@ function PageMenuContent() {
 
       <Separator />
 
-      <MenuItem icon={bookmarkIcon} label={t('page.addBookmark')} shortcut="Ctrl+Shift+B" onClick={() => {
-        import('../../ui/panels/bookmarks.js').then(m => {
-          if (m.addBookmarkAtCurrentPage) m.addBookmarkAtCurrentPage();
-        });
+      <MenuItem icon={bookmarkIcon} label={t('page.addBookmark')} onClick={() => {
+        import('../../ui/panels/bookmarks.js').then(m => m.addBookmark());
       }} />
       <MenuItem icon={stickyNoteIcon} label={t('page.addStickyNote')} onClick={() => setTool('comment')} />
       <MenuItem icon={imageIcon} label={t('page.addImage')} onClick={() => {
@@ -1200,11 +1198,8 @@ function PageMenuContent() {
         const findInput = document.getElementById('find-input');
         if (findBar) { findBar.style.display = 'flex'; if (findInput) findInput.focus(); }
       }} />
-      <MenuItem icon={searchIcon} label={t('page.searchMenu')} shortcut="Ctrl+Shift+F" onClick={() => {
-        const findBar = document.getElementById('find-bar');
-        const findInput = document.getElementById('find-input');
-        if (findBar) { findBar.style.display = 'flex'; if (findInput) findInput.focus(); }
-      }} />
+      {/* Search: the Search panel (Alt+1), across the document; Find is the find bar. */}
+      <CommandMenuItem id="window.panel.search" />
 
       <Separator />
 

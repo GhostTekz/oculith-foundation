@@ -28,42 +28,9 @@ function tauriInvoke() {
   return window.__TAURI__?.core?.invoke ?? null;
 }
 
-// ─── Console ring buffer for MCP/AI observability ────────────────────────
-// Captures the most recent N console messages whose text matches the
-// observer regex. The MCP tool `app_get_recent_console` reads this and
-// returns the slice the AI client wants. Default-on so an AI agent can
-// always look back at what happened during the last few seconds without
-// any setup step on the user side.
-const CONSOLE_RING = [];
-const CONSOLE_RING_MAX = 500;
-// Expose the ring on window so in-app UI (e.g. MiniLog) can read recent
-// engine events without going through the MCP/IPC round-trip. The MCP
-// tool handler still reads the same array — single source of truth.
-try { window.__consoleRing = CONSOLE_RING; } catch { /* noop */ }
-// Patterns the render pipeline uses: [render], [tile], [wheel-zoom],
-// [PERF], [pre-render], STALE markers. Adjust if more subsystems need
-// capture later.
-const CONSOLE_CAPTURE_RE = /\[render\]|\[tile\]|\[wheel-zoom\]|\[PERF\]|\[pre-render\]|\[thumb\]|\[bitmap-orch\]|\[tile-orch\]|\[prog\]|\[prog-guard\]|\[pbc\]|\[bo\]|STALE|JANK|\[takeoff\]|\[engine\]/;
-
-function _captureConsole(level, args) {
-  try {
-    const s = args.map(a => typeof a === 'string' ? a : (a && a.message) ? a.message : String(a)).join(' ');
-    if (!CONSOLE_CAPTURE_RE.test(s)) return;
-    CONSOLE_RING.push({ t: Date.now(), level, text: s });
-    if (CONSOLE_RING.length > CONSOLE_RING_MAX) CONSOLE_RING.shift();
-  } catch {
-    // Swallow — observability MUST NOT crash the app.
-  }
-}
-
-(function patchConsole() {
-  const ORIG_LOG = console.log;
-  const ORIG_WARN = console.warn;
-  const ORIG_ERROR = console.error;
-  console.log = function (...args) { _captureConsole('log', args); ORIG_LOG.apply(console, args); };
-  console.warn = function (...args) { _captureConsole('warn', args); ORIG_WARN.apply(console, args); };
-  console.error = function (...args) { _captureConsole('error', args); ORIG_ERROR.apply(console, args); };
-})();
+// The console ring buffer (app_get_recent_console) lives in console-ring.js,
+// which main.js loads at startup so capture starts before this module.
+import { CONSOLE_RING, CONSOLE_RING_MAX } from './core/console-ring.js';
 
 /** Send the response payload back to the awaiting Rust task. */
 async function respond(requestId, result) {
@@ -2492,15 +2459,9 @@ async function handleStructuralLayout(params) {
 
 // ─── Generic UI drivers: click / inspect any element by CSS selector ─────
 //
-// The ribbon renders only the ACTIVE tab's content (SolidJS <Match>), so a
-// button that lives on an inactive tab simply does not exist in the DOM.
-// `_findElementAcrossTabs` therefore walks the ribbon tab strip (clicking
-// each tab button and giving Solid ~150 ms to mount the content) until the
-// selector matches. Contextual tabs (Opmaak/Schikken/Afbeelding) only have
-// a tab button while a matching selection exists — otherwise their content
-// is unreachable and the element is reported as not found.
-
-const RIBBON_TAB_ORDER = ['home', 'view', 'drawing', 'comment', 'organize', 'arrange', 'format', 'image', 'help'];
+// Every control is in the DOM while it is shown (the old ribbon, which only
+// rendered its active tab, is gone), so a selector is looked up as is.
+// `activatedTab` stays in the replies (always null) for older callers.
 
 function _isElementDisabled(el) {
   return el.disabled === true ||
@@ -2508,33 +2469,8 @@ function _isElementDisabled(el) {
          el.classList?.contains('disabled') === true;
 }
 
-async function _findElementAcrossTabs(selector, searchTabs = true) {
-  let el = document.querySelector(selector);
-  if (el) return { el, activatedTab: null };
-  if (!searchTabs) return { el: null, activatedTab: null };
-
-  let originalTab = null;
-  try {
-    const store = await import('./solid/stores/ribbonStore.js');
-    originalTab = store.activeTab();
-  } catch { /* store unavailable — still try the tab buttons below */ }
-
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  for (const tab of RIBBON_TAB_ORDER) {
-    if (tab === originalTab) continue;
-    const btn = document.querySelector(`.ribbon-tab[data-tab="${tab}"]`);
-    if (!btn) continue; // contextual tab without matching selection
-    btn.click();
-    await wait(150);
-    el = document.querySelector(selector);
-    if (el) return { el, activatedTab: tab };
-  }
-  // Not found anywhere — restore the original tab so the sweep is side-effect-free.
-  if (originalTab) {
-    const back = document.querySelector(`.ribbon-tab[data-tab="${originalTab}"]`);
-    if (back) { back.click(); await wait(150); }
-  }
-  return { el: null, activatedTab: null };
+async function _findElementAcrossTabs(selector) {
+  return { el: document.querySelector(selector), activatedTab: null };
 }
 
 async function handleClickElement(params) {
@@ -2606,70 +2542,15 @@ async function handleUiState(params) {
 // die niet weet hoe iets heet, vraagt eerst de lijst op.
 //
 // Commando-ids:
-//   ribbon:#<id>          lintknop met een vaste id (stabiel tussen versies)
-//   ribbon:<tab>:<n>      lintknop zonder id, n-de knop op dat tabblad
-//                         (alleen stabiel binnen dezelfde versie)
 //   tool:<naam>           een gereedschap uit het register
 //   cmd:<id>              een opdracht uit het opdrachtenregister
 //                         (js/solid/commands, de menu's): stabiel
-//
-// Het lint staat standaard uit (menubalk, plan-review). Een 'ribbon:#<id>'
-// zonder knop in de DOM loopt dan via dezelfde opdracht
-// (commands/ribbon-buttons.js), zodat bestaande instructies blijven werken.
-
-// Elke lintknop (RibbonButton, ook in een RibbonButtonStack) zit in een
-// RibbonGroup. List en run gebruiken dezelfde selector, zodat een positioneel
-// commando (ribbon:tab:n) altijd naar dezelfde knop wijst.
-const LINT_KNOP_SELECTOR = '.ribbon-group .ribbon-btn';
-
-function _knopLabel(el) {
-  const lbl = el.querySelector('.ribbon-btn-label');
-  return ((lbl && lbl.textContent) || el.getAttribute('title') || el.getAttribute('aria-label') || '').trim();
-}
-
-async function _lintKnoppenPerTab() {
-  let origineel = null;
-  try {
-    const store = await import('./solid/stores/ribbonStore.js');
-    origineel = store.activeTab();
-  } catch { /* geen store — toch proberen */ }
-  const wacht = (ms) => new Promise((r) => setTimeout(r, ms));
-  const uit = [];
-  for (const tab of RIBBON_TAB_ORDER) {
-    const tabKnop = document.querySelector(`.ribbon-tab[data-tab="${tab}"]`);
-    if (!tabKnop) continue; // contextueel tabblad zonder selectie
-    tabKnop.click();
-    await wacht(150);
-    const knoppen = [...document.querySelectorAll(LINT_KNOP_SELECTOR)];
-    const gezien = new Set();
-    let n = 0;
-    for (const el of knoppen) {
-      if (gezien.has(el)) continue;
-      gezien.add(el);
-      const r = el.getBoundingClientRect();
-      if (!r.width && !r.height) continue; // verborgen
-      uit.push({
-        command: el.id ? `ribbon:#${el.id}` : `ribbon:${tab}:${n}`,
-        tab,
-        label: _knopLabel(el),
-        title: el.getAttribute('title') || '',
-        disabled: _isElementDisabled(el),
-        active: el.classList.contains('active'),
-        stableId: !!el.id,
-      });
-      n++;
-    }
-  }
-  if (origineel) {
-    const terug = document.querySelector(`.ribbon-tab[data-tab="${origineel}"]`);
-    if (terug) { terug.click(); await wacht(150); }
-  }
-  return uit;
-}
+//   ribbon:#<id>          de id van een knop van het vroegere lint: loopt via
+//                         dezelfde opdracht (commands/ribbon-buttons.js), zodat
+//                         bestaande instructies blijven werken
 
 async function handleListCommands(params) {
   const filter = typeof params?.filter === 'string' ? params.filter.toLowerCase() : '';
-  const lint = await _lintKnoppenPerTab();
   const registryMod = await import('./tools/tool-registry.js');
   const gereedschap = registryMod.listToolNames().map((naam) => ({
     command: `tool:${naam}`, tab: null, label: naam, title: '', disabled: false, active: false, stableId: true,
@@ -2681,7 +2562,7 @@ async function handleListCommands(params) {
     command: `cmd:${cmd.id}`, tab: cmd.category, label: reg.commandLabel(cmd, t), title: cmd.shortcut || '',
     disabled: !reg.isCommandEnabled(cmd), active: reg.isCommandChecked(cmd) === true, stableId: true,
   }));
-  let alles = [...lint, ...gereedschap, ...opdrachten];
+  let alles = [...gereedschap, ...opdrachten];
   if (filter) {
     alles = alles.filter((c) =>
       (c.command + ' ' + c.label + ' ' + c.title + ' ' + (c.tab || '')).toLowerCase().includes(filter));
@@ -2689,10 +2570,8 @@ async function handleListCommands(params) {
   return {
     ok: true,
     count: alles.length,
-    ribbonCommands: lint.length,
     toolCommands: gereedschap.length,
     registryCommands: opdrachten.length,
-    withoutStableId: lint.filter((c) => !c.stableId).length,
     commands: alles,
   };
 }
@@ -2729,22 +2608,6 @@ async function handleRunCommand(params) {
       }
     }
     return handleClickElement({ selector: `#${CSS.escape(id)}` });
-  }
-
-  const m = command.match(/^ribbon:([a-z]+):(\d+)$/);
-  if (m) {
-    const [, tab, nr] = m;
-    const tabKnop = document.querySelector(`.ribbon-tab[data-tab="${tab}"]`);
-    if (!tabKnop) return { ok: false, error: `tab not available: ${tab}` };
-    tabKnop.click();
-    await new Promise((r) => setTimeout(r, 150));
-    const zichtbaar = [...new Set(document.querySelectorAll(LINT_KNOP_SELECTOR))]
-      .filter((el) => { const r = el.getBoundingClientRect(); return r.width || r.height; });
-    const el = zichtbaar[Number(nr)];
-    if (!el) return { ok: false, error: `no button #${nr} on tab ${tab} — list again, ids without a stable id shift between versions` };
-    if (_isElementDisabled(el)) return { ok: false, found: true, disabled: true, error: 'button is disabled' };
-    el.click();
-    return { ok: true, clicked: true, command, label: _knopLabel(el) };
   }
 
   return { ok: false, error: `unknown command format: ${command}` };

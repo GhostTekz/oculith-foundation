@@ -1,4 +1,4 @@
-import { For } from 'solid-js';
+import { For, lazy } from 'solid-js';
 import { getDialogs } from '../stores/dialogStore.js';
 import { edition } from '../../editions/active.js';
 import DocPropertiesDialog from './DocPropertiesDialog.jsx';
@@ -10,7 +10,6 @@ import FlattenDialog from './dialogs/FlattenDialog.jsx';
 import PagePropertiesDialog from './dialogs/PagePropertiesDialog.jsx';
 import ExtractPagesDialog from './dialogs/ExtractPagesDialog.jsx';
 import MergePdfsDialog from './dialogs/MergePdfsDialog.jsx';
-import PrintDialog from './dialogs/PrintDialog.jsx';
 import PrintQueueDialog from './dialogs/PrintQueueDialog.jsx';
 import PageSetupDialog from './dialogs/PageSetupDialog.jsx';
 import WatermarkDialog from './dialogs/WatermarkDialog.jsx';
@@ -54,8 +53,6 @@ import BatchLinkDialog from './dialogs/BatchLinkDialog.jsx';
 import MultiplyDialog from './dialogs/MultiplyDialog.jsx';
 import TitleBlockDialog from './dialogs/TitleBlockDialog.jsx';
 import CompareDialog from './compare/CompareDialog.jsx';
-import CadExportDialog from './dialogs/CadExportDialog.jsx';
-import CadImportDialog from './dialogs/CadImportDialog.jsx';
 import AnnotationLayerDeleteDialog from './dialogs/AnnotationLayerDeleteDialog.jsx';
 import TextEditOverlay from './TextEditOverlay.jsx';
 import StavenreeksInlineEditor from './StavenreeksInlineEditor.jsx';
@@ -71,11 +68,16 @@ import PrintProgressToast from './PrintProgressToast.jsx';
 import AddonToolApprovals from './AddonToolApprovals.jsx';
 import AddonToolLogDialog from './dialogs/AddonToolLogDialog.jsx';
 import BatchSummaryDialog from './dialogs/BatchSummaryDialog.jsx';
-import BatchOpsDialog from './dialogs/BatchOpsDialog.jsx';
 import LineStyleManagerDialog from './line-styles/LineStyleManagerDialog.jsx';
 import SetBatchLinkDialog from './dialogs/SetBatchLinkDialog.jsx';
 import AssembliesDialog from './dialogs/AssembliesDialog.jsx';
 import CopyToPagesDialog from './dialogs/CopyToPagesDialog.jsx';
+
+// Large, rarely opened dialogs load on first open instead of with the editor.
+const PrintDialog = lazy(() => import('./dialogs/PrintDialog.jsx'));
+const CadExportDialog = lazy(() => import('./dialogs/CadExportDialog.jsx'));
+const CadImportDialog = lazy(() => import('./dialogs/CadImportDialog.jsx'));
+const BatchOpsDialog = lazy(() => import('./dialogs/BatchOpsDialog.jsx'));
 
 const DIALOG_MAP = {
   'doc-properties': DocPropertiesDialog,

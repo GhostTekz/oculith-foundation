@@ -199,6 +199,12 @@
     "mac": "Reveal in Finder",
     "linux": "Open containing folder"
   },
+  "systemGrid": {
+    "addOpening": "Add opening",
+    "panelItem": "Panel: {{name}}",
+    "otherComponent": "Other component…",
+    "otherComponentCurrent": "Other component… (now: {{name}})"
+  },
   "gevelelement": {
     "addMullionHere": "Add mullion here",
     "removeMullion": "Remove nearest mullion",

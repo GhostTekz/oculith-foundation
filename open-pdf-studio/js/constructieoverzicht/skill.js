@@ -31,7 +31,7 @@ export const CONSTRUCTIEOVERZICHT_PROMPT =
   'Onderleggers:\n' +
   '- De plattegrond van een vloer krijgt de ONDERLIGGENDE bouwlaag als onderlegger, want de vloer ligt op die wanden: de 1e verdieping op de begane grond, de 2e verdieping op de 1e verdieping, het dak op de bovenste verdieping. Dat is anders dan bij een bouwkundige tekening.\n' +
   '- Knip met app_snippet_cut in het tabblad van de architect (paginapunten, linksboven = 0,0) en plak met app_snippet_paste in het overzicht. Dat gaat op ware grootte, dus de schaal blijft gelijk (1:100). Neem de hele bouwlaag mee, ook aan- en uitbouwen.\n' +
-  '- Zet het knipsel op halftoon met app_update_annotation {id, props:{opacity:0.2}}: echt licht. Leg het onder de markering: app_select_annotation {id}, dan app_run_command {command:"ribbon:#arr-send-back"}, dan app_clear_selection.\n' +
+  '- Zet het knipsel op halftoon met app_update_annotation {id, props:{opacity:0.2}}: echt licht. Leg het onder de markering: app_select_annotation {id}, dan app_run_command {command:"cmd:arrange.sendToBack"}, dan app_clear_selection.\n' +
   '- Andere uitsnede nodig? Knip en plak opnieuw, verwijder het oude knipsel met app_delete_annotation en verschuif de markering mee.\n' +
   'Dragende wanden en kolommen:\n' +
   '- Teken de dragende wanden van de onderliggende laag als penanten tussen de kozijnen, zonder lateien, GESTIPPELD: app_create_annotation type "box" met fillColor null, borderStyle "dashed", lineWidth 0.8 en color en strokeColor "#000000". De breedte is de wanddikte op schaal: kalkzandsteen 120 mm = 3,4 pt op 1:100.\n' +

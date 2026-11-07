@@ -337,7 +337,7 @@ test('the chip and review strings exist in English and Dutch and the code only u
   const en = JSON.parse(read('../i18n/locales/en/dialogs.json')).scaleReview;
   const nl = JSON.parse(read('../i18n/locales/nl/dialogs.json')).scaleReview;
   assert.deepEqual(flat(nl).sort(), flat(en).sort());
-  const dialog = read('../solid/components/dialogs/ScaleReviewDialog.jsx') + read('../solid/components/ribbon/MeasureTab.jsx');
+  const dialog = read('../solid/components/dialogs/ScaleReviewDialog.jsx');
   for (const m of dialog.matchAll(/'scaleReview\.([\w.]+)'/gu)) assert.ok(flat(en).includes(m[1]), `scaleReview.${m[1]}`);
   for (const lang of ['en', 'nl']) {
     const sb = JSON.parse(read(`../i18n/locales/${lang}/statusbar.json`));

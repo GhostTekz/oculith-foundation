@@ -80,11 +80,11 @@ A profile restores a full workspace: which panels are open and where, their size
 | Profile | Layout | Workflow tabs |
 |---|---|---|
 | Oculith (default) | Tool Chest open on the left, markup and measure toolbars on the right, Markups List at the bottom | All; opens on Markup |
-| Basic | Thumbnails on the left, no side toolbars, bottom panel collapsed | Review, Markup, Measure, Sheets, Output, View |
-| Reviewer | Thumbnails on the left, Properties panel on the right, Markups List at the bottom | Review, Markup, Compare, Sheets, Output, View |
+| Basic | Thumbnails on the left, no side toolbars, bottom panel collapsed | Sheets, Review, Markup, Measure, Output, View |
+| Reviewer | Thumbnails on the left, Properties panel on the right, Markups List at the bottom | Sheets, Review, Markup, Compare, Output, View |
 | Oculith Advanced | Thumbnails on the left, Properties panel on the right, Markups List at the bottom | All; opens on Review |
 | Quantity Takeoff | Measurements on the left, Measure toolbar on the right, Markups List and Quantities at the bottom | All; opens on Takeoff |
-| Document | Thumbnails on the left, bottom panel collapsed | Sheets, Compare, Output, Review, View |
+| Document | Thumbnails on the left, bottom panel collapsed | Sheets, Review, Compare, Output, View (no add-on tabs) |
 
 Panel sizes are remembered per profile.
 
@@ -102,20 +102,22 @@ The workflow toolbar groups the tools by the job at hand. Its top row holds the 
 
 | Tab | Groups |
 |---|---|
+| Sheets | Set (Open, Open Recent, Combine, Import, Go to Sheet), Navigate (Thumbnails, Drawing Set, Bookmarks), Pages, Prepare (Page Labels, Crop, Page Setup, Shift, Deskew, OCR), Links |
 | Review | Select, Comment (Note, Text Box, Callout, Highlight, Cloud, Stamp, Flag), Attach, Find |
 | Markup | Shapes, Freehand, Text, Style (Format Painter, Line Styles, Reuse, Tool Chest), Sketch to Scale |
-| Measure | Scale (Calibrate, Set Scale, Detect Scales, Viewport), Length, Area, Angles, Results |
-| Takeoff | Count, Runs (Conduit, Cable Tray, Polylength, Area), Quantities, Find |
-| Sheets | Navigate (Thumbnails, Drawing Set, Bookmarks, Page Labels), Pages, Page Setup, Links |
-| Compare | Compare Documents and Slip Sheet, Split View and Sync, Layers |
-| Output | Save and Print, Export, Finish (Flatten, Reduce, Redaction, Watermark, Headers & Footers), Batch |
+| Measure | Scale (Calibrate, Set Scale, Detect Scales, Viewport), Length, Area, Angles, Results (Measurements, Quantities, Quantity Schedule) |
+| Takeoff | Count (Count, Parametric Symbol, Visual Search, Tool Chest), Runs (Conduit, Cable Tray, Polylength), Areas (Spaces, Area, Dynamic Fill), Results |
+| Compare | Compare (Compare Documents, Slip Sheet, Layers), Split View and Sync |
+| Output | File (Save, Save As, Print, Print Set), Export (incl. Markup Summary), Finish (Flatten, Reduce, Watermark, Headers & Footers), Redact |
 | View | Zoom, Page Layout, Display (Dark Mode, Dimmer, Thin Lines, Reader Mode), Grid and Snap, Window |
+
+The tabs follow the job from left to right: open the set, review and mark it up, measure and count, then compare revisions and send the result out.
 
 While markups are selected, a **Selection** tab appears in the accent colour with Edit, Style, Arrange and Group; while an image is selected, an **Image** tab. Their properties stay in the properties bar below. When the row is too narrow, the last groups show their icons only, and then the last tools move into **More**. Hover a tool for its name and shortcut. The fold button at the right hides the tool row and keeps the tabs.
 
 **Quick Access**, at the right end of the tab row, holds the commands you pin: right-click any tool on the workflow toolbar or the vertical toolbars and choose **Add to Quick Access**, or press Alt+Enter in the command palette. Right-click a Quick Access button to remove it or move it; the ▾ menu lists them and resets the default set (Open, Save, Undo, Redo, Print). Next to it, the search box opens the command palette.
 
-An add-on can add its own workflow tab (and a matching submenu in **Tools**).
+An add-on can add its own workflow tab (and a matching submenu in **Tools**); it sits after Takeoff. The Document profile leaves add-on tabs out.
 
 ### Panel hosts
 

@@ -41,8 +41,6 @@ export interface Preferences {
   enableImageAlignSnap: boolean;
   keepToolActive: boolean;
   lineContinue: boolean;
-  ribbonCollapsed: boolean;
-  legacyRibbon: boolean;
   workspaceProfile: 'review' | 'markup' | 'takeoff';
   workspacePanelSizes: Partial<Record<'review' | 'markup' | 'takeoff', Partial<Record<'left' | 'properties' | 'markups', number>>>>;
   /** WorkspaceLayout (js/solid/stores/workspaceLayout.js); null until first saved. */

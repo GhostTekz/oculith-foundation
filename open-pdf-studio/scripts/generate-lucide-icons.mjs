@@ -68,6 +68,8 @@ export const ICONS = [
   // workflow toolbar, Quick Access and the command palette
   'pin', 'pin-off', 'ruler', 'list-checks', 'cable', 'message-square-text',
   'panel-top-close', 'panel-top-open',
+  // edition and add-on workflow tools (distinct icons beside the built-in ones)
+  'gauge', 'file-diff', 'land-plot', 'server', 'shapes', 'route', 'sparkles',
 ];
 
 const ICON_ATTRS = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';

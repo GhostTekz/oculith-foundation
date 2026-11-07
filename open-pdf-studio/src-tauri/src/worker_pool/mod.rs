@@ -64,12 +64,6 @@ impl WorkerBitmap {
         self.framed
     }
 
-    /// (width, height, RGBA) for callers that need bare pixels.
-    pub fn into_parts(self) -> (u32, u32, Vec<u8>) {
-        let mut rgba = self.framed;
-        rgba.drain(..8);
-        (self.width, self.height, rgba)
-    }
 }
 
 struct QueueDepthGuard(Arc<WorkerState>);
@@ -298,7 +292,8 @@ impl WorkerPool {
         Ok(())
     }
 
-    /// Render via the pool. Returns (width, height, rgba_bytes).
+    /// Render via the pool. The pixels are [`WorkerBitmap::rgba`], a view
+    /// into the framed buffer (no header strip, no memmove).
     pub async fn render(
         &self,
         path: &str,
@@ -306,9 +301,8 @@ impl WorkerPool {
         scale: f32,
         rotation: i32,
         visibility: &[LayerVisibility],
-    ) -> Result<(u32, u32, Vec<u8>)> {
+    ) -> Result<WorkerBitmap> {
         self.render_with_annotations(path, page_index, scale, rotation, visibility, None).await
-            .map(WorkerBitmap::into_parts)
     }
 
     /// As [`Self::render`], with the markups named in `annot_appearance`
@@ -512,12 +506,12 @@ impl WorkerPool {
         region_h_pt: f32,
         spread: bool,
         visibility: &[LayerVisibility],
-    ) -> Result<(u32, u32, Vec<u8>)> {
+    ) -> Result<WorkerBitmap> {
         self.render_region_with_annotations(
             path, page_index, scale, rotation,
             region_x_pt, region_y_pt, region_w_pt, region_h_pt,
             spread, visibility, None, None,
-        ).await.map(WorkerBitmap::into_parts)
+        ).await
     }
 
     /// As [`Self::render_region`], with the /AP pass of
