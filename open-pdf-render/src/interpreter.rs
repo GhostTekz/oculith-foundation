@@ -289,7 +289,7 @@ impl Interpreter {
         // hits the cache for every /Do — making decode wall-time roughly
         // (slowest_image_ms) instead of (sum_of_all_decode_ms).
         //
-        // Targets pages like Barn Relocation p3/p5 (14 unique large
+        // Targets pages like the raster-heavy sample set's p3/p5 (14 unique large
         // FlateDecode + PNG-predictor images per page) where iter-24's
         // dedup cache was a no-op (each image referenced exactly once).
         Self::predecode_images_parallel(content_bytes, doc, resources, max_image_pixels, &mut img_cache);
@@ -842,7 +842,7 @@ impl Interpreter {
         // no SMask premul, no allocation.
         //
         // Speed iter-25: Image XObjects referenced from this page (incl.
-        // unique ones — Barn Relocation has 14 unique images per page) are
+        // unique ones — the raster-heavy sample set has 14 unique images per page) are
         // pre-decoded in parallel via rayon BEFORE this serial walk runs,
         // so the cache is already warm here for most images.
         if let Some(cached) = img_cache.get(&xobj_id) {
@@ -1511,7 +1511,7 @@ impl Interpreter {
         // identity-mapping fast path (no downsample, no SMask) writes
         // directly into a pre-sized `out` buffer using chunks_exact_mut(4)
         // so the inner loop has zero bounds checks. This was the dominant
-        // cost on Barn Relocation pages (14 unique CMYK images per page).
+        // cost on the raster-heavy sample set pages (14 unique CMYK images per page).
         let mut rgba: Vec<u8> = vec![0u8; (out_w as usize) * (out_h as usize) * 4];
         let downsample = step_x != 1.0 || step_y != 1.0;
 

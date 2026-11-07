@@ -277,7 +277,7 @@ function beeldRotatie(pageNum) {
 // result that already landed).
 //
 // User-visible symptom this fixes: rapid mouse-wheel zoom on raster PDFs
-// (BARN) showed the page "springing back and forth" between intermediate
+// (a large sample sheet) showed the page "springing back and forth" between intermediate
 // zoom levels — earlier-started but slower-completing renders were stomping
 // over the freshest user-requested zoom level.
 let _foregroundRenderGen = 0;
@@ -413,7 +413,7 @@ async function _renderPageImpl(pageNum) {
     : viewport;
 
   // High-zoom safety cap. The browser canvas has a max ~16384 px per axis
-  // (Chromium); rendering BARN (1632×1056 pt page) at scale=10 would produce
+  // (Chromium); rendering a large sheet (1632×1056 pt page) at scale=10 would produce
   // a 16320×10560 buffer = exceeds limit, allocation fails, canvas turns
   // black, user sees "versringen". Cap the Rust render at a safe max-axis
   // and let CSS-stretch the bitmap to the user-requested CSS viewport size
@@ -1589,7 +1589,7 @@ async function renderContinuousPage(pageNum) {
   // Webversie/documenten zonder pad: PDF.js tekent. Zie render-route.js.
   const _pdfjsPad = pdfjsFallbackNodig({ inTauri: isTauri(), hasFilePath: !!doc.filePath });
 
-  // ─── PERF FIX #1 + #2 + #3 (BARN measurement scaffold) ───────────────
+  // ─── PERF FIX #1 + #2 + #3 (large-sheet measurement scaffold) ───────────────
   //  #1: (Superseded) the render scale includes the dpr again, bounded
   //      by CONT_MAX_AXIS_PX, so the Rust pixel work per page has the
   //      same ceiling as before (see doorlopendeRenderSchaal).
@@ -1607,7 +1607,7 @@ async function renderContinuousPage(pageNum) {
   // Instrumentation: every console.time/timeEnd is scoped to one render
   // call so DevTools shows you cache-lookup / invoke-render / canvas
   // putImageData / cache-store sub-timings per page. Compare totals
-  // before vs after on the BARN Relocation PDF.
+  // before vs after on the raster-heavy sample PDF.
   // Bitmap-axis cap: a full-page render at high zoom on a large sheet would
   // blow past canvas limits and memory (A0 at 400% ≈ 19k px wide, 1.5 GB of
   // RGBA). Render at the largest scale that fits the cap and let CSS stretch

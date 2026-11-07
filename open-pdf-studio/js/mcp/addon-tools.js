@@ -39,6 +39,7 @@ const tools = new Map();           // full name -> entry
 const allowedThisSession = new Set();
 const pending = [];                // approval cards waiting for the user
 const log = [];
+const failures = new Map();        // add-on id -> why its tools are missing
 const listeners = new Set();
 let nextId = 1;
 let writeQueue = Promise.resolve();
@@ -79,7 +80,7 @@ export function _setDeps(over) { Object.assign(deps, over); }
 
 /** For tests: forget every registration, approval and log entry. */
 export function _resetForTest() {
-  tools.clear(); allowedThisSession.clear(); pending.length = 0; log.length = 0;
+  tools.clear(); allowedThisSession.clear(); pending.length = 0; log.length = 0; failures.clear();
   writeQueue = Promise.resolve(); nextId = 1;
 }
 
@@ -249,6 +250,7 @@ export function registerAddonTools(addonId, list, { apiVersion = ADDON_TOOLS_API
     });
   }
   schedulePush();
+  if (failures.delete(addonId)) notify();
   const names = checked.map((c) => c.full);
   return { names, unregister: () => unregisterAddonTools(addonId) };
 }
@@ -259,6 +261,21 @@ export function unregisterAddonTools(addonId, { push = true } = {}) {
   for (const name of [...allowedThisSession]) if (!tools.has(name)) allowedThisSession.delete(name);
   if (removed && push) schedulePush();
   return removed;
+}
+
+/**
+ * An add-on whose tools could not be registered says why, so the AI link
+ * settings can show it instead of just listing fewer tools. A later
+ * successful registration clears it.
+ */
+export function reportAddonToolsFailure(addonId, message) {
+  failures.set(String(addonId), String(message || 'unknown error'));
+  notify();
+}
+
+/** `[{ addonId, message }]`: the add-ons whose tools are missing. */
+export function addonToolsFailures() {
+  return [...failures].map(([addonId, message]) => ({ addonId, message }));
 }
 
 /** The descriptors the MCP server lists (no handlers). */

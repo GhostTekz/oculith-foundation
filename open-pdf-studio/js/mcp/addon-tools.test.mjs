@@ -84,6 +84,17 @@ test('registration refuses bad namespaces, names, duplicates, collisions and ver
   assert.deepEqual(at.listAddonTools().map((t) => t.name), ['addon_acme_count']);
 });
 
+test('a failed registration is reported until the add-on registers its tools', () => {
+  let changes = 0;
+  const stop = at.subscribe(() => { changes++; });
+  at.reportAddonToolsFailure('demo', 'the tools could not load');
+  assert.deepEqual(at.addonToolsFailures(), [{ addonId: 'demo', message: 'the tools could not load' }]);
+  at.registerAddonTools('demo', [read()]);
+  assert.deepEqual(at.addonToolsFailures(), []);
+  assert.equal(changes, 2);
+  stop();
+});
+
 test('schemas must stay inside the subset the editor enforces', () => {
   assert.deepEqual(at.validateSchema({ type: 'object', properties: { a: { type: 'string', enum: ['x'] } }, required: ['a'] }), []);
   assert.match(at.validateSchema({ type: 'string' }).join(), /type "object"/);

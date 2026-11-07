@@ -51,7 +51,7 @@ impl PixmapCache {
     }
 }
 
-/// Per-doc pixmap-cache capacity (entries, not bytes). Sized to keep BARN's
+/// Per-doc pixmap-cache capacity (entries, not bytes). Sized to keep the raster-heavy sample's
 /// 7 pages × ~3 typical zoom levels = ~21 entries comfortably resident,
 /// with headroom. 40 × ~15 MB ≈ 600 MB upper bound — within the user's
 /// stated 700 MB budget.
@@ -78,9 +78,9 @@ pub struct DocumentHandle {
     /// `ImageCache` (interpreter.rs L240) and `predecode_images_parallel`
     /// re-decodes the same JPEG / FlateDecode + PNG-predictor streams every
     /// time the page is visited (re-scroll, zoom, repaint). For
-    /// raster-heavy PDFs like Barn Relocation (73 unique large image
+    /// raster-heavy PDFs like the raster-heavy sample set (73 unique large image
     /// XObjects shared across 7 pages) this is the dominant cost on the
-    /// "warm scroll" path: the bench harness measured BARN
+    /// "warm scroll" path: the bench harness measured the raster-heavy sample
     /// `scroll_back_revisit` at 7301 ms vs `cold_open_p1` at 797 ms — the
     /// warm pass is 9× slower because the only thing it caches is the
     /// final RGBA pixmap of the WHOLE page, not the constituent images.
@@ -360,7 +360,7 @@ impl DocumentHandle {
             if let Ok(cache) = self.pixmap_cache.lock() {
                 if let Some(cached) = cache.get(&key) {
                     // Cache hit. Clone the Vec once (~10 ms for a 15 MB
-                    // BARN page on modern x86 — still 25-30× faster than
+                    // large sample page on modern x86 — still 25-30× faster than
                     // re-rendering even with the doc-image-cache warm).
                     return Ok(RenderedPage {
                         width: cached.width,
@@ -427,7 +427,7 @@ impl DocumentHandle {
         // (PDF spec §12.5.5). Skipping these makes sticky-note callouts,
         // /FreeText labels, /Square outlines, /Stamp etc invisible — visible
         // as missing yellow boxes on Technische
-        // tekening p1, Barn Relocation, and similar markup-heavy PDFs.
+        // tekening p1, the raster-heavy sample set, and similar markup-heavy PDFs.
         // Reset to the page-level CTM so annotation rects (in PDF user
         // space) project to the correct page pixels regardless of what
         // residual transform the content stream left behind.
@@ -773,7 +773,7 @@ impl DocumentHandle {
     /// prefetch in `loader.js`, which would otherwise call `extract_draw_commands`
     /// (decoding all images on the page) for every page on PDF load. For PDFs
     /// with many or large embedded images that would freeze the app — see the
-    /// Barn Relocation test case (7 pages × 124M total pixels of FlateDecode).
+    /// the raster-heavy sample set test case (7 pages × 124M total pixels of FlateDecode).
     ///
     /// Heuristic for Tile classification:
     /// 1. Content stream uses `sh` (shading) operator, OR

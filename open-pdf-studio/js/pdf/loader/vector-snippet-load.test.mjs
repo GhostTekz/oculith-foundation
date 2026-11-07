@@ -82,14 +82,14 @@ test('een oud bronlabel als literal string blijft leesbaar', async () => {
 
 test('de knipsel-velden komen terug van de stempel', async () => {
   leegmaken();
-  const { bytes, sleutel } = await documentMetKnipsel({ label: 'Barn - Elevations.pdf, blad 4' });
+  const { bytes, sleutel } = await documentMetKnipsel({ label: 'Plan - Elevations.pdf, blad 4' });
   const heropend = await PDFDocument.load(bytes);
   const annots = heropend.getPage(0).node.lookup(PDFName.of('Annots'));
   const annot = heropend.context.lookup(annots.get(0));
   const velden = await leesKnipselVelden(annot, heropend.context);
   assert.equal(velden.snippetKey, sleutel);
   assert.deepEqual(velden.srcBox, VAK);
-  assert.equal(velden.srcLabel, 'Barn - Elevations.pdf, blad 4');
+  assert.equal(velden.srcLabel, 'Plan - Elevations.pdf, blad 4');
 });
 
 test('een gewone stempel zonder knipsel-sleutel levert niets op', async () => {

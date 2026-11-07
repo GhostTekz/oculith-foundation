@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from 'solid-js';
+import { createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { mcpStatus } from '../../../core/mcp-koppeling.js';
 import { isTauri } from '../../../core/platform.js';
@@ -6,6 +6,7 @@ import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../../../core/sessie-herstel.
 import { knopUitInBrowser, meldingTekst } from '../../../core/webfuncties.js';
 import { LANGUAGES } from '../../../i18n/config.js';
 import { openDialog } from '../../stores/dialogStore.js';
+import { addonToolsFailures, subscribe as onAddonToolsChange } from '../../../mcp/addon-tools.js';
 import PrefSelect from './PrefSelect.jsx';
 import LanguageSelect from './LanguageSelect.jsx';
 
@@ -16,6 +17,9 @@ export default function GeneralTab(props) {
   const { t: tDialogs } = useTranslation('dialogs');
   const mcpUit = () => knopUitInBrowser('prefs-mcp', isTauri());
   const p = props.prefs;
+  // Add-ons whose AI tools could not be registered (mcp/addon-tools.js).
+  const [toolFailures, setToolFailures] = createSignal(addonToolsFailures());
+  onCleanup(onAddonToolsChange(() => setToolFailures(addonToolsFailures())));
 
   // Status van de AI-koppeling zoals die nu draait (niet zoals ingevuld).
   const [status, setStatus] = createSignal(null);
@@ -105,6 +109,11 @@ export default function GeneralTab(props) {
           <button type="button" class="pref-btn pref-btn-secondary" id="prefs-mcp-tool-log"
             onClick={() => openDialog('addon-tool-log')}>{tDialogs('addonTools.openLog')}</button>
         </div>
+        <For each={toolFailures()}>{(f) => (
+          <div class="pref-row" role="status" style={{ color: 'var(--ox-warn-ink)', 'font-size': '11px' }}>
+            {tDialogs('addonTools.failed', { id: f.addonId, message: f.message })}
+          </div>
+        )}</For>
       </fieldset>
       <fieldset class="pref-fieldset">
         <legend>{t('general.author')}</legend>

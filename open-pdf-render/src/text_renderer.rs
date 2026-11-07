@@ -492,7 +492,7 @@ fn build_glyph_path_opt(cmds: &[OutlineCommand]) -> Option<tiny_skia::Path> {
 /// glyphs along the perpendicular advance direction and can WORSEN the
 /// AA pattern. Leave rotated
 /// text unsnapped (iter-7 found this regressed Technische tekening p0
-/// and Barn Relocation p6, both `/Rotate 90` pages).
+/// and the raster-heavy sample set p6, both `/Rotate 90` pages).
 ///
 /// If the CTM is non-invertible (degenerate scale), we fall back to the
 /// unsnapped origin.

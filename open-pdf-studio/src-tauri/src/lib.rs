@@ -3581,7 +3581,7 @@ async fn render_tile_scene_region(
                     // 1 MB aan correct renderende beelddata. In het corpus
                     // haalt verder geen enkel blad het JS-voorfilter
                     // (content >= 6 MB), dus deze verruiming raakt alleen de
-                    // strip-klasse; de BARN-klasse (tientallen MB's JPEG,
+                    // strip-klasse; de klasse van grote scans (tientallen MB's JPEG,
                     // PDFium wint daar in tijd en beeld) blijft er ruim boven
                     // en wordt nog steeds geweigerd.
                     //

@@ -1,5 +1,5 @@
 //! Smoke test for render_page_region_to_rgba. Renders only the top-left
-//! quadrant of BARN page 1 at scale 2.0, verifies dimensions match
+//! quadrant of the large sample sheet's page 1 at scale 2.0, verifies dimensions match
 //! expected and the bitmap is not all-white (i.e. content is present).
 
 use std::path::PathBuf;
@@ -10,7 +10,7 @@ use app_lib::pdfium_renderer::{
 };
 
 #[test]
-fn pdfium_renders_barn_top_left_quadrant() {
+fn pdfium_renders_sample_top_left_quadrant() {
     let pdf_path = match std::env::var("OPEN_PDF_STUDIO_TEST_PDF") {
         Ok(p) => p,
         Err(_) => {
@@ -33,7 +33,7 @@ fn pdfium_renders_barn_top_left_quadrant() {
     let handle = get_or_load_pdfium_doc_with_bytes(&pdf_path, Arc::new(bytes), &cache)
         .expect("load");
 
-    // BARN p1 dims at scale 1.0 = 2448x1584 px (1632x1056 pt). Render only
+    // Sample page 1 dims at scale 1.0 = 2448x1584 px (1632x1056 pt). Render only
     // the top-left 50% x 50% region at scale 2.0 -> expected bitmap
     // ~1632 x 1056 pixels (region_w_pt=816 x scale 2 = 1632).
     let (w, h, rgba) = render_page_region_to_rgba(
