@@ -709,7 +709,10 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 /* A plan-board landing state instead of a generic welcome screen. */
 #placeholder.draw-empty-state {
   align-items: stretch;
-  justify-content: center;
+  /* The card centres itself with auto margins: in a window too short for it
+     the margins go to zero and the card scrolls from its top, where centring
+     the flex content would push its top out of reach. */
+  justify-content: flex-start;
   text-align: left;
   padding: 32px;
   background-color: var(--theme-content-bg);
@@ -720,7 +723,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 }
 .draw-empty-state .draw-empty-inner {
   width: min(100%, 650px);
-  margin: 0 auto;
+  margin: auto;
+  flex-shrink: 0;
+  box-sizing: border-box;
   padding: 28px 32px 30px;
   background: var(--theme-tab-active-bg);
   border: 1px solid var(--theme-border);

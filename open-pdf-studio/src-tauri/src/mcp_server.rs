@@ -688,7 +688,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_set_tool",
-                "description": "Switch the LIVE app's active tool, exactly like clicking the ribbon button. Accepts any registered tool name, e.g. select, hand, line, arrow, draw, box, circle, polyline, spline, arc, filledArea, textbox, callout, comment, stamp, highlight, editText, measureDistance, measureArea, measurePerimeter, measureAngle, scaleRegion, trim, extend. Returns the tool that is actually active afterwards (PDF/A read-only mode can refuse the switch).",
+                "description": "Switch the LIVE app's active tool, exactly like clicking its toolbar button. Accepts any registered tool name, e.g. select, hand, line, arrow, draw, box, circle, polyline, spline, arc, filledArea, textbox, callout, comment, stamp, highlight, editText, measureDistance, measureArea, measurePerimeter, measureAngle, scaleRegion, trim, extend. Returns the tool that is actually active afterwards (PDF/A read-only mode can refuse the switch).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -700,12 +700,12 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_click_element",
-                "description": "Click an arbitrary DOM element in the LIVE app by CSS selector (usually '#button-id'). If the element lives on an inactive ribbon tab, the matching tab is activated first (the ribbon only renders the active tab's content). Returns { ok, found, disabled, clicked, activatedTab }. Disabled elements are reported but NOT clicked. Set searchTabs=false to probe only the current DOM (e.g. for dialogs) without touching the ribbon tabs.",
+                "description": "Click an arbitrary DOM element in the LIVE app by CSS selector (usually '#button-id'). Returns { ok, found, disabled, clicked, activatedTab } (activatedTab is always null). Disabled elements are reported but NOT clicked. To run a feature, prefer app_run_command with a 'cmd:<id>' from app_list_commands.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "selector":   { "type": "string", "description": "CSS selector of the element to click, e.g. '#dr-line'." },
-                        "searchTabs": { "type": "boolean", "default": true, "description": "Walk the ribbon tabs when the selector is not in the current DOM." }
+                        "searchTabs": { "type": "boolean", "default": true, "description": "Ignored (kept for older callers)." }
                     },
                     "required": ["selector"],
                     "additionalProperties": false
@@ -718,7 +718,7 @@ fn handle_tools_list() -> Value {
                     "type": "object",
                     "properties": {
                         "selector":   { "type": "string", "description": "CSS selector of the element to inspect." },
-                        "searchTabs": { "type": "boolean", "default": true, "description": "Walk the ribbon tabs when the selector is not in the current DOM." }
+                        "searchTabs": { "type": "boolean", "default": true, "description": "Ignored (kept for older callers)." }
                     },
                     "required": ["selector"],
                     "additionalProperties": false
@@ -1104,7 +1104,7 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_list_commands",
-                "description": "List EVERY function the app exposes: each ribbon button on every tab (label, tab, disabled/active state) plus every drawing tool. Use this to discover how a feature is called before running it with app_run_command. Command ids: 'ribbon:#<id>' (stable), 'ribbon:<tab>:<n>' (button without an id, only stable within one version), 'tool:<name>'. Optional `filter` narrows by text (matches id, label, title or tab).",
+                "description": "List EVERY function the app exposes: every registry command (menus, workflow toolbar, palette; label, category, shortcut, disabled/active state) plus every drawing tool. Use this to discover how a feature is called before running it with app_run_command. Command ids: 'cmd:<id>' (stable), 'tool:<name>'; the former ribbon ids 'ribbon:#<id>' still run their command. Optional `filter` narrows by text (matches id, label, title or tab).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1115,11 +1115,11 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_run_command",
-                "description": "Run any command returned by app_list_commands: clicks the ribbon button (switching to its tab first) or activates the tool. Disabled buttons are refused.",
+                "description": "Run any command returned by app_list_commands: runs the registry command or activates the tool. Disabled commands are refused.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "command": { "type": "string", "description": "Command id from app_list_commands, e.g. 'ribbon:#btn-vector-snippet' or 'tool:measureArea'." }
+                        "command": { "type": "string", "description": "Command id from app_list_commands, e.g. 'cmd:edit.vectorSnippet' or 'tool:measureArea'." }
                     },
                     "required": ["command"],
                     "additionalProperties": false

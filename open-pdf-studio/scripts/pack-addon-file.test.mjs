@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
-import { packAddonFile } from './pack-addon-file.mjs';
+import { packAddonFile, verifyEditionPackage } from './pack-addon-file.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const editorVersion = JSON.parse(await readFile(path.join(here, '../package.json'), 'utf8')).version;
@@ -97,4 +97,26 @@ test('add-on file refuses unlisted files, duplicates and existing output', async
     await writeFile(path.join(folder, 'notices', 'extra.txt'), 'not listed');
     await assert.rejects(packAddonFile({ packages: [folder], output: path.join(root, 'extra.ocaddon') }), /unlisted/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('an edition package may carry module files: listed, hashed chunks/<name>.js files', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'pack-addon-file-test-'));
+  try {
+    const folder = await edition(root);
+    const manifestPath = path.join(folder, 'manifest.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    await mkdir(path.join(folder, 'chunks'));
+    const chunk = 'export const panel = 1;';
+    await writeFile(path.join(folder, 'chunks/Panel-a1.js'), chunk);
+    manifest.files['chunks/Panel-a1.js'] = hash(chunk);
+    manifest.modules = ['chunks/Panel-a1.js'];
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    assert.deepEqual((await verifyEditionPackage(folder)).modules, ['chunks/Panel-a1.js']);
+    for (const modules of [['chunks/missing.js'], ['bin/helper'], ['chunks/.hidden.js'], 'chunks/Panel-a1.js']) {
+      await writeFile(manifestPath, JSON.stringify({ ...manifest, modules }));
+      await assert.rejects(verifyEditionPackage(folder), /module file list/, JSON.stringify(modules));
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

@@ -7,6 +7,8 @@
 // The list is the interface: a module the plug-in needs must be added here
 // on purpose (the plug-in build refuses any other import of editor code).
 
+import { linkedModule } from './module-link.js';
+
 export const HOST_API_VERSION = 1;
 
 // Shared runtime packages: one copy, the editor's, for editor and plug-in.
@@ -107,10 +109,11 @@ export function capability(id) { return capabilities.get(id) || null; }
 export function provides(id) { return Object.hasOwn(loaders, id); }
 
 /**
- * Load interface modules: in order, so their own start-up runs as the editor
- * expects (their files are already preloaded with main.js, index.html), or
- * all at once with `parallel` for modules whose start-up does not depend on
- * each other (the shared packages of EARLY).
+ * Load interface modules: one after another in the given order, or all at
+ * once with `parallel` (start-up uses this for EARLY and for a plug-in's
+ * modules). Every module imports what its own start-up needs, so the
+ * editor's module graph, not this list, orders their evaluation; their
+ * files are already preloaded with main.js (index.html).
  */
 export async function loadHostModules(ids, { parallel = false } = {}) {
   const missing = ids.filter((id) => !loaded.has(id));
@@ -155,5 +158,7 @@ export function hostModule(id) {
 export function installHost() {
   globalThis.__ocudrawHost = Object.freeze({
     apiVersion: HOST_API_VERSION, module: hostModule, provides, publishCapability, capability,
+    // A split plug-in loaded from its text reaches its own module files here.
+    linkedModule,
   });
 }

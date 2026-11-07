@@ -555,11 +555,17 @@ fn get_username() -> String {
 /// Optional editor add-on. The command shape is kept for existing clients.
 /// A release serves verified script bytes as an asset; development sends the
 /// script over IPC because its pages come from the development server.
+///
+/// An edition plug-in may be split into module files (`modules`, under
+/// `chunks/`) that plugin.js imports on demand. A release serves them beside
+/// plugin.js; the program-text form carries their text in `modules`.
 #[derive(serde::Serialize)]
 struct EditionPlugin {
     url: Option<String>,
     js: Option<String>,
     css: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    modules: Option<HashMap<String, String>>,
 }
 
 #[derive(serde::Serialize)]
@@ -569,6 +575,8 @@ struct EditionPluginEntry {
     url: Option<String>,
     js: Option<String>,
     css: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    modules: Option<HashMap<String, String>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -584,6 +592,9 @@ struct AddonManifest {
     files: HashMap<String, String>,
     helper: Option<String>,
     sidecars: Option<Vec<String>>,
+    /// Edition packages: the further module files plugin.js imports (each
+    /// also listed and hashed in `files`).
+    modules: Option<Vec<String>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -630,6 +641,9 @@ struct SelectedAddon {
     files: Option<HashMap<String, String>>,
     /// The verified package directory, when the add-on is a full package.
     root: Option<std::path::PathBuf>,
+    /// The plug-in's further module files and their verified bytes, served
+    /// under /edition/ beside plugin.js.
+    modules: Vec<(String, Vec<u8>)>,
 }
 
 /// Selection is fixed for the process lifetime. An add-on update takes effect
@@ -637,6 +651,64 @@ struct SelectedAddon {
 static SELECTED_ADDON: std::sync::OnceLock<Option<SelectedAddon>> = std::sync::OnceLock::new();
 static VERIFIED_PACKAGES: std::sync::OnceLock<Vec<VerifiedPackage>> = std::sync::OnceLock::new();
 const EDITION_URL_PREFIX: &str = "/edition/";
+/// Where an edition plug-in's further module files live in its directory.
+const EDITION_MODULE_DIR: &str = "chunks/";
+const MAX_EDITION_MODULES: usize = 48;
+const MAX_EDITION_MODULE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// A module file name: `chunks/<name>.js`, one plain file name.
+fn valid_edition_module_name(name: &str) -> bool {
+    name.strip_prefix(EDITION_MODULE_DIR).and_then(|rest| rest.strip_suffix(".js"))
+        .is_some_and(|stem| !stem.is_empty() && stem.len() <= 128 && !stem.starts_with('.')
+            && stem.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_')))
+}
+
+/// Read the listed module files, each checked against its manifest hash.
+/// The bytes kept are the bytes checked, so what is served is what was verified.
+fn verified_edition_modules(root: &std::path::Path, names: &[String], files: &HashMap<String, String>) -> Option<Vec<(String, Vec<u8>)>> {
+    if names.len() > MAX_EDITION_MODULES { return None; }
+    let mut modules: Vec<(String, Vec<u8>)> = Vec::with_capacity(names.len());
+    let mut total = 0u64;
+    for name in names {
+        if !valid_edition_module_name(name) || modules.iter().any(|(seen, _)| seen == name) { return None; }
+        let bytes = read_bounded_addon_file(&addon_file(root, name)?, MAX_EDITION_MODULE_BYTES)?;
+        if bytes.is_empty() || !sha256_bytes_match(&bytes, files.get(name)?) { return None; }
+        std::str::from_utf8(&bytes).ok()?;
+        total += bytes.len() as u64;
+        if total > MAX_EDITION_MODULE_BYTES { return None; }
+        modules.push((name.clone(), bytes));
+    }
+    Some(modules)
+}
+
+/// The module files beside an unpackaged (bundled or development) plug-in:
+/// every `chunks/*.js` file, without links.
+fn bundled_edition_modules(root: &std::path::Path) -> Option<Vec<(String, Vec<u8>)>> {
+    let dir = root.join(EDITION_MODULE_DIR.trim_end_matches('/'));
+    let Ok(meta) = fs::symlink_metadata(&dir) else { return Some(Vec::new()); };
+    if !meta.is_dir() { return None; }
+    let mut names = Vec::new();
+    for entry in fs::read_dir(&dir).ok()? {
+        let entry = entry.ok()?;
+        let name = format!("{EDITION_MODULE_DIR}{}", entry.file_name().to_str()?);
+        if !valid_edition_module_name(&name) { continue; }
+        names.push(name);
+    }
+    names.sort();
+    if names.len() > MAX_EDITION_MODULES { return None; }
+    let mut modules = Vec::with_capacity(names.len());
+    for name in names {
+        let bytes = read_bounded_addon_file(&addon_file(root, &name)?, MAX_EDITION_MODULE_BYTES)?;
+        std::str::from_utf8(&bytes).ok()?;
+        modules.push((name, bytes));
+    }
+    Some(modules)
+}
+
+fn module_texts(modules: &[(String, Vec<u8>)]) -> Option<HashMap<String, String>> {
+    if modules.is_empty() { return None; }
+    modules.iter().map(|(name, bytes)| String::from_utf8(bytes.clone()).ok().map(|text| (name.clone(), text))).collect()
+}
 const HOST_API_VERSION: u32 = 1;
 const MAX_ENABLED_PACKAGES: usize = 64;
 
@@ -809,10 +881,11 @@ fn verified_edition_package(root: &std::path::Path, editor_version: &str) -> Opt
         if !sha256_bytes_match(&bytes, manifest.files.get("plugin.css")?) { return None; }
         String::from_utf8(bytes).ok()?
     } else { String::new() };
+    let modules = verified_edition_modules(root, manifest.modules.as_deref().unwrap_or(&[]), &manifest.files)?;
     let helper = if let Some(name) = manifest.helper {
         Some((addon_file(root, &name)?, manifest.files.get(&name)?.clone()))
     } else { None };
-    Some(SelectedAddon { id: manifest.id, script, css, helper, bundled: false, files: Some(manifest.files), root: Some(root.to_path_buf()) })
+    Some(SelectedAddon { id: manifest.id, script, css, helper, bundled: false, files: Some(manifest.files), root: Some(root.to_path_buf()), modules })
 }
 
 fn bundled_addon(app: &tauri::AppHandle) -> Option<SelectedAddon> {
@@ -826,7 +899,8 @@ fn bundled_addon(app: &tauri::AppHandle) -> Option<SelectedAddon> {
     let script = fs::read(root.join("plugin.js")).ok()?;
     if script.is_empty() { return None; }
     let css = fs::read_to_string(root.join("plugin.css")).unwrap_or_default();
-    Some(SelectedAddon { id: "bundled.edition".into(), script, css, helper: None, bundled: true, files: None, root: None })
+    let modules = bundled_edition_modules(&root)?;
+    Some(SelectedAddon { id: "bundled.edition".into(), script, css, helper: None, bundled: true, files: None, root: None, modules })
 }
 
 /// The directory of a full edition package that a distributor ships inside
@@ -870,6 +944,7 @@ fn verified_package(root: &std::path::Path, id: &str, editor_version: &str) -> O
     let manifest: AddonManifest = serde_json::from_slice(&read_bounded_addon_file(&manifest_path, 1024 * 1024)?).ok()?;
     let sidecars = manifest.sidecars.as_deref().unwrap_or(&[]);
     if !matches!(manifest.schema_version, 2 | 3 | 4) || manifest.host_api_version != HOST_API_VERSION
+        || manifest.modules.is_some()
         || manifest.id != id || manifest.editor_version != editor_version
         || !valid_addon_version(&manifest.version)
         || !addon_manifest_target_compatible(&manifest)
@@ -989,9 +1064,11 @@ fn edition_plugin(app: tauri::AppHandle, inline: Option<bool>) -> Option<Edition
     let addon = selected_addon(&app)?;
     if tauri::is_dev() || inline.unwrap_or(false) {
         let js = String::from_utf8(addon.script.clone()).ok()?;
-        return Some(EditionPlugin { url: None, js: Some(js), css: addon.css.clone() });
+        let modules = module_texts(&addon.modules);
+        if modules.is_none() && !addon.modules.is_empty() { return None; }
+        return Some(EditionPlugin { url: None, js: Some(js), css: addon.css.clone(), modules });
     }
-    Some(EditionPlugin { url: Some(format!("{EDITION_URL_PREFIX}plugin.js")), js: None, css: addon.css.clone() })
+    Some(EditionPlugin { url: Some(format!("{EDITION_URL_PREFIX}plugin.js")), js: None, css: addon.css.clone(), modules: None })
 }
 
 #[tauri::command(async)]
@@ -1000,16 +1077,17 @@ fn edition_plugins(app: tauri::AppHandle, inline: Option<bool>) -> Vec<EditionPl
     let mut entries = Vec::new();
     if let Some(selected) = selected_addon(&app) {
         if use_inline {
-            if let Ok(js) = String::from_utf8(selected.script.clone()) {
+            let modules = module_texts(&selected.modules);
+            if let (Ok(js), true) = (String::from_utf8(selected.script.clone()), modules.is_some() || selected.modules.is_empty()) {
                 entries.push(EditionPluginEntry {
                     id: selected.id.clone(), kind: "edition",
-                    url: None, js: Some(js), css: selected.css.clone(),
+                    url: None, js: Some(js), css: selected.css.clone(), modules,
                 });
             }
         } else {
             entries.push(EditionPluginEntry {
                 id: selected.id.clone(), kind: "edition",
-                url: Some(format!("{EDITION_URL_PREFIX}plugin.js")), js: None, css: selected.css.clone(),
+                url: Some(format!("{EDITION_URL_PREFIX}plugin.js")), js: None, css: selected.css.clone(), modules: None,
             });
         }
     }
@@ -1020,7 +1098,7 @@ fn edition_plugins(app: tauri::AppHandle, inline: Option<bool>) -> Vec<EditionPl
         entries.push(EditionPluginEntry {
             id: package.id.clone(), kind: "contribution",
             url: (!use_inline).then(|| format!("{EDITION_URL_PREFIX}packages/{}/plugin.js", package.id)),
-            js, css: package.css.clone(),
+            js, css: package.css.clone(), modules: None,
         });
     }
     entries
@@ -1038,6 +1116,13 @@ impl<R: tauri::Runtime> tauri::Assets<R> for EditionAssets<R> {
         if key.as_ref() == "/edition/plugin.js" {
             if let Some(addon) = SELECTED_ADDON.get().and_then(Option::as_ref) {
                 return Some(std::borrow::Cow::Borrowed(&addon.script));
+            }
+        }
+        if let Some(name) = key.as_ref().strip_prefix(EDITION_URL_PREFIX).filter(|name| name.starts_with(EDITION_MODULE_DIR)) {
+            if let Some(addon) = SELECTED_ADDON.get().and_then(Option::as_ref) {
+                if let Some((_, bytes)) = addon.modules.iter().find(|(listed, _)| listed == name) {
+                    return Some(std::borrow::Cow::Borrowed(bytes));
+                }
             }
         }
         if let Some(id) = key.as_ref().strip_prefix("/edition/packages/").and_then(|path| path.strip_suffix("/plugin.js")) {
@@ -1079,6 +1164,87 @@ mod addon_tests {
             "schemaVersion": 2, "id": id, "version": "1.0.0", "hostApiVersion": HOST_API_VERSION,
             "editorVersion": "2026.68.0", "files": { "plugin.js": sha256_file(&root.join("plugin.js")).unwrap() }
         })).unwrap()).unwrap();
+    }
+
+    fn write_split_edition(root: &std::path::Path, chunks: &[(&str, &[u8])]) -> serde_json::Value {
+        fs::create_dir_all(root.join("chunks")).unwrap();
+        fs::write(root.join("plugin.js"), b"export const start = () => import('./chunks/panel-a1.js');").unwrap();
+        let mut files = serde_json::Map::new();
+        files.insert("plugin.js".into(), sha256_file(&root.join("plugin.js")).unwrap().into());
+        let mut modules = Vec::new();
+        for (name, bytes) in chunks {
+            fs::write(root.join(name), bytes).unwrap();
+            files.insert((*name).into(), sha256_file(&root.join(name)).unwrap().into());
+            modules.push(serde_json::Value::from(*name));
+        }
+        let manifest = serde_json::json!({
+            "schemaVersion": 1, "id": "split.edition", "version": "2026.68.0", "hostApiVersion": HOST_API_VERSION,
+            "editorVersion": "2026.68.0", "files": files, "modules": modules,
+        });
+        fs::write(root.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        manifest
+    }
+
+    #[test]
+    fn edition_package_module_files_are_verified_and_kept_as_checked() {
+        let root = addon_test_dir();
+        let edition = root.join("edition");
+        let mut manifest = write_split_edition(&edition, &[("chunks/panel-a1.js", b"export default 1;"), ("chunks/shared-b2.js", b"export const x = 2;")]);
+        let selected = verified_edition_package(&edition, "2026.68.0").expect("split package");
+        assert_eq!(selected.modules.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(), ["chunks/panel-a1.js", "chunks/shared-b2.js"]);
+        assert_eq!(selected.modules[0].1, b"export default 1;");
+        assert_eq!(module_texts(&selected.modules).unwrap()["chunks/shared-b2.js"], "export const x = 2;");
+
+        // A changed module file fails the package, like a changed plugin.js.
+        fs::write(edition.join("chunks/shared-b2.js"), b"tampered").unwrap();
+        assert!(verified_edition_package(&edition, "2026.68.0").is_none());
+        fs::write(edition.join("chunks/shared-b2.js"), b"export const x = 2;").unwrap();
+        assert!(verified_edition_package(&edition, "2026.68.0").is_some());
+
+        // Every module must be a listed, hashed chunks/<name>.js file.
+        for bad in ["chunks/missing-c3.js", "plugin.js", "chunks/../plugin.js", "chunks/a/b.js", "other/panel.js", "chunks/.hidden.js", "chunks/panel.mjs"] {
+            let mut changed = manifest.clone();
+            changed["modules"].as_array_mut().unwrap().push(bad.into());
+            if bad == "chunks/missing-c3.js" { changed["files"][bad] = "0".repeat(64).into(); }
+            fs::write(edition.join("manifest.json"), serde_json::to_vec(&changed).unwrap()).unwrap();
+            assert!(verified_edition_package(&edition, "2026.68.0").is_none(), "{bad}");
+        }
+        let mut repeated = manifest.clone();
+        repeated["modules"].as_array_mut().unwrap().push("chunks/panel-a1.js".into());
+        fs::write(edition.join("manifest.json"), serde_json::to_vec(&repeated).unwrap()).unwrap();
+        assert!(verified_edition_package(&edition, "2026.68.0").is_none());
+
+        // A single-file package (no modules) still loads.
+        manifest.as_object_mut().unwrap().remove("modules");
+        fs::write(edition.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        assert!(verified_edition_package(&edition, "2026.68.0").unwrap().modules.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unpackaged_plugin_modules_are_the_chunk_files_beside_it() {
+        let root = addon_test_dir();
+        assert!(bundled_edition_modules(&root).unwrap().is_empty());
+        fs::create_dir_all(root.join("chunks")).unwrap();
+        fs::write(root.join("chunks/b-2.js"), b"export const b = 2;").unwrap();
+        fs::write(root.join("chunks/a-1.js"), b"export const a = 1;").unwrap();
+        fs::write(root.join("chunks/notes.txt"), b"ignored").unwrap();
+        let modules = bundled_edition_modules(&root).unwrap();
+        assert_eq!(modules.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>(), ["chunks/a-1.js", "chunks/b-2.js"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn independent_packages_cannot_carry_module_files() {
+        let root = addon_test_dir();
+        let packages = root.join("packages");
+        write_test_package(&packages, "first.addon", b"export default 1;");
+        let package = packages.join("first.addon");
+        let mut manifest: serde_json::Value = serde_json::from_slice(&fs::read(package.join("manifest.json")).unwrap()).unwrap();
+        manifest["modules"] = serde_json::json!([]);
+        fs::write(package.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        assert!(verified_package(&package, "first.addon", "2026.68.0").is_none());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

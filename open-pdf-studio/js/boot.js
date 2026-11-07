@@ -4,6 +4,8 @@ import { EARLY, HOST_API_VERSION, installHost, loadHostModules, provides } from 
 import { finish, rememberIdentity, setEdition, setStatus, showLaunchActions, side, startLaunchScreen } from './launch-screen.js';
 import { edition as foundation } from './editions/community.js';
 import { composeAddons, resolvePluginEntries } from './editions/compose-addons.js';
+import { bootMark, bootMarkFrame } from './core/boot-timeline.js';
+import { linkModules } from './plugin/module-link.js';
 
 // The edition's word under the monolith: the last word of its product name.
 const editionWord = (edition) => edition.launchWord || String(edition.productName || '').split(' ').pop();
@@ -18,8 +20,10 @@ async function findPlugins() {
 
 // A release build serves the plug-in beside the editor's files: the web view
 // fetches and parses it (and caches it like the editor's chunks) while the
-// editor's own modules load; it runs only once the interface is ready. A
-// development build hands over the program text, imported from a Blob.
+// editor's own modules load; it runs only once the interface is ready. Its
+// further module files (`modules`, chunks/*.js) are served beside it and load
+// when the plug-in imports them. A development build hands over the program
+// text, imported from a Blob (a split program is linked by module-link.js).
 function preloadPlugin(found) {
   if (!found.url) return null;
   const link = document.createElement('link');
@@ -31,6 +35,9 @@ function preloadPlugin(found) {
 
 async function importPlugin(found) {
   if (found.url) return import(/* @vite-ignore */ new URL(found.url, location.href).href);
+  if (found.modules && Object.keys(found.modules).length) {
+    return import(/* @vite-ignore */ linkModules(found.js, found.modules));
+  }
   const url = URL.createObjectURL(new Blob([found.js], { type: 'text/javascript' }));
   try { return await import(/* @vite-ignore */ url); } finally { URL.revokeObjectURL(url); }
 }
@@ -110,20 +117,26 @@ async function installEdition(found) {
     render(() => DetachedThumbnailsWindow(), document.getElementById('app-root'));
     return;
   }
+  bootMark('start');
   if (secondaryWindow) document.getElementById('launch-screen')?.remove();
-  else startLaunchScreen();
+  else {
+    startLaunchScreen();
+    bootMarkFrame('launch-screen');
+  }
   const ready = new Promise((resolve) => {
-    window.addEventListener('ocudraw:ready', resolve, { once: true });
+    window.addEventListener('ocudraw:ready', () => { bootMark('ready'); resolve(); }, { once: true });
     setTimeout(resolve, 30000); // never kept behind the screen
   });
   setStatus('Loading');
   let found = await findPlugins();
+  bootMark('add-ons-found');
   let plugin = null;
   let base = foundation;
   if (found.length) {
     try {
       installHost();
       await loadHostModules(EARLY, { parallel: true });
+      bootMark('host-early');
     } catch (error) {
       console.error('[edition] add-on host could not start; starting Foundation.', error);
       found = [];
@@ -133,6 +146,7 @@ async function installEdition(found) {
   if (editionEntry) {
     try {
       ({ plugin, edition: base } = await installEdition(editionEntry));
+      bootMark('edition-installed');
     } catch (error) {
       console.error('[edition] the plug-in could not load; starting without it.', error);
       delete globalThis.__ocudrawEdition;
@@ -189,8 +203,12 @@ async function installEdition(found) {
   setStatus('Starting');
   // The active edition must be composed before a host import evaluates
   // editions/active.js. Full editions and independent add-ons share this order.
+  // The modules load at once: each one imports what its own start-up needs
+  // (the editor's module graph orders their evaluation), and none of them
+  // relies on another host module having run first.
   try {
-    await loadHostModules([...new Set([...(plugin?.requires || []), ...addonModules])]);
+    await loadHostModules([...new Set([...(plugin?.requires || []), ...addonModules])], { parallel: true });
+    bootMark('host-modules');
   } catch (error) {
     // Some host modules import active.js, which selects the edition once.
     // After a failed import, switching editions could leave those modules
@@ -201,7 +219,9 @@ async function installEdition(found) {
   }
   try { await plugin?.start?.(); }
   catch (error) { console.error('[edition] edition start failed; continuing editor startup.', error); }
+  bootMark('edition-started');
   await import('./main.js');
+  bootMark('editor-imported');
   if (secondaryWindow) return;
   await ready;
   if (plugin?.launch) {
@@ -214,5 +234,7 @@ async function installEdition(found) {
       await showLaunchActions(composed.launchActions);
     }
   }
+  bootMark('launch-step-done');
   await finish();
+  bootMark('launch-screen-gone');
 })();

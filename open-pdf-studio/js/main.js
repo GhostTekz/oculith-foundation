@@ -26,6 +26,7 @@ window.addEventListener('unhandledrejection', (e) => {
 // pdf-lib's parse and save pauses, set once for every caller (before any load).
 import './pdf/pdf-lib-tempo.js';
 import { startPerf } from './core/perf.js';
+import { bootMark, bootMarkFrame } from './core/boot-timeline.js';
 import { state } from './core/state.js';
 import { edition } from './editions/active.js';
 import { assertEditionContract } from './editions/contract.js';
@@ -184,6 +185,7 @@ function disableBrowserShortcuts() {
 
 // Initialize application
 async function init() {
+  bootMark('editor-init');
   document.title = edition.productName;
   // The main window's system title; other windows keep their own.
   if (!new URLSearchParams(location.search).get('view')) setWindowTitle(edition.productName);
@@ -236,8 +238,11 @@ async function init() {
 
   // Single render call — mounts the entire UI tree
   // render() is synchronous, so DOM elements exist immediately after
+  bootMark('before-render');
   render(() => App(), document.getElementById('app-root'));
   recordStartupDiagnostic('frontend-rendered');
+  bootMark('rendered');
+  bootMarkFrame('first-frame');
 
   // Restore properties panel visibility from preferences
   initPropertiesPanel();

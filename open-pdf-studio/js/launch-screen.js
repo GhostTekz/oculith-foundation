@@ -31,6 +31,9 @@ export function setStatus(text) {
   if (el) el.textContent = text;
 }
 
+// No room beside the monolith: the card takes the middle (styles/launch-screen.css).
+const NARROW = '(max-width: 760px), (max-height: 600px)';
+
 // The monolith and the side card as one group, centred in the window: the
 // card's middle level with the monolith's middle, a gap between them.
 function placeSide() {
@@ -39,18 +42,22 @@ function placeSide() {
   const card = document.getElementById('lsSide');
   if (!el || !stage || !card) return;
   const s = stage.getBoundingClientRect();
-  const narrow = window.innerWidth <= 760;
-  if (narrow) { el.style.removeProperty('--ls-shift'); card.style.removeProperty('left'); card.style.removeProperty('top'); return; }
+  const narrow = window.matchMedia ? window.matchMedia(NARROW).matches : window.innerWidth <= 760;
   const cardW = card.offsetWidth || Math.min(380, window.innerWidth * 0.34);
   const gap = Math.max(48, window.innerWidth * 0.05);
   const total = s.width + gap + cardW;
+  // The pair wider than the window (the stage is sized by its height): stacked as well.
+  const stacked = !narrow && total > window.innerWidth - 32;
+  el.classList.toggle('ls-side-stacked', stacked);
+  if (narrow || stacked) { el.style.removeProperty('--ls-shift'); card.style.removeProperty('left'); card.style.removeProperty('top'); return; }
   const left = (window.innerWidth - total) / 2;
   const monoCentre = left + s.width / 2;
   // The stage's centre without the shift (it is centred in the window).
   el.style.setProperty('--ls-shift', `${(monoCentre - window.innerWidth / 2).toFixed(1)}px`);
   card.style.left = `${(left + s.width + gap).toFixed(1)}px`;
-  // Level with the monolith's middle, but never past the window's edges.
-  const half = (card.offsetHeight || 420) / 2 + 16;
+  // Level with the monolith's middle, but never past the window's edges
+  // (a card taller than the window is capped and scrolls).
+  const half = Math.min(card.offsetHeight || 420, window.innerHeight - 32) / 2 + 16;
   const middle = Math.min(Math.max(s.top + s.height / 2, half), window.innerHeight - half);
   card.style.top = `${middle.toFixed(1)}px`;
 }
