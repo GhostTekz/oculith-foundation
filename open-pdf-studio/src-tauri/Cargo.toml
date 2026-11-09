@@ -133,6 +133,8 @@ geos = ["dep:open-pdf-geos"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tesseract-rs = { version = "0.4", default-features = false, features = ["use-system-tesseract"] }
+# The main window's WebKit setting for opening a panel's window (the one wry uses).
+webkit2gtk = "2.0"
 
 [target.'cfg(not(any(target_os = "linux", target_os = "android")))'.dependencies]
 tesseract-rs = { version = "0.4", default-features = false, features = ["build-tesseract"] }

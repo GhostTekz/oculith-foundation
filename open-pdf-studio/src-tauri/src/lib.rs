@@ -4500,6 +4500,62 @@ fn run_mobile() {
     run(StartupOpts::default());
 }
 
+/// The main window from the `main` entry of the config, which panels may
+/// pop out of: `window.open` of a blank page (and only that) opens a window
+/// related to this one, so the page shows the panel there while it still
+/// runs it.
+#[cfg(desktop)]
+fn build_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "main")
+        .cloned()
+        .ok_or("no main window in the config")?;
+    let handle = app.handle().clone();
+    let opened = AtomicU32::new(0);
+    tauri::WebviewWindowBuilder::from_config(app.handle(), &config)?
+        .on_new_window(move |url, features| {
+            log::info!("[panels] new window asked for: {url}");
+            if url.as_str() != "about:blank" {
+                return tauri::webview::NewWindowResponse::Deny;
+            }
+            let label = format!("panel-{}", opened.fetch_add(1, Ordering::Relaxed));
+            match tauri::WebviewWindowBuilder::new(&handle, label, tauri::WebviewUrl::External(url))
+                .window_features(features)
+                .title("Oculith Draw")
+                // The panel's name, as the page titles its window.
+                .on_document_title_changed(|window, title| {
+                    let _ = window.set_title(&title);
+                })
+                .build()
+            {
+                Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+                Err(error) => {
+                    log::warn!("[panels] a panel window could not open: {error}");
+                    tauri::webview::NewWindowResponse::Deny
+                }
+            }
+        })
+        .build()?;
+    // A panel's window may be opened at the end of a drag off the app, after
+    // the gesture's moment has passed: the page may open windows itself
+    // (only blank pages are let through above).
+    #[cfg(target_os = "linux")]
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.with_webview(|webview| {
+            use webkit2gtk::{SettingsExt, WebViewExt};
+            if let Some(settings) = webview.inner().settings() {
+                settings.set_javascript_can_open_windows_automatically(true);
+            }
+        });
+    }
+    Ok(())
+}
+
 pub fn run(opts: StartupOpts) {
     eprintln!(
         "[startup] mcp_server={}, mcp_port={}",
@@ -4694,6 +4750,11 @@ pub fn run(opts: StartupOpts) {
 
     builder
         .setup(move |app| {
+            // The main window, built here from its config so a panel popped
+            // out (the page opening a blank window of its own) opens as a
+            // window related to this one; any other new window is refused.
+            #[cfg(desktop)]
+            build_main_window(app)?;
             if let Some(base) = datamap::lokale_datamap() {
                 if let Err(error) = identity_migration::migrate_profile(&base) {
                     eprintln!("[startup] settings migration failed: {error}");

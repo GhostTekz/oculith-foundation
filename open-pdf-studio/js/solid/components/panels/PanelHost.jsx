@@ -14,9 +14,9 @@
 // soon as one is shown.
 
 import { For, Show, createEffect, createSignal, on, onMount, untrack } from 'solid-js';
-import { Dynamic } from 'solid-js/web';
+import { Dynamic, Portal } from 'solid-js/web';
 import {
-  workspaceLayout, getHost, getPanelHost, setHostSize, saveWorkspaceLayout, showPanel, hidePanel,
+  workspaceLayout, getHost, getPanelHost, setHostSize, saveWorkspaceLayout, showPanel, hidePanel, movePanel,
 } from '../../stores/workspaceLayout.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { lucide } from '../../data/lucideIcons.js';
@@ -25,7 +25,8 @@ import {
 } from './panelHostLogic.js';
 import { state } from '../../../core/state.js';
 import { savePreferences } from '../../../core/preferences.js';
-import { getPanelEntry } from './panelRegistry.js';
+import { getPanelEntry, panelTitle } from './panelRegistry.js';
+import { canPopOut, dockPanel, popOutPanel, popoutIds, popoutOf, setPanelPlacement } from '../../../ui/panels/panel-popout.js';
 import { installPanelShortcuts, toggleHost } from './panelActions.js';
 import AccessBar from './AccessBar.jsx';
 import PanelHeader from './PanelHeader.jsx';
@@ -102,6 +103,8 @@ function HostEdge(props) {
 
 // Panel-specific header buttons (the ▾ menu holds the rest).
 // The Tool Chest and Markups List draw their own header (ownHeader).
+// Thumbnails open their own separate view; any other panel pops out into a
+// window of its own (panel-popout.js).
 function headerActions(panelId, t) {
   if (panelId === 'thumbnails' && window.__TAURI__?.webviewWindow?.WebviewWindow) {
     return [{
@@ -111,7 +114,40 @@ function headerActions(panelId, t) {
         .catch((error) => console.warn('[thumbnails] could not open separate view:', error)),
     }];
   }
+  if (panelId !== 'thumbnails' && canPopOut()) {
+    return [{
+      title: t('panelHost.popOut'), icon: lucide('external-link'),
+      run: () => { void popOutPanel(panelId, panelTitle(panelId, t)); },
+    }];
+  }
   return [];
+}
+
+// The panels popped out into windows of their own: each run here, shown
+// there, with its title and the way back over its body.
+function PopoutLayer() {
+  const { t } = useTranslation('common');
+  return (
+    <For each={popoutIds()}>{(id) => (
+      <Show when={popoutOf(id)}>{(popout) => (
+        <Portal mount={popout().mount}>
+          <section class="ws-popout-panel ws-panel-slot active" data-panel={id}
+            style={{ '--ws-panel-zoom': String(clampPanelZoom(state.preferences?.panelZoom?.[id] ?? 1)) }}>
+            <div class="ws-panel-header ws-popout-header">
+              <span class="ws-panel-title ws-popout-title"><span class="ws-panel-title-text">{panelTitle(id, t)}</span></span>
+              <div class="ws-panel-header-actions">
+                <button type="button" class="ws-panel-action" title={t('panelHost.dockBack')} aria-label={t('panelHost.dockBack')}
+                  onClick={() => dockPanel(id)} innerHTML={lucide('panel-left')} />
+              </div>
+            </div>
+            <div class="ws-panel-body">
+              <Show when={getPanelEntry(id)?.component}><Dynamic component={getPanelEntry(id).component} /></Show>
+            </div>
+          </section>
+        </Portal>
+      )}</Show>
+    )}</For>
+  );
 }
 
 // the external editor size slider under Thumbnails and the Tool Chest: zooms the tiles,
@@ -177,6 +213,20 @@ function PanelArea(props) {
 // menu, and the Element Visibility panel's own open/closed signal.
 function HostServices() {
   onMount(() => installPanelShortcuts());
+  // A panel taken off the app leaves its host; it comes back to the same
+  // host and place among the tabs.
+  setPanelPlacement({
+    take: (id) => {
+      const host = untrack(() => getPanelHost(id));
+      const index = host ? untrack(() => getHost(host).tabs.indexOf(id)) : -1;
+      if (host) hidePanel(id, { persist: false });
+      return host ? { host, index } : null;
+    },
+    put: (id, home) => {
+      if (home?.host) movePanel(id, home.host, { index: home.index });
+      else showPanel(id);
+    },
+  });
   createEffect(on(elementVisibilityShown, (visible) => {
     const where = untrack(() => getPanelHost('elementVisibility'));
     if (visible && !where) showPanel('elementVisibility');
@@ -189,7 +239,7 @@ function HostServices() {
       refreshElementTypes();
     }
   }));
-  return <PanelMenuLayer />;
+  return <><PanelMenuLayer /><PopoutLayer /></>;
 }
 
 export default function PanelHost(props) {

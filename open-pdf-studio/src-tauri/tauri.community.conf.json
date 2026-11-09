@@ -6,6 +6,8 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "title": "Oculith Draw Foundation",
         "width": 1200,
         "height": 800,

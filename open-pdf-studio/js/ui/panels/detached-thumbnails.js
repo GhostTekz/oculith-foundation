@@ -1,6 +1,7 @@
 // The drawing window owns PDF rendering and the thumbnail cache. A separate
 // floating tile receives only visible cached images and page captions, and
 // sends page navigation back here; it never opens a second copy of the drawing.
+import { putBackInApp, takeOffApp } from './panel-popout.js';
 import { getActiveDocument } from '../../core/state.js';
 import { cachedThumbnailForDocument, onDetachedThumbnailChange, setDetachedThumbnailPages } from './left-panel.js';
 import { TILE_DEFAULTS, TILE_MEMORY_KEY, tilePlacement } from './thumbnail-tile-placement.js';
@@ -164,12 +165,15 @@ async function ensureListeners() {
     });
     await event.listen(DOCK, (message) => {
       if (message.payload?.child !== childLabel) return;
+      putBackInApp('thumbnails');
       import('../../solid/commands/window.js').then(({ revealPanel }) => revealPanel('thumbnails'))
         .then(() => tauri()?.window?.getCurrentWindow?.()?.setFocus?.())
         .catch((error) => console.warn('[thumbnails] could not show the side panel:', error));
     });
     await event.listen(CLOSED, (message) => {
-      if (message.payload?.child === childLabel) clearConnection();
+      if (message.payload?.child !== childLabel) return;
+      clearConnection();
+      putBackInApp('thumbnails');
     });
   })().catch((error) => { listeners = null; throw error; });
   return listeners;
@@ -181,7 +185,7 @@ function startWatchdog(W) {
   timer = setInterval(() => {
     void sync();
     if (++checks % 2 === 0) {
-      W.getByLabel(childLabel).then((found) => { if (!found) clearConnection(); }).catch(() => {});
+      W.getByLabel(childLabel).then((found) => { if (!found) { clearConnection(); putBackInApp('thumbnails'); } }).catch(() => {});
     }
   }, 2000);
 }
@@ -253,6 +257,7 @@ async function openView() {
   if (existing) {
     await existing.show();
     await existing.setFocus();
+    takeOffApp('thumbnails');
     startWatchdog(W);
     if (!ready) { ready = true; void sync(true); }
     return;
@@ -260,6 +265,8 @@ async function openView() {
   startWatchdog(W);
   try {
     await createTile(W);
+    // The thumbnails are in their own view now, not also in the app.
+    takeOffApp('thumbnails');
   } catch (error) {
     console.warn('[thumbnails] separate view failed:', error);
     clearConnection();

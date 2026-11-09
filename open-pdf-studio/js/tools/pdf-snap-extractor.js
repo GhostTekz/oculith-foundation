@@ -152,7 +152,7 @@ function treesFrom(pointItems, edgeItems) {
 // merges into the tree already built.
 const INDEX_LOAD_CHUNK = 8000;
 
-async function loadTree(tree, items, checkActive) {
+async function loadTree(tree, items, pause) {
   const total = items.length;
   if (!total) return;
   if (total <= INDEX_LOAD_CHUNK) {
@@ -161,18 +161,15 @@ async function loadTree(tree, items, checkActive) {
   }
   for (let start = 0; start < total; start += INDEX_LOAD_CHUNK) {
     tree.load(items.slice(start, start + INDEX_LOAD_CHUNK));
-    if (start + INDEX_LOAD_CHUNK < total) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      checkActive();
-    }
+    if (start + INDEX_LOAD_CHUNK < total) await pause();
   }
 }
 
-async function treesFromYielding(pointItems, edgeItems, checkActive) {
+async function treesFromYielding(pointItems, edgeItems, pause) {
   const pointTree = new RBush();
   const edgeTree = new RBush();
-  await loadTree(pointTree, pointItems, checkActive);
-  await loadTree(edgeTree, edgeItems, checkActive);
+  await loadTree(pointTree, pointItems, pause);
+  await loadTree(edgeTree, edgeItems, pause);
   return { pointTree, edgeTree };
 }
 
@@ -196,7 +193,7 @@ export function pdfSnapIndex(points, edges) {
 /** Same index as pdfSnapIndex, built in slices so a dense page can yield. */
 export async function pdfSnapIndexInSlices(points, edges) {
   const { pointItems, edgeItems } = wrappedSnapItems(points, edges);
-  return treesFromYielding(pointItems, edgeItems, () => {});
+  return treesFromYielding(pointItems, edgeItems, pacer());
 }
 
 /** Points and edges whose boxes meet the square of `radius` around (x, y). */
@@ -242,26 +239,36 @@ export function getPdfEdgeSegmentsNear(pageNum, x, y, radius) {
  * Build an R-tree over the extracted points and edges. Yields every 2000
  * items so a dense page does not freeze the UI while the wrappers are made.
  */
-async function buildSpatialIndex(points, edges, checkActive = () => {}) {
+/**
+ * Gives the event loop a turn once the work has held the thread for about
+ * a frame (checked at the callers' usual points), then runs `checkActive`.
+ * A turn at every check point made a dense sheet wait on hundreds of timer
+ * ticks for no gain in responsiveness.
+ */
+function pacer(checkActive = () => {}, budgetMs = 12) {
+  let last = performance.now();
+  return async () => {
+    if (performance.now() - last < budgetMs) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    checkActive();
+    last = performance.now();
+  };
+}
+
+async function buildSpatialIndex(points, edges, pause = pacer()) {
   const pointItems = new Array(points.length);
   for (let i = 0; i < points.length; i++) {
-    if (i > 0 && i % 2000 === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-      checkActive();
-    }
+    if (i > 0 && i % 2000 === 0) await pause();
     pointItems[i] = pointWrap(points[i]);
   }
 
   const edgeItems = new Array(edges.length);
   for (let i = 0; i < edges.length; i++) {
-    if (i > 0 && i % 2000 === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-      checkActive();
-    }
+    if (i > 0 && i % 2000 === 0) await pause();
     edgeItems[i] = edgeWrap(edges[i]);
   }
 
-  return treesFromYielding(pointItems, edgeItems, checkActive);
+  return treesFromYielding(pointItems, edgeItems, pause);
 }
 
 /**
@@ -275,6 +282,7 @@ export function clearPdfVectorCache() {
 /**
  * Extract vector geometry from a PDF page's operator list.
  * Transforms all coordinates to annotation-space (CSS pixels at scale=1).
+ * `options.edgesOnly` returns the edges alone (no snap points, no index).
  */
 export async function extractPageGeometry(pageNum, options = {}) {
   const doc = options.document || getActiveDocument();
@@ -343,14 +351,16 @@ export async function extractPageGeometry(pageNum, options = {}) {
   const edges = [];
   const pointSet = new Set(); // dedup
 
+  const pause = pacer(checkActive);
+  // Only the edges (a reader of the line work, not snapping): no snap
+  // points and no index.
+  const edgesOnly = !!options.edgesOnly;
+
   const ops = opList.fnArray;
   const argsArray = opList.argsArray;
 
   for (let i = 0; i < ops.length; i++) {
-    if (i % 2000 === 1999) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-      checkActive();
-    }
+    if (i % 2000 === 1999) await pause();
     const op = ops[i];
     const a = argsArray[i];
 
@@ -393,14 +403,14 @@ export async function extractPageGeometry(pageNum, options = {}) {
         if (!pathData || !pathData.length) break;
 
         // Parse interleaved path data and collect segments
-        const segments = await parseInterleavedPathData(pathData, checkActive);
+        const segments = await parseInterleavedPathData(pathData, pause);
 
         // Commit all segments (even endPath — for snap purposes all geometry is useful).
         // Each edge carries how it was painted and its stroke width in page
         // points, so Dynamic Fill can ignore thin lines and unpainted clip paths.
         if (segments.length > 0) {
           const meta = { paint: paintKind(a[0]), w: strokeWidthOnPage(lineWidth, ctm, viewportTransform) };
-          await commitSegments(segments, ctm, viewportTransform, points, edges, pointSet, checkActive, meta);
+          await commitSegments(segments, ctm, viewportTransform, edgesOnly ? null : points, edges, pointSet, pause, meta);
         }
         break;
       }
@@ -414,13 +424,14 @@ export async function extractPageGeometry(pageNum, options = {}) {
           { x: rx, y: ry + rh },
           { x: rx, y: ry }
         ];
-        await commitSegments([rectPath], ctm, viewportTransform, points, edges, pointSet, checkActive);
+        await commitSegments([rectPath], ctm, viewportTransform, edgesOnly ? null : points, edges, pointSet, pause);
         break;
       }
     }
   }
 
-  return { points, edges, index: await buildSpatialIndex(points, edges, checkActive) };
+  if (edgesOnly) return { points, edges };
+  return { points, edges, index: await buildSpatialIndex(points, edges, pause) };
 }
 
 /**
@@ -454,7 +465,7 @@ export function optionalContentTracker(config) {
  * Parse interleaved path data [op, args..., op, args...] into path segments.
  * Returns array of subpaths, where each subpath is an array of {x,y} points.
  */
-async function parseInterleavedPathData(data, checkActive = () => {}) {
+async function parseInterleavedPathData(data, pause = pacer()) {
   const segments = [];
   let currentPath = [];
   let currentX = 0, currentY = 0;
@@ -464,8 +475,7 @@ async function parseInterleavedPathData(data, checkActive = () => {}) {
   while (i < data.length) {
     if (i >= nextYield) {
       nextYield = i + 10000;
-      await new Promise(resolve => setTimeout(resolve, 0));
-      checkActive();
+      await pause();
     }
     const drawOp = data[i++];
 
@@ -545,12 +555,9 @@ async function parseInterleavedPathData(data, checkActive = () => {}) {
 /**
  * Transform segments via CTM + viewport and produce snap points/edges.
  */
-async function commitSegments(segments, ctm, viewportTransform, points, edges, pointSet, checkActive = () => {}, meta = null) {
+async function commitSegments(segments, ctm, viewportTransform, points, edges, pointSet, pause = pacer(), meta = null) {
   for (let index = 0; index < segments.length; index++) {
-    if (index > 0 && index % 100 === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-      checkActive();
-    }
+    if (index > 0 && index % 100 === 0) await pause();
     const path = segments[index];
     const transformed = path.map(pt => {
       // Apply CTM (PDF user space → PDF device space)
@@ -566,8 +573,8 @@ async function commitSegments(segments, ctm, viewportTransform, points, edges, p
       const p = transformed[j];
 
       // Endpoint snap point
-      const key = `${Math.round(p.x * 10)},${Math.round(p.y * 10)}`;
-      if (!pointSet.has(key)) {
+      const key = points && `${Math.round(p.x * 10)},${Math.round(p.y * 10)}`;
+      if (points && !pointSet.has(key)) {
         pointSet.add(key);
         points.push({ x: p.x, y: p.y, type: 'endpoint', annotation: null });
       }
@@ -582,6 +589,7 @@ async function commitSegments(segments, ctm, viewportTransform, points, edges, p
           edges.push(meta ? { x1: p.x, y1: p.y, x2: q.x, y2: q.y, paint: meta.paint, w: meta.w }
             : { x1: p.x, y1: p.y, x2: q.x, y2: q.y });
 
+          if (!points) continue;
           const mx = (p.x + q.x) / 2;
           const my = (p.y + q.y) / 2;
           const mkey = `${Math.round(mx * 10)},${Math.round(my * 10)}`;
