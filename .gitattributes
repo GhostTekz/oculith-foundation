@@ -37,3 +37,9 @@
 # Lockfiles with LF everywhere: the source bill of materials records their hashes.
 Cargo.lock text eol=lf
 open-pdf-studio/package-lock.json text eol=lf
+
+# License and notice texts kept byte for byte: their SHA-256 hashes are
+# pinned (package-notices.test.mjs, the source bill of materials), so no
+# platform may change their line endings.
+open-pdf-studio/src-tauri/package-notices/** -text
+scripts/rust-upstream-notices/** -text

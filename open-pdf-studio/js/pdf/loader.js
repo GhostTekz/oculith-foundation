@@ -133,6 +133,29 @@ export function forgetPdfRangeSource(doc) {
   void source.close();
 }
 
+/**
+ * Further PDF.js documents of `doc`'s file, each with its own worker, for
+ * reading many pages at once (a scan of the whole set). Only over the
+ * file's range source (no copy of the file in memory) and only while the
+ * open document is that file, page for page; none otherwise. The caller
+ * destroys them when done.
+ */
+export async function openPageReaders(doc, count) {
+  const source = doc?._rangeSource;
+  if (!source || !doc.pdfDoc || !(count > 0)) return [];
+  const readers = [];
+  for (let k = 0; k < count; k++) {
+    try {
+      const reader = await pdfjsLib.getDocument(pdfjsRangeParams(source)).promise;
+      if (reader.numPages !== doc.pdfDoc.numPages || doc._rangeSource !== source) { void reader.destroy(); break; }
+      readers.push(reader);
+    } catch {
+      break;
+    }
+  }
+  return readers;
+}
+
 export function setCachedPdfBytes(filePath, bytes) {
   originalBytesCache.set(filePath, bytes);
 }

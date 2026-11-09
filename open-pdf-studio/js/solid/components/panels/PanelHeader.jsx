@@ -9,11 +9,14 @@ import { lucide } from '../../data/lucideIcons.js';
 import { panelTitle } from './panelRegistry.js';
 import { panelMenuItems } from './panelActions.js';
 import { openPanelMenu } from './PanelMenu.jsx';
+import { canPopOut, popOutPanel } from '../../../ui/panels/panel-popout.js';
 
 export default function PanelHeader(props) {
   const { t } = useTranslation('common');
-  const detachable = () => props.panelId === 'thumbnails'
-    && !!window.__TAURI__?.webviewWindow?.WebviewWindow;
+  // Thumbnails open their own separate view; any other panel is taken off
+  // the app into a window of its own (panel-popout.js).
+  const thumbnails = () => props.panelId === 'thumbnails';
+  const detachable = () => (thumbnails() ? !!window.__TAURI__?.webviewWindow?.WebviewWindow : canPopOut());
   const openView = () => import('../../../ui/panels/detached-thumbnails.js')
     .then(({ openDetachedThumbnails }) => openDetachedThumbnails())
     .catch((error) => console.warn('[thumbnails] could not open separate view:', error));
@@ -37,8 +40,8 @@ export default function PanelHeader(props) {
       event.preventDefault();
       return;
     }
-    event.dataTransfer.effectAllowed = 'copy';
-    event.dataTransfer.setData('text/plain', t('panelHost.detachThumbnails'));
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', thumbnails() ? t('panelHost.detachThumbnails') : t('panelHost.popOut'));
   };
   const dragEnd = async (event) => {
     if (!detachable()) return;
@@ -54,7 +57,10 @@ export default function PanelHeader(props) {
       }
     }
     if (!outside) return;
-    void openView();
+    if (thumbnails()) { void openView(); return; }
+    // Where it was dropped, when the WebView reports it.
+    const at = event.screenX || event.screenY ? { left: event.screenX - 40, top: event.screenY - 18 } : null;
+    void popOutPanel(props.panelId, panelTitle(props.panelId, t), { at });
   };
   const openMenu = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -63,7 +69,7 @@ export default function PanelHeader(props) {
   return (
     <div class={`ws-panel-header${props.class ? ` ${props.class}` : ''}`} data-panel={props.panelId}
       draggable={detachable()} onDragStart={dragStart} onDragEnd={dragEnd}
-      title={detachable() ? t('panelHost.dragThumbnails') : undefined}>
+      title={detachable() ? t(thumbnails() ? 'panelHost.dragThumbnails' : 'panelHost.dragPanel') : undefined}>
       <button type="button" class="ws-panel-title" aria-haspopup="menu"
         title={t('panelHost.panelMenu', { panel: panelTitle(props.panelId, t) })}
         onClick={openMenu}

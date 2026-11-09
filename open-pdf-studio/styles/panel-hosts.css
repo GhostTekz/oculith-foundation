@@ -342,3 +342,10 @@
 }
 .ws-vtoolbar-more svg { width: 16px; height: 16px; }
 .ws-vtoolbar-more:hover { background: var(--theme-hover); }
+
+/* A panel popped out into a window of its own (panel-popout.js): the window
+   is the panel, header and body, at any size. */
+body.ws-popout { margin: 0; height: 100vh; overflow: hidden; background: var(--theme-panel-bg); }
+.ws-popout-root, .ws-popout-root > div { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ws-popout-panel { display: flex; flex: 1; min-height: 0; }
+.ws-popout-title { cursor: default; }

@@ -513,3 +513,4 @@ js/pdf/pdf-layers-routes.test.mjs
 js/pdf/native-ocg-support.test.mjs
 js/tour/tour-i18n.test.mjs
 js/ui/quick-win-styles.test.mjs
+js/ui/panels/panel-popout.test.mjs
