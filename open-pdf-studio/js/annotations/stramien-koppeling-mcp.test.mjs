@@ -55,4 +55,3 @@ test('het schema van beide opdrachten noemt de koppeling, in Rust en in tools.js
   assert.match(beschrijving('app_update_annotation'), /alignEnd/);
   assert.match(beschrijving('app_get_annotation'), /gridAlignment/);
 });
-

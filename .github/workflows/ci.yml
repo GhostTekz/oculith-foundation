@@ -69,6 +69,10 @@ jobs:
         working-directory: open-pdf-studio
         timeout-minutes: 10
         run: CHROMIUM_PATH="$(command -v google-chrome)" npm run smoke:community-offline
+      - name: PDFium WASM page geometry pixels
+        working-directory: open-pdf-studio
+        timeout-minutes: 10
+        run: CHROMIUM_PATH="$(command -v google-chrome)" node scripts/pdfium-userunit-smoke.mjs
       - name: Add-on recombination and removal
         working-directory: open-pdf-studio
         timeout-minutes: 10

@@ -96,4 +96,3 @@ test('het MCP-schema van app_floorplan kent joinStart en joinEnd (Rust en tools.
     assert.equal(t.inputSchema.properties[arg]?.type, 'boolean', `${arg} in tools.json`);
   }
 });
-
