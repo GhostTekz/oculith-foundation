@@ -1,4 +1,5 @@
 import { state, getActiveDocument, getPageRotation, imageCache } from '../core/state.js';
+import { reportClipboardError, writeClipboardImage } from '../core/system-clipboard.js';
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
 import { isTauri, invoke, saveFileDialog, writeBinaryFile } from '../core/platform.js';
 import { render } from 'solid-js/web';
@@ -254,9 +255,7 @@ async function copyAndSave(canvas) {
   const blob = await canvasToBlob(canvas, 'image/png');
 
   try {
-    await navigator.clipboard.write([
-      new ClipboardItem({ 'image/png': blob })
-    ]);
+    await writeClipboardImage(blob);
     updateStatusMessage('Screenshot copied to clipboard');
   } catch (e) {
     console.error('Failed to copy to clipboard:', e);
@@ -477,6 +476,11 @@ export function hasLastCapture() {
   return !!_lastCapture;
 }
 
+/** The pixel size of the last capture ({ width, height }), or null. */
+export function lastCaptureSize() {
+  return _lastCapture ? { width: _lastCapture.pxW, height: _lastCapture.pxH } : null;
+}
+
 // ─── Snapshot tool (the external editor Snapshot, G) ───────────────────────────────────────
 // The snapshot tool (tools/tools/ext-tools.js) drags a rectangle in page
 // space; this captures it with the same high-res region render as the region
@@ -512,9 +516,9 @@ export async function snapshotRegion(pageNum, rect) {
   state._snapshotAt = Date.now();
   try {
     const blob = await canvasToBlob(canvas, 'image/png');
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    await writeClipboardImage(blob);
   } catch (e) {
-    console.warn('[snapshot] clipboard write failed (Ctrl+V still places it):', e);
+    reportClipboardError('snapshot write (Ctrl+V still places it)', e);
   }
   updateStatusMessage('Snapshot copied - press Ctrl+V to paste it');
   return true;

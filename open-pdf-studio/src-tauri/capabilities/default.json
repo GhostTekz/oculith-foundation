@@ -38,6 +38,7 @@
     "fs:allow-stat",
     "shell:allow-open",
     "store:default",
+    "updater:default",
     "os:default",
     "process:allow-restart",
     "process:allow-exit",

@@ -80,6 +80,7 @@ import {
 import { viewportGeometrie, rectNaarPagina, vermenigvuldig as vermenigvuldigMatrix } from '../pdf/weergave-rotatie.js';
 import { paginaMaat, paginaNaarWeergave, weergaveTransform, weergaveRectNaarPagina, zetRechtopRond } from '../pdf/weergave-ruimte.js';
 import { drawEditToolOverlay } from '../tools/edit-tool-overlay.js';
+import { drawRegionSelection } from '../tools/region-selection.js';
 import { drawStampDesign } from './stamp-draw.js';
 
 // Re-export everything that external code needs
@@ -451,7 +452,7 @@ function inlineNumberHighlight(annotation) {
   return shouldHighlightNumbers(annotation, doc ? doc.selectedAnnotations : null);
 }
 
-// A second view (the passive MultiView split, docs/MULTIVIEW.md) draws at its
+// A second view (the passive MultiView split, docs/reference/editor/workspace.md) draws at its
 // own zoom; metWeergaveZoom() lets the line-weight rules use that zoom.
 let _weergaveZoom = null;
 export function metWeergaveZoom(zoom, fn) {
@@ -1787,7 +1788,7 @@ export function drawAnnotation(ctx, annotation, snippetBitmaps = null) {
       break;
 
     case 'stamp': {
-      // Dynamic stamp (docs/STAMPS.md): drawn from its design, as the PDF
+      // Dynamic stamp (docs/reference/editor/markup-tools.md): drawn from its design, as the PDF
       // appearance draws it.
       if (annotation.stampDesign) {
         ctx.save();
@@ -3063,7 +3064,7 @@ registerSysteemSymbolRedraw(() => {
   else redrawAnnotations();
 });
 
-// MultiView (docs/MULTIVIEW.md): the passive split pane repaints its markups
+// MultiView (docs/reference/editor/workspace.md): the passive split pane repaints its markups
 // after the live view redraws. One null check while unsplit.
 let _naHertekenen = null;
 export function setAnnotationsRedrawnHook(fn) { _naHertekenen = typeof fn === 'function' ? fn : null; }
@@ -3483,7 +3484,7 @@ function redrawAnnotationsNow(lightweight = false) {
     for (const ann of selected) {
       if (ann.page !== curPage) continue;
       // A hidden markup can be selected in the Markups List, but the canvas
-      // shows nothing of it: no frame, no grips (docs/MARKUP-LAYERS.md).
+      // shows nothing of it: no frame, no grips (docs/reference/editor/layers.md).
       if (isAnnotationHiddenInView(ann)) continue;
       drawSelectionHandles(annotationCtx, ann);
     }
@@ -3513,6 +3514,8 @@ function redrawAnnotationsNow(lightweight = false) {
   if (state.isRubberBanding && (state.rubberBandPage == null || state.rubberBandPage === curPage)) {
     drawRubberBand(annotationCtx, effectiveScale);
   }
+  // Region selection (a marquee without markups), kept until it is cleared.
+  drawRegionSelection(annotationCtx, curPage, effectiveScale);
   // Lasso path / Offset preview (edit-tool-overlay.js).
   drawEditToolOverlay(annotationCtx, curPage, effectiveScale);
   // Conduit / cable tray: placed run plus the straight leg under the cursor.
@@ -3736,6 +3739,7 @@ function tekenPaginaLagen(ctx, pageNum, width, height, overrideDpr, renderOffset
   if (lagen.bewerkhulp && state.isRubberBanding && state.rubberBandPage === pageNum) {
     drawRubberBand(ctx, effectiveScale);
   }
+  if (lagen.bewerkhulp) drawRegionSelection(ctx, pageNum, effectiveScale);
   if (lagen.bewerkhulp) drawEditToolOverlay(ctx, pageNum, effectiveScale);
   if (lagen.bewerkhulp) drawRacewayGesture(ctx, pageNum, effectiveScale);
 

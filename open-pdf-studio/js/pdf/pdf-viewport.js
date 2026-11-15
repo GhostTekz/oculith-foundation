@@ -16,6 +16,7 @@ import { tileCoversViewport } from './tile-coverage.js';
 import { bepaalOverlayMaat, pasOverlayMaatToe } from './overlay-canvas-size.js';
 import { snapNaarDevicePixel, tekenKwaliteit, backingMaat } from './device-pixel.js';
 import { maakWielScroller } from './wiel-scroll.js';
+import { wheelPanRange } from './wheel-page-turn.js';
 import { releaseUnshownBitmaps } from './bitmap-lifetime.js';
 import { pageCanvasContext } from './page-canvas-context.js';
 import { maakSchaalKopie } from './scaled-page-copy.js';
@@ -329,20 +330,36 @@ async function _applyDprChange() {
 const _wielScroll = maakWielScroller({
   nu: () => performance.now(),
   verschuif: (dx, dy) => _verschuifDoorWiel(dx, dy),
+  ruimte: () => _wielRuimte(),
 });
 
-function _verschuifDoorWiel(dx, dy) {
+// How far the wheel may pan from here (wheel-page-turn.js): only on an axis
+// where the page does not fit the window, and only until the page edge meets
+// the window edge. The wheel never scrolls the page out of view; a drag or a
+// zoom at the cursor still can.
+function _wielRuimte() {
   const dpr = _getDpr();
-  const vpW = _canvas ? _canvas.width / dpr : 0;
-  const vpH = _canvas ? _canvas.height / dpr : 0;
   // Maat op het scherm: na paginarotatie én weergaverotatie.
   const scherm = schermPaginaMaat();
-  // Alleen schuiven op een as waar de pagina niet in het venster past (zoals
-  // voorheen: anders valt er op die as niets te pannen).
-  if (dx !== 0 && scherm.w * viewport.zoom > vpW + 0.5) viewport.offsetX -= dx;
-  if (dy !== 0 && scherm.h * viewport.zoom > vpH + 0.5) viewport.offsetY -= dy;
+  return wheelPanRange({
+    pageLeft: viewport.offsetX, pageTop: viewport.offsetY,
+    pageWidth: scherm.w * viewport.zoom, pageHeight: scherm.h * viewport.zoom,
+    viewWidth: _canvas ? _canvas.width / dpr : 0, viewHeight: _canvas ? _canvas.height / dpr : 0,
+  });
+}
+
+function _verschuifDoorWiel(dx, dy) {
+  const r = _wielRuimte();
+  const x = Math.min(r.hiX, Math.max(r.loX, dx));
+  const y = Math.min(r.hiY, Math.max(r.loY, dy));
+  if (x !== 0) viewport.offsetX -= x;
+  if (y !== 0) viewport.offsetY -= y;
   viewport.dirty = true;
   _vraagTegelBijBeweging();
+  // At an edge the rest of a notch's glide on that axis lapses.
+  const randX = Math.abs(dx - x) > 0.5;
+  const randY = Math.abs(dy - y) > 0.5;
+  return randX || randY ? { randX, randY } : true;
 }
 
 // Debounce timer for a pan that the current tile still covers.

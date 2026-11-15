@@ -1,4 +1,4 @@
-// Capture commands (WP2, docs/CAPTURE.md): the File Attachment tool (F) and
+// Capture commands (WP2, docs/reference/editor/markup-tools.md): the File Attachment tool (F) and
 // photos on the selected markup. Labels live in common.json › capture.
 
 import { registerCommand } from './registry.js';

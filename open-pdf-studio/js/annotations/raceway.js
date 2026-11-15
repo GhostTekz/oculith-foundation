@@ -1,4 +1,4 @@
-// Raceways: conduit and cable tray runs (docs/RACEWAYS.md).
+// Raceways: conduit and cable tray runs (docs/reference/editor/raceways.md).
 //
 // A run is a measurePerimeter annotation with measureKind 'raceway'. Its
 // `points` are the corners the user clicked; its `raceway` object says what
@@ -50,7 +50,7 @@ export function tradeSizeInches(size) {
 // Outside diameters (in) by trade size. EMT ½"–1" are verified against
 // published ANSI C80.3 tables; the other values are the nominal NEC Chapter 9
 // Table 4 / ANSI C80.1, C80.6 and NEMA TC-2 figures and are marked nominal in
-// docs/RACEWAYS.md. Rigid PVC uses iron-pipe-size outside diameters (same as
+// docs/reference/editor/raceways.md. Rigid PVC uses iron-pipe-size outside diameters (same as
 // RMC). FMC/LFMC outside diameters vary by maker; these are typical values.
 const OD_IPS = { '1/2': 0.840, '3/4': 1.050, '1': 1.315, '1-1/4': 1.660, '1-1/2': 1.900, '2': 2.375,
   '2-1/2': 2.875, '3': 3.500, '3-1/2': 4.000, '4': 4.500, '5': 5.563, '6': 6.625 };

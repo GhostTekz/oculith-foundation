@@ -1,6 +1,6 @@
 // What an external plan-review program writes on every markup, written by OcuDraw too, so a
 // markup made or edited in OcuDraw opens in the external editor as a native, editable the external editor
-// markup (docs/MARKUP-INTEROP.md, "Markups made in OcuDraw").
+// markup (docs/reference/editor/markup-interop.md, "Markups made in OcuDraw").
 //
 // external plan-review files writes on each markup: /P (its page), /NM (a unique name),
 // /Subj (the Markups list Subject), /T, /CreationDate and /M as PDF dates,

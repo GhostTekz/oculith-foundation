@@ -1,4 +1,4 @@
-// Tool set sharing UI wiring (docs/TOOL-SET-SHARING.md): source-level
+// Tool set sharing UI wiring (docs/reference/editor/tool-chest.md): source-level
 // checks for the panel, menus, Properties panel and the i18n keys.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

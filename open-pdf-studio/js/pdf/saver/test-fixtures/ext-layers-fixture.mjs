@@ -1,4 +1,4 @@
-// A synthetic externally marked sheet WITH markup layers (docs/MARKUP-LAYERS.md).
+// A synthetic externally marked sheet WITH markup layers (docs/reference/editor/layers.md).
 // Built with pdf-lib to mimic what the external editor writes for Layers-panel layers:
 // /OCProperties with plain OCGs (only /Type /Name, optional /Intent and
 // /Usage), a /D configuration with /Order, /ON, /OFF, /Locked and /RBGroups,

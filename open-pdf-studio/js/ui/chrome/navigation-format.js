@@ -20,15 +20,25 @@ export function pageLabel(labels, page) {
   return label.trim() === String(page) ? null : label.trim();
 }
 
+// The mark a shortened page label ends with in the page field.
+export const LABEL_CUT = '\u2026';
+
 /**
  * The page field text: "A-101 (1 of 3)" with a page label, else "2 of 3".
  * `of` builds the "n of N" part (translated), default English.
+ * `maxChars` (optional) is how many characters the field shows: a longer
+ * label is cut with "…" so the "(n of N)" part stays visible; the full text
+ * is the field's tooltip. With no room for any label, the counter alone.
  */
-export function formatPageField(page, numPages, labels = null, of = (p, n) => `${p} of ${n}`) {
+export function formatPageField(page, numPages, labels = null, of = (p, n) => `${p} of ${n}`, maxChars = 0) {
   if (!numPages) return '';
   const counter = of(page, numPages);
   const label = pageLabel(labels, page);
-  return label ? `${label} (${counter})` : counter;
+  if (!label) return counter;
+  const full = `${label} (${counter})`;
+  if (!(maxChars > 0) || full.length <= maxChars) return full;
+  const room = maxChars - counter.length - 3 - LABEL_CUT.length;
+  return room >= 3 ? `${label.slice(0, room).trimEnd()}${LABEL_CUT} (${counter})` : counter;
 }
 
 /**
@@ -45,7 +55,8 @@ export function parsePageInput(text, numPages, labels = null) {
   if (!value) return null;
   const counter = value.match(/^(.*?)\s*\(\s*(\d+)\s+\S+\s+\d+\s*\)$/u);
   if (counter) {
-    value = counter[1].trim() || counter[2];
+    // A label the field shortened ("E-501 LIGHTING PL… (12 of 40)"): the counter.
+    value = counter[1].trim().endsWith(LABEL_CUT) ? counter[2] : (counter[1].trim() || counter[2]);
   } else {
     const ofN = value.match(/^(\d+)\s+\S+\s+\d+$/u);
     if (ofN) value = ofN[1];

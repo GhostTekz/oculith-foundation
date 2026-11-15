@@ -1,5 +1,5 @@
 /**
- * racewayTool — draw a conduit or cable tray run (docs/RACEWAYS.md).
+ * racewayTool — draw a conduit or cable tray run (docs/reference/editor/raceways.md).
  *
  *   - Click to start, click each corner; the run continues until
  *     double-click, Enter or right-click finishes it (2+ points).

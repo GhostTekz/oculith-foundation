@@ -61,7 +61,6 @@ pub const TOOLS: &[ToolMeta] = &[
     lees("app_get_page_text", "Read existing page text"),
     lees("app_get_takeoff", "Get quantity take-off"),
     lees("app_list_commands", "List app commands"),
-    lees("app_assistant_history", "Get assistant conversation"),
     lees("app_list_printers", "List printers"),
     lees("app_list_layers", "List markup layers"),
     // Voegt iets toe zonder bestaande gegevens te wijzigen.
@@ -75,9 +74,6 @@ pub const TOOLS: &[ToolMeta] = &[
     voegt_toe("app_merge_pdf", "Merge PDF files"),
     voegt_toe("app_import_cad", "Import CAD drawing"),
     voegt_toe("app_symbol_scale", "Symbol placement scale"),
-    voegt_toe("app_assistant_ask", "Ask assistant"),
-    voegt_toe("app_assistant_pending", "Take pending assistant question"),
-    voegt_toe("app_assistant_answer", "Answer assistant question"),
     voegt_toe("app_mouse_move", "Move pointer"),
     voegt_toe("app_scroll", "Scroll"),
     // Wijzigt of verwijdert bestaande inhoud, of schrijft een bestand.

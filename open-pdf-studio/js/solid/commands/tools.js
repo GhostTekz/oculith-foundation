@@ -100,7 +100,7 @@ toolCommand('tools.measure.dynamicFill', 'dynamicFill', 'dynamicFill', dynamicFi
     return useTool('dynamicFill');
   },
 });
-// --- Raceway ▸ (conduit and cable tray runs, docs/RACEWAYS.md) ---------------------------
+// --- Raceway ▸ (conduit and cable tray runs, docs/reference/editor/raceways.md) ---------------------------
 
 const racewaySession = lazyModule(() => import('../../tools/raceway/session.js'));
 for (const [key, kind, icon, keywords] of [
@@ -151,7 +151,7 @@ registerCommand({
 
 toolCommand('tools.stamp', 'stamp', 'stamp', stampIcon, 'tools');
 registerCommand({
-  // Stamp editor (docs/STAMPS.md): user stamps with dynamic fields.
+  // Stamp editor (docs/reference/editor/markup-tools.md): user stamps with dynamic fields.
   id: 'tools.stampEditor', label: 'common:stampEditor.command', icon: stampIcon, category: 'tools',
   keywords: ['stamp', 'dynamic', 'editor', 'approved'],
   run: () => import('../../annotations/stamps.js').then((m) => m.showStampEditor()),

@@ -481,7 +481,10 @@
   "vectorSnippet": {
     "copied": "Snippet copied — paste it into another drawing",
     "failed": "Cutting failed",
-    "clipboardEmpty": "No snippet on the clipboard"
+    "clipboardEmpty": "No snippet on the clipboard",
+    "regionCopying": "Copying region...",
+    "regionCopied": "Region copied - press Ctrl+V on the target sheet to paste it",
+    "regionPasted": "Region pasted"
   },
   "panelHost": {
     "sheets": "Drawing Set",
@@ -1067,7 +1070,8 @@
     "switchPane": "Switch (Move to Other Split)",
     "unsplit": "Unsplit",
     "syncDocument": "Synchronize Document",
-    "syncPage": "Synchronize Page"
+    "syncPage": "Synchronize Page",
+    "aiConnections": "AI connections"
   },
   "flattenMarkups": {
     "command": "Flatten…",
@@ -1369,7 +1373,7 @@
     "button": "Slip sheet…",
     "buttonHint": "Replace sheets with revised PDFs and carry their markups forward",
     "reading": "Reading revised PDFs…",
-    "intro": "Revised pages are matched to the sheets in this set. A matched sheet gets the new revision and a copy of its markups; the old revision stays in the sheet history. Unmatched pages are added as new sheets. Carried markups are written to a copy of each revised PDF (“…-slip-sheet.pdf”).",
+    "intro": "Revised pages are matched to the sheets in this set. A matched sheet gets the new revision and a copy of its markups; the old revision stays in the sheet history. Unmatched pages are added as new sheets. Carried markups are written to a copy of each revised PDF that receives them (“…-slip-sheet.pdf”).",
     "revision": "New revision",
     "column": {
       "include": "Include",

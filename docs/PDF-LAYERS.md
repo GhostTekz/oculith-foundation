@@ -55,6 +55,7 @@ depend on it by design.
 | Save layer visibility as the PDF default | Writes the view | Only on that explicit command. |
 | Flatten markups | Not affected | Burns markups into the page; the drawing's layers stay as they are. |
 | Text search, text selection, copy text | Not affected | Text on hidden layers is still found and selectable. |
+| Vector snippet, region Cut/Copy | Not affected | The page's vector content is copied as it is in the file, whatever layers the view shows. |
 | Compare and overlay | Not affected | Compares both revisions with the PDF's default layer visibility. |
 | Office export (ODT, XLSX) | Not affected | Uses all text on the page. |
 | Batch split and other batch operations | Not affected | They read files from disk, not the open view. |

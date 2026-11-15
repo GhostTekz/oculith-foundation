@@ -1,5 +1,5 @@
 // Manage Tool Sets, Add to Tool Chest rules, groups, modes and views
-// (docs/TOOL-SET-SHARING.md).
+// (docs/reference/editor/tool-chest.md).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {

@@ -1,4 +1,4 @@
-// A synthetic externally marked sheet (docs/MARKUP-INTEROP.md). Built with pdf-lib
+// A synthetic externally marked sheet (docs/reference/editor/markup-interop.md). Built with pdf-lib
 // to reproduce the dictionary shapes external plan-review files writes — keys, /IT values,
 // /Measure, nested appearance forms, /Image, groups — with made-up text and
 // geometry. No real drawing is copied.

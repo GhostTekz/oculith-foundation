@@ -1,5 +1,5 @@
 // A markup hidden with the Markups List row eye (its own `hidden` flag, saved
-// as /F bit 2, docs/MARKUP-LAYERS.md) is not drawn and cannot be hit on the
+// as /F bit 2, docs/reference/editor/layers.md) is not drawn and cannot be hit on the
 // canvas: no click, no Select All, no grips. The Markups List can still
 // select it. Real geometry, view filters and state run here.
 

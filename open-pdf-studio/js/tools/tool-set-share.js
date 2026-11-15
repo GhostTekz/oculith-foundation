@@ -1,4 +1,4 @@
-// Shared tool sets (the external editor "Share tool sets"; docs/TOOL-SET-SHARING.md).
+// Shared tool sets (the external editor "Share tool sets"; docs/reference/editor/tool-chest.md).
 //
 // A shared set is a tool set file (tool-set-file.js) in a folder several
 // people can reach, for example a network share. Everyone who added it

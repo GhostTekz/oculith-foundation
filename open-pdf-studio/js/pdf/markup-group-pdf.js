@@ -1,4 +1,4 @@
-// Markup groups in the PDF (docs/MARKUP-GROUPS.md), as external plan-review files writes them:
+// Markup groups in the PDF (docs/reference/editor/markups-list.md), as external plan-review files writes them:
 //
 // - The dominant markup carries /GroupNesting [(Group name) /NMdominant /NMmember ...].
 // - Every other member has /IRT to the dominant and /RT /Group.

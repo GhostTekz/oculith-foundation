@@ -14,7 +14,44 @@ use render::Renderer;
 use shm::Shm;
 use std::io::{BufRead, Write};
 
-fn main() -> Result<()> {
+fn main() {
+    let code = match run() {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("Error: {error:?}");
+            1
+        }
+    };
+    exit_without_teardown(code);
+}
+
+/// End the process without running the C library's exit handlers.
+///
+/// Returning from `main` calls `exit()`, which runs every static destructor
+/// that libpdfium registered, among them its bundled C++ runtime's iostream
+/// teardown (`std::__Cr::DoIOSInit::~DoIOSInit`, which flushes `std::cout`).
+/// That destructor crashed workers with SIGSEGV (a call through a null vtable
+/// slot of `std::cout`'s stream buffer) when the app stopped and closed their
+/// pipe. Nothing in that teardown is needed: the documents and the mapping go
+/// with the process, the parent has already removed the shared-memory file,
+/// and this process writes its own output through Rust, flushed here.
+fn exit_without_teardown(code: i32) -> ! {
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn _exit(status: i32) -> !;
+        }
+        // Safety: `_exit` ends the process immediately; no Rust state is
+        // used afterwards and both output streams were flushed above.
+        unsafe { _exit(code) }
+    }
+    #[cfg(not(unix))]
+    std::process::exit(code)
+}
+
+fn run() -> Result<()> {
     // Slot is passed as argv[1] (set by the spawner). Default to 0 for
     // standalone testing. Namespace (owning app PID) is argv[2] so multiple
     // app instances don't collide on the same SHM file; default "0".

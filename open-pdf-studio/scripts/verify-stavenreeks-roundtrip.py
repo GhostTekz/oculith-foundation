@@ -1,6 +1,6 @@
 """Externe-engine-verificatie voor de opgeslagen stavenreeks.
 
-Controleert de HARDE EIS uit docs/superpowers/specs/2026-07-22-stavenreeks-design.md:
+Controleert de HARDE EIS uit docs/reference/editor/drafting-and-signatures.md:
 de stavenreeks moet in ELKE andere PDF-editor (a) zichtbaar en (b) als EEN
 object verplaatsbaar zijn.
 

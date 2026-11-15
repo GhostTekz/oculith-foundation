@@ -15,6 +15,7 @@ import { closeAllPopups } from '../../bridge.js';
 import { persistReaderPosition, restoreReaderPosition } from '../../pdf/reader-mode-view.js';
 import { hasPendingRestore } from '../../core/reader-mode-tracking.js';
 import { actiefNaSluiten } from '../../pdf/handtekeningen/opslaan.js';
+import { clearRegionSelection } from '../../tools/region-selection.js';
 
 /**
  * Create a new tab for a document
@@ -85,6 +86,8 @@ export function switchToTab(index) {
     curDoc.selectedAnnotation = null;
     curDoc.selectedAnnotations = [];
   }
+  // The select tool's region selection belongs to the page it was drawn on.
+  clearRegionSelection();
   import('../../solid/stores/propertiesStore.js').then(m => m.storeHideProperties());
 
   // Switch active document

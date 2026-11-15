@@ -269,3 +269,69 @@ test('the session log records every call and notifies the views', async () => {
   assert.equal(at.auditLog().length, 0);
   assert.equal(at.summarizeArguments({ s: 'z'.repeat(200) }).length < 100, true);
 });
+
+test("the editor's own tools on an asking AI link use the same card, session approval and log", async () => {
+  const asked = at.requestToolApproval({ tool: 'app_delete_annotation', title: 'Delete annotation', args: { id: 'a1' }, owner: 'assistant' });
+  await settle();
+  const [card] = at.pendingApprovals();
+  assert.deepEqual([card.tool, card.title, card.owner, card.addonId], ['app_delete_annotation', 'Delete annotation', 'assistant', null]);
+  assert.match(card.args, /id: a1/);
+  at.answerApproval(card.id, 'always');
+  assert.deepEqual(await asked, { approved: true, decision: 'always' });
+  // Always for this session: the next call does not ask.
+  assert.deepEqual(await at.requestToolApproval({ tool: 'app_delete_annotation', args: {} }), { approved: true, decision: 'session' });
+  const denied = at.requestToolApproval({ tool: 'app_update_annotation', args: {} });
+  await settle();
+  at.answerApproval(at.pendingApprovals()[0].id, 'deny');
+  assert.deepEqual(await denied, { approved: false, decision: 'deny' });
+  assert.deepEqual(at.auditLog().map((e) => [e.tool, e.decision, e.ok]),
+    [['app_delete_annotation', 'always', true], ['app_delete_annotation', 'session', true], ['app_update_annotation', 'deny', false]]);
+  // No tool name: nothing to approve.
+  assert.equal((await at.requestToolApproval({})).approved, false);
+});
+
+test('a panel that shows its own cards claims them; an add-on call carries its owner', async () => {
+  at.registerAddonTools('demo', [write()]);
+  let notified = 0;
+  at.subscribe(() => { notified++; });
+  at.setInlineApprovals((card) => card.owner === 'assistant');
+  assert.ok(notified > 0);
+  const call = at.callAddonTool('addon_demo_place', { n: 2 }, { owner: 'assistant' });
+  const other = at.callAddonTool('addon_demo_place', { n: 3 });
+  await settle();
+  const [mine, theirs] = at.pendingApprovals();
+  assert.equal(at.shownInline(mine), true);
+  assert.equal(at.shownInline(theirs), false, 'a card of an outside AI client stays a floating card');
+  at.setInlineApprovals(() => { throw new Error('broken host'); });
+  assert.equal(at.shownInline(mine), false, 'a broken panel never hides a card');
+  at.setInlineApprovals(null);
+  at.answerApproval(mine.id, 'approve');
+  at.answerApproval(theirs.id, 'deny');
+  assert.equal((await call).ok, true);
+  assert.equal((await other).ok, false);
+});
+
+test('images go back apart from the JSON answer, checked and size-capped', async () => {
+  const png = Buffer.from('fake png bytes').toString('base64');
+  at.registerAddonTools('acme', [
+    read({ name: 'view', handler: async (_a, ctx) => ({ sheet: 'E-1', picture: ctx.image(png) }) }),
+    read({ name: 'many', handler: async (_a, ctx) => ({ all: Array.from({ length: at.MAX_IMAGES + 1 }, () => ctx.image(png)) }) }),
+    read({ name: 'huge', handler: async (_a, ctx) => ({ p: ctx.image('A'.repeat(Math.ceil(at.MAX_IMAGE_BYTES / 3) * 4 + 4)) }) }),
+    read({ name: 'html', handler: async (_a, ctx) => ({ p: ctx.image(png, { mimeType: 'text/html' }) }) }),
+    read({ name: 'junk', handler: async (_a, ctx) => ({ p: ctx.image('not base64!') }) }),
+  ]);
+  const r = await at.callAddonTool('addon_acme_view', {});
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.images, [{ mimeType: 'image/png', data: png }]);
+  assert.deepEqual(r.result.picture, { image: 1, mimeType: 'image/png', bytes: 14 });
+  assert.ok(!JSON.stringify(r.result).includes(png), 'the data is not in the JSON result');
+  assert.equal(at.auditLog().at(-1).images, 1);
+  for (const [tool, why] of [['many', /at most/], ['huge', /too large/], ['html', /Unsupported image type/], ['junk', /base64/]]) {
+    const bad = await at.callAddonTool(`addon_acme_${tool}`, {});
+    assert.equal(bad.ok, false, tool);
+    assert.match(bad.error, why);
+    assert.equal(bad.images, undefined);
+  }
+  const plain = await at.callAddonTool('addon_acme_count', {});
+  assert.equal(plain.images, undefined, 'an answer without images has no images field');
+});

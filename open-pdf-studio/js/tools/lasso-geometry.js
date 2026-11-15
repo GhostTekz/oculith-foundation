@@ -1,4 +1,4 @@
-// Lasso selection geometry (the external editor Shift+O, docs/EDIT-TOOLS.md). Pure: no app
+// Lasso selection geometry (the external editor Shift+O, docs/reference/editor/markup-tools.md). Pure: no app
 // imports, so the node tests load it. All coordinates are PDF page
 // coordinates (the same space the annotations are stored in).
 //

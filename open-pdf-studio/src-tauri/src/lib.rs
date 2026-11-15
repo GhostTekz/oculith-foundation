@@ -15,6 +15,7 @@ mod identity_migration;
 mod email;
 pub mod linux_runtime;
 pub mod logboek;
+pub mod ai_connections;
 pub mod mcp_addon_tools;
 pub mod mcp_app_bridge;
 pub mod mcp_koppeling;
@@ -43,11 +44,13 @@ mod remote_pdf;
 mod ocr_font_scope;
 pub mod window_mgmt;
 pub mod startup_diagnostics;
+pub mod webview_recovery;
 mod generated_backing;
 mod template_scope;
 mod reader_position_scope;
 mod file_range;
 pub mod worker_pool;
+mod single_flight;
 
 pub struct StartupOpts {
     pub mcp_server: bool,
@@ -115,14 +118,16 @@ struct PdfBytes {
     epoch: u64,
 }
 
-struct PdfBytesCache(Mutex<PdfBytes>);
+// The second field makes concurrent misses for one path share one read: two
+// renders that both missed used to read a large set twice at once.
+struct PdfBytesCache(Mutex<PdfBytes>, single_flight::SingleFlight);
 
 impl Default for PdfBytesCache {
     fn default() -> Self {
         Self(Mutex::new(PdfBytes {
             files: byte_lru::ByteLru::new(PDF_BYTES_CACHE_MAX_ENTRIES, PDF_BYTES_CACHE_MAX_BYTES),
             epoch: 0,
-        }))
+        }), single_flight::SingleFlight::new())
     }
 }
 
@@ -145,8 +150,16 @@ impl PdfBytesCache {
 /// The file's bytes, from the cache or read once. Shared, not copied: a
 /// clone per call was a full copy of the file (hundreds of MB on a set).
 /// The read runs without the cache lock, so a cold read of one large file
-/// does not hold up every other document's lookups.
+/// does not hold up every other document's lookups; concurrent misses for the
+/// same path wait for one read instead of each reading the whole file.
 fn cached_pdf_bytes(bytes_cache: &PdfBytesCache, path: &str) -> Result<Arc<Vec<u8>>, String> {
+    if let Some(cached) = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.files.get(path) {
+        return Ok(cached.clone());
+    }
+    bytes_cache.1.run(path, || read_pdf_bytes_once(bytes_cache, path))
+}
+
+fn read_pdf_bytes_once(bytes_cache: &PdfBytesCache, path: &str) -> Result<Arc<Vec<u8>>, String> {
     let epoch = {
         let mut cache = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
         if let Some(cached) = cache.files.get(path) {
@@ -209,7 +222,7 @@ struct PageTypeCache(Mutex<HashMap<(String, u32), String>>);
 
 /// Page-point area of additive parts minus holes. Without the `geos` feature
 /// the desktop shell answers with an error and the measurement keeps the
-/// shoelace total. See docs/GEOS.md.
+/// shoelace total. See docs/developer/geos.md.
 // Commands marked `command(async)` run on the async runtime's threads, not
 // the main thread: a plain synchronous command waits for the window's event
 // loop, and file, session and page commands measured a fixed ~1 s each while
@@ -241,7 +254,7 @@ struct GeosAreaShape {
 
 /// Page-point area of the union of several shapes. Without the `geos` feature
 /// the desktop shell answers with an error and the schedule keeps the sum of
-/// its rows. See docs/GEOS.md.
+/// its rows. See docs/developer/geos.md.
 #[tauri::command(async)]
 fn geos_group_net_area(shapes: Vec<GeosAreaShape>) -> Result<f64, String> {
     #[cfg(feature = "geos")]
@@ -264,7 +277,7 @@ fn geos_group_net_area(shapes: Vec<GeosAreaShape>) -> Result<f64, String> {
 
 /// Crossing points of two open page-space paths. Without the `geos` feature
 /// the desktop shell answers with an error and the trim keeps the segment
-/// crossing already applied in JavaScript. See docs/GEOS.md.
+/// crossing already applied in JavaScript. See docs/developer/geos.md.
 #[tauri::command(async)]
 fn geos_crossings(a: Vec<[f64; 2]>, b: Vec<[f64; 2]>) -> Result<Vec<[f64; 2]>, String> {
     #[cfg(feature = "geos")]
@@ -284,7 +297,7 @@ fn geos_crossings(a: Vec<[f64; 2]>, b: Vec<[f64; 2]>) -> Result<Vec<[f64; 2]>, S
 
 /// One-sided parallel of a committed offset. Without the `geos` feature the
 /// desktop shell answers with an error and the copy keeps the JavaScript
-/// mitre. See docs/GEOS.md.
+/// mitre. See docs/developer/geos.md.
 #[tauri::command(async)]
 fn geos_offset_curve(
     points: Vec<[f64; 2]>,
@@ -653,8 +666,10 @@ static VERIFIED_PACKAGES: std::sync::OnceLock<Vec<VerifiedPackage>> = std::sync:
 const EDITION_URL_PREFIX: &str = "/edition/";
 /// Where an edition plug-in's further module files live in its directory.
 const EDITION_MODULE_DIR: &str = "chunks/";
-const MAX_EDITION_MODULES: usize = 48;
+const MAX_EDITION_MODULES: usize = 256;
 const MAX_EDITION_MODULE_BYTES: u64 = 64 * 1024 * 1024;
+/// Every module file plus the plug-in, the native files and their notices.
+const MAX_ADDON_FILES: usize = MAX_EDITION_MODULES + 64;
 
 /// A module file name: `chunks/<name>.js`, one plain file name.
 fn valid_edition_module_name(name: &str) -> bool {
@@ -864,7 +879,7 @@ fn verified_edition_package(root: &std::path::Path, editor_version: &str) -> Opt
         || !manifest.id.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_')) {
         return None;
     }
-    if manifest.files.len() > 64 || !manifest.files.contains_key("plugin.js") { return None; }
+    if manifest.files.len() > MAX_ADDON_FILES || !manifest.files.contains_key("plugin.js") { return None; }
     if manifest.helper.as_ref().is_some_and(|name| !manifest.files.contains_key(name)) { return None; }
     for (name, expected) in &manifest.files {
         let path = addon_file(root, name)?;
@@ -3182,6 +3197,62 @@ fn get_or_load_doc_at_generation(
     Ok(arc)
 }
 
+/// How long the app waits for its PDFium workers when it exits.
+const WORKER_STOP_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
+
+fn stop_worker_pool(app: &tauri::AppHandle) {
+    let pool = app.state::<Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>().inner().clone();
+    if let Some(pool) = pool.get() {
+        tauri::async_runtime::block_on(pool.shutdown(WORKER_STOP_GRACE));
+    }
+}
+
+/// A SIGTERM (a session ending, a service manager, `kill`) takes the same
+/// way out as closing the window, so the workers are stopped the same way.
+/// If the event loop does not get there in time, the process ends anyway,
+/// without running exit handlers.
+#[cfg(unix)]
+fn stop_on_sigterm(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let Ok(mut term) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) else { return };
+        if term.recv().await.is_none() { return; }
+        eprintln!("[app] SIGTERM: exiting");
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            extern "C" { fn _exit(status: i32) -> !; }
+            // Safety: ends the process at once; nothing runs afterwards.
+            unsafe { _exit(128 + 15) }
+        });
+        app.exit(0);
+    });
+}
+
+#[cfg(not(unix))]
+fn stop_on_sigterm(_app: tauri::AppHandle) {}
+
+/// The PDFium document an in-process fallback render draws from. The default
+/// view reads the file on demand (no whole copy in this process; concurrent
+/// misses share one load). A selected native-layer view renders a modified
+/// copy, which needs the whole source once: that read goes through the bytes
+/// cache, so it is shared and bounded by the cache's byte cap like every other
+/// whole read, and the copy itself never enters the document cache.
+fn inproc_render_document(
+    path: &str,
+    visibility: &[ocg_render_copy::LayerVisibility],
+    bytes_cache: &PdfBytesCache,
+    pdfium_cache: &pdfium_renderer::PdfiumDocCache,
+    pixmap_cache: &pdfium_renderer::PixmapCacheState,
+    render_generation: Option<u64>,
+) -> Result<Arc<pdfium_renderer::PdfiumDocumentHandle>, String> {
+    if visibility.is_empty() {
+        return pdfium_renderer::get_or_load_pdfium_file_for_render(path, pdfium_cache, pixmap_cache, render_generation);
+    }
+    let bytes = cached_pdf_bytes(bytes_cache, path)?;
+    let copy = Arc::new(ocg_render_copy::render_copy(&bytes, visibility).map_err(|e| format!("OCG render copy: {e}"))?);
+    drop(bytes);
+    pdfium_renderer::get_or_load_pdfium_doc_for_render(path, copy, pdfium_cache, pixmap_cache, render_generation)
+}
+
 /// DEBUG / BENCHMARK TOOL. Render a page using our own open-pdf-render Skia
 /// kernel instead of PDFium. NOT wired into the live render path — production
 /// rendering always goes through `render_pdf_page` (PDFium). Kept callable for
@@ -3544,19 +3615,7 @@ async fn render_pdf_page(
         }
 
         // Fallback: in-proc PDFium.
-        let bytes = cached_pdf_bytes(&bytes_cache, &path)?;
-
-        let render_bytes = if visibility.is_empty() { bytes } else {
-            std::sync::Arc::new(ocg_render_copy::render_copy(&bytes, &visibility)
-                .map_err(|e| format!("OCG render copy: {e}"))?)
-        };
-        let handle = pdfium_renderer::get_or_load_pdfium_doc_for_render(
-            &path,
-            render_bytes,
-            &pdfium_cache,
-            &pixmap_cache,
-            render_generation,
-        )?;
+        let handle = inproc_render_document(&path, &visibility, &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
 
         let (width, height, rgba) = pdfium_renderer::render_page_to_rgba_with_annotations(
             handle.document(),
@@ -3592,15 +3651,7 @@ async fn ocr_pdf_page(
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
 ) -> Result<Vec<ocr::OcrWord>, String> {
     let render_generation = pixmap_cache.snapshot_generation(&path);
-    let bytes = cached_pdf_bytes(&bytes_cache, &path)?;
-
-    let handle = pdfium_renderer::get_or_load_pdfium_doc_for_render(
-        &path,
-        bytes,
-        &pdfium_cache,
-        &pixmap_cache,
-        render_generation,
-    )?;
+    let handle = inproc_render_document(&path, &[], &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
 
     let resource_dir = app
         .path()
@@ -3699,19 +3750,7 @@ async fn render_pdf_page_region(
         // in-proc PDFium-toegang (laden én renderen, alle drie de render-paden) wordt
         // nu centraal geserialiseerd via PDFIUM_INPROC_LOCK in pdfium_renderer, dus
         // dit pad heeft geen eigen lock meer nodig.
-        let bytes = cached_pdf_bytes(&bytes_cache, &path)?;
-
-        let render_bytes = if visibility.is_empty() { bytes } else {
-            std::sync::Arc::new(ocg_render_copy::render_copy(&bytes, &visibility)
-                .map_err(|e| format!("OCG render copy: {e}"))?)
-        };
-        let handle = pdfium_renderer::get_or_load_pdfium_doc_for_render(
-            &path,
-            render_bytes,
-            &pdfium_cache,
-            &pixmap_cache,
-            render_generation,
-        )?;
+        let handle = inproc_render_document(&path, &visibility, &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
 
         let (width, height, rgba) = pdfium_renderer::render_page_region_to_rgba_with_annotations(
             handle.document(),
@@ -3734,6 +3773,41 @@ async fn render_pdf_page_region(
         }
     }
     Err("PDF changed repeatedly while rendering; retry after save completes".to_string())
+}
+
+/// One page of an open drawing as a standalone one-page PDF (raw bytes), for a
+/// vector snippet or a region cut from it. PDFium reads only what that page
+/// needs from the file, so the cost does not grow with the size of the set.
+///
+/// `expected_len` is the length of the file as the app opened it. When the
+/// file on disk has another length, the app's bytes are not the file's (an
+/// edit that is not saved yet, or a change by another program) and the
+/// command refuses with `file-changed-on-disk`; the caller then cuts from the
+/// bytes it holds.
+#[tauri::command]
+async fn extract_pdf_page(
+    app: tauri::AppHandle,
+    path: String,
+    page_index: u32,
+    expected_len: Option<u64>,
+) -> Result<tauri::ipc::Response, String> {
+    let file = std::path::PathBuf::from(&path);
+    if !file.is_absolute() || !app.fs_scope().is_allowed(&file) {
+        return Err("Path is outside the authorized filesystem scope".to_string());
+    }
+    let meta = fs::metadata(&file).map_err(|e| format!("Read: {e}"))?;
+    if !meta.is_file() {
+        return Err("Not a file".to_string());
+    }
+    if expected_len.is_some_and(|len| len != meta.len()) {
+        return Err("file-changed-on-disk".to_string());
+    }
+    let bytes = tauri::async_runtime::spawn_blocking(move || {
+        pdfium_renderer::extract_page_pdf(&file, page_index)
+    })
+    .await
+    .map_err(|e| format!("Page extraction panicked: {e}"))??;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// Route A: render een tegel-regio via de eigen display-list-engine i.p.v. de
@@ -4008,18 +4082,7 @@ async fn render_thumbnail(
         let bytes_cache = task_app.state::<PdfBytesCache>();
         let pdfium_cache = task_app.state::<pdfium_renderer::PdfiumDocCache>();
         let pixmap_cache = task_app.state::<pdfium_renderer::PixmapCacheState>();
-        let bytes = cached_pdf_bytes(&bytes_cache, &task_path)?;
-        let render_bytes = if visibility.is_empty() { bytes } else {
-            std::sync::Arc::new(ocg_render_copy::render_copy(&bytes, &visibility)
-                .map_err(|e| format!("OCG thumbnail render copy: {e}"))?)
-        };
-        let handle = pdfium_renderer::get_or_load_pdfium_doc_for_render(
-            &task_path,
-            render_bytes,
-            &pdfium_cache,
-            &pixmap_cache,
-            render_generation,
-        )?;
+        let handle = inproc_render_document(&task_path, &visibility, &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
         pdfium_renderer::render_thumbnail_to_json(handle.document(), page_index, max_width, extra_rot)
     })
     .await
@@ -4437,33 +4500,70 @@ fn get_page_dimensions(
         .collect()
 }
 
-// ─── Screenshot-annotate feature ────────────────────────────────────────────
+// ─── Clipboard images ───────────────────────────────────────────────────────
 // Read the current clipboard bitmap and return it as PNG bytes. Used by the
-// "annotate clipboard screenshot" flow: Windows PrtScn (and the Snipping Tool)
-// place the capture on the clipboard, and reading it in Rust via the
-// clipboard-manager plugin is far more reliable than navigator.clipboard.read()
-// inside WebView2. Returns an error when the clipboard holds no image.
+// "annotate clipboard screenshot" flow (Windows PrtScn and the Snipping Tool
+// place the capture on the clipboard) and, on Linux, by every image paste on
+// the drawing: the webview's own clipboard read went through GTK in this
+// process and crashed it (js/core/system-clipboard.js). Returns an error when
+// the clipboard holds no image. Async and off the main thread, so a read of
+// a clipboard this app serves cannot wait on the thread that serves it.
 #[tauri::command]
-fn read_clipboard_image_png(app: tauri::AppHandle) -> Result<tauri::ipc::Response, String> {
-    use image::ImageEncoder;
-    use tauri_plugin_clipboard_manager::ClipboardExt;
+async fn read_clipboard_image_png(app: tauri::AppHandle) -> Result<tauri::ipc::Response, String> {
+    let png = tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        use image::ImageEncoder;
+        use tauri_plugin_clipboard_manager::ClipboardExt;
 
-    let img = app
-        .clipboard()
-        .read_image()
-        .map_err(|e| format!("no image on clipboard: {e}"))?;
-    let width = img.width();
-    let height = img.height();
-    let rgba = img.rgba();
-    if width == 0 || height == 0 || rgba.is_empty() {
-        return Err("clipboard image is empty".into());
-    }
-
-    let mut png: Vec<u8> = Vec::new();
-    image::codecs::png::PngEncoder::new(&mut png)
-        .write_image(rgba, width, height, image::ExtendedColorType::Rgba8)
-        .map_err(|e| format!("PNG encode failed: {e}"))?;
+        let img = app
+            .clipboard()
+            .read_image()
+            .map_err(|e| format!("no image on clipboard: {e}"))?;
+        let width = img.width();
+        let height = img.height();
+        let rgba = img.rgba();
+        if width == 0 || height == 0 || rgba.is_empty() {
+            return Err("clipboard image is empty".into());
+        }
+        let mut png: Vec<u8> = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(rgba, width, height, image::ExtendedColorType::Rgba8)
+            .map_err(|e| format!("PNG encode failed: {e}"))?;
+        Ok(png)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     Ok(tauri::ipc::Response::new(png))
+}
+
+/// The largest image the drawing puts on the clipboard (decoded RGBA bytes).
+const MAX_CLIPBOARD_IMAGE_BYTES: u64 = 256 * 1024 * 1024;
+
+// Put a PNG (the raw request body) on the clipboard as an image: a snapshot
+// or a copied image markup on Linux, where the webview's own clipboard write
+// is not used (js/core/system-clipboard.js).
+#[tauri::command]
+async fn write_clipboard_image_png(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(_) => return Err("Expected PNG bytes".into()),
+    };
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        use tauri_plugin_clipboard_manager::ClipboardExt;
+
+        let decoder = image::codecs::png::PngDecoder::new(std::io::Cursor::new(&bytes))
+            .map_err(|e| format!("not a PNG: {e}"))?;
+        let (width, height) = image::ImageDecoder::dimensions(&decoder);
+        if width == 0 || height == 0 || u64::from(width) * u64::from(height) * 4 > MAX_CLIPBOARD_IMAGE_BYTES {
+            return Err("clipboard image size out of range".into());
+        }
+        let rgba = image::DynamicImage::from_decoder(decoder)
+            .map_err(|e| format!("PNG decode failed: {e}"))?
+            .into_rgba8();
+        let img = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+        app.clipboard().write_image(&img).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // Register/unregister the PrtScn global hotkey based on the user preference.
@@ -4718,9 +4818,11 @@ pub fn run(opts: StartupOpts) {
                     }
                 }));
         }
-        // This fork has no update endpoint or signing key. The updater plugin
-        // stays unregistered until a signed Oculith release channel exists.
+        // The updater plugin is registered in setup, and only for a build
+        // whose config names an update channel (see register_updater).
     }
+
+    // (register_updater is called from setup, once the config is known.)
 
     // Global system hotkey (PrtScn) for the opt-in "screenshot annotate"
     // feature. The shortcut is NOT registered here — the plugin only installs
@@ -4750,6 +4852,9 @@ pub fn run(opts: StartupOpts) {
 
     builder
         .setup(move |app| {
+            stop_on_sigterm(app.handle().clone());
+            #[cfg(desktop)]
+            register_updater(app.handle());
             // The main window, built here from its config so a panel popped
             // out (the page opening a blank window of its own) opens as a
             // window related to this one; any other new window is refused.
@@ -4774,6 +4879,9 @@ pub fn run(opts: StartupOpts) {
             let diagnostics = startup_diagnostics::StartupDiagnostics::new(diagnostics_path);
             diagnostics.record("native-created", None);
             app.manage(diagnostics);
+            // Reload the page when its web process ends (webview_recovery.rs).
+            app.manage(webview_recovery::WebviewRecovery::default());
+            webview_recovery::watch_main_window(app.handle());
 
             // Ondertekende versies (pdf_signed_revision) ouder dan zeven dagen
             // opruimen; vangnet naast het opruimen door de UI. Ruim genoeg, zodat
@@ -5009,6 +5117,7 @@ pub fn run(opts: StartupOpts) {
             ocr_pdf_page,
             worker_pool_ready,
             render_pdf_page_region,
+            extract_pdf_page,
             render_tile_scene_region,
             page_content_size,
             perf_log,
@@ -5050,9 +5159,14 @@ pub fn run(opts: StartupOpts) {
             reader_position_scope::allow_reader_position_scope,
             mcp_app_bridge::app_response,
             mcp_addon_tools::mcp_addon_tools_set,
+            mcp_server::mcp_local_tools,
+            mcp_server::mcp_local_call,
             mcp_app_bridge::mcp_bridge_ready,
             mcp_koppeling::mcp_instellen,
             mcp_koppeling::mcp_status,
+            ai_connections::ai_connections_scan,
+            ai_connections::ai_connection_write,
+            ai_connections::ai_link_test,
             email::email_pdf,
             window_mgmt::spawn_window_with_pdf,
             window_mgmt::try_dock_pdf_at_screen,
@@ -5064,13 +5178,23 @@ pub fn run(opts: StartupOpts) {
             window_mgmt::detach_diag,
             startup_diagnostics::startup_diagnostic,
             startup_diagnostics::startup_diagnostics_path,
+            webview_recovery::webview_termination_notice,
+            webview_recovery::crash_recovery_save,
+            webview_recovery::crash_recovery_load,
+            webview_recovery::crash_recovery_clear,
             datamap::app_data_dir_effectief,
             read_clipboard_image_png,
+            write_clipboard_image_png,
             set_prtscn_hotkey,
         ])
         .build(editor_context())
         .expect("error while building tauri application")
         .run(|_app, _event| {
+            // Stop the PDFium workers before the process goes: each one is
+            // asked to shut down and given a moment to end on its own.
+            if let tauri::RunEvent::Exit = &_event {
+                stop_worker_pool(_app);
+            }
             // macOS (en iOS) leveren een dubbelklik in Finder NIET als
             // argv-argument aan (zoals Windows/Linux), maar als Apple Event
             // dat Tauri doorgeeft als RunEvent::Opened { urls }. Zonder deze
@@ -5128,4 +5252,17 @@ pub fn run(opts: StartupOpts) {
                 }
             }
         });
+}
+
+/// Foundation release builds carry an update channel (`plugins.updater` in
+/// tauri.community.conf.json: the public releases' latest.json and the key
+/// that signs them). Other builds name no channel and get no updater.
+#[cfg(desktop)]
+fn register_updater(app: &tauri::AppHandle) {
+    if !app.config().plugins.0.contains_key("updater") {
+        return;
+    }
+    if let Err(e) = app.plugin(tauri_plugin_updater::Builder::new().build()) {
+        eprintln!("[startup] updater unavailable: {e}");
+    }
 }

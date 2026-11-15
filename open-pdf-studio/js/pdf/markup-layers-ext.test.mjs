@@ -1,4 +1,4 @@
-// externally marked markup layers (docs/MARKUP-LAYERS.md) through real PDF bytes: a
+// externally marked markup layers (docs/reference/editor/layers.md) through real PDF bytes: a
 // synthetic the external editor sheet with /OCProperties and /OC on its markups is opened
 // with the real load pipeline and saved with the real saver. Markup-only
 // OCGs become markup layers; the drawing's own OCG stays native (K-001);

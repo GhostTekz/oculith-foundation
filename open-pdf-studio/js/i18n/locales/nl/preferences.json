@@ -168,6 +168,10 @@
     "snapToMarkup": "Uitlijnen op markeringen",
     "navigation": "Navigatie",
     "wheelZoomWithoutCtrl": "Zoomen met muiswiel (zonder Ctrl ingedrukt)",
+    "wheelChangesPage": "Muiswiel bladert naar andere pagina",
+    "wheelChangesPageNever": "Nooit",
+    "wheelChangesPageAtEdge": "Aan de paginarand",
+    "wheelChangesPageHint": "Enkele-paginaweergave. Nooit: het wiel scrolt binnen de pagina en stopt aan de randen; blader met de knoppen Vorige / Volgende, het paginaveld, PageUp / PageDown of de miniaturen. Aan de paginarand: een nieuwe wieldraai boven- of onderaan de pagina gaat naar de vorige of volgende pagina.",
     "dynamicScaling": "Markeringen automatisch schalen",
     "saving": "Opslaan",
     "incrementalSave": "Snel opslaan: wijzigingen achter aan het bestand toevoegen in plaats van het te herschrijven"

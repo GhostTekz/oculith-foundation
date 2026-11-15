@@ -10,20 +10,41 @@ export async function helperAvailable() {
   try { return await invoke('edition_helper_available'); } catch { return false; }
 }
 
+// The native bridge's own limits (edition_helper.rs): it frees the call when
+// one is reached, so a hung helper leaves nothing waiting there.
+function limitArgs(timeoutMs, idleMs) {
+  return { ...(timeoutMs > 0 ? { timeoutMs: Math.ceil(timeoutMs) } : {}), ...(idleMs > 0 ? { idleMs: Math.ceil(idleMs) } : {}) };
+}
+
+// A native timeout comes back as the bridge's plain message: give it the
+// same error code as the page's own.
+const NATIVE_LIMIT = /^The edition helper (?:did not answer|sent nothing for) /;
+function withCode(error) {
+  if (typeof error === 'string' && NATIVE_LIMIT.test(error)) return Object.assign(new Error(error), { code: 'timeout' });
+  return error;
+}
+
+function bounded(call, label, method, timeoutMs) {
+  const coded = call.catch((error) => { throw withCode(error); });
+  if (!(timeoutMs > 0)) return coded;
+  let timer = 0;
+  // The page's own timer, a moment after the bridge's, for a bridge that
+  // does not answer at all.
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error(`The ${label} did not answer ${method} within ${Math.round(timeoutMs / 1000)} s.`), { code: 'timeout' })), timeoutMs + 1000);
+  });
+  return Promise.race([coded, late]).finally(() => clearTimeout(timer));
+}
+
 /**
  * One call to the helper; resolves with its result, rejects with its error.
  * `timeoutMs` rejects (error code 'timeout') when no answer comes in time,
- * instead of waiting forever on a helper that hangs.
+ * and `idleMs` when the helper writes nothing at all (no event, no answer)
+ * for that long, instead of waiting forever on a helper that hangs.
  */
-export function helperCall(method, params = null, { timeoutMs = 0 } = {}) {
+export function helperCall(method, params = null, { timeoutMs = 0, idleMs = 0 } = {}) {
   if (!isTauri()) return Promise.reject(new Error('The edition helper needs the desktop app.'));
-  const call = invoke('edition_helper_call', { method, params });
-  if (!(timeoutMs > 0)) return call;
-  let timer = 0;
-  const late = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(Object.assign(new Error(`The edition helper did not answer ${method} within ${Math.round(timeoutMs / 1000)} s.`), { code: 'timeout' })), timeoutMs);
-  });
-  return Promise.race([call, late]).finally(() => clearTimeout(timer));
+  return bounded(invoke('edition_helper_call', { method, params, ...limitArgs(timeoutMs, idleMs) }), 'edition helper', method, timeoutMs);
 }
 
 /** Whether an enabled, verified package has its own native helper. */
@@ -33,15 +54,9 @@ export async function addonHelperAvailable(packageId) {
 }
 
 /** Route a call to one enabled package's helper. */
-export function addonHelperCall(packageId, method, params = null, { timeoutMs = 0 } = {}) {
+export function addonHelperCall(packageId, method, params = null, { timeoutMs = 0, idleMs = 0 } = {}) {
   if (!isTauri()) return Promise.reject(new Error('A native add-on helper needs the desktop app.'));
-  const call = invoke('addon_helper_call', { packageId, method, params });
-  if (!(timeoutMs > 0)) return call;
-  let timer = 0;
-  const late = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(Object.assign(new Error(`The add-on helper did not answer ${method} within ${Math.round(timeoutMs / 1000)} s.`), { code: 'timeout' })), timeoutMs);
-  });
-  return Promise.race([call, late]).finally(() => clearTimeout(timer));
+  return bounded(invoke('addon_helper_call', { packageId, method, params, ...limitArgs(timeoutMs, idleMs) }), 'add-on helper', method, timeoutMs);
 }
 
 let addonListening = null;

@@ -19,7 +19,7 @@ const icon = (name, size = 14) => lucide(name).replace('<svg ', `<svg width="${s
  * Manage Tool Sets (the external editor): every set with its Display box, location and
  * share status; Add ▸ Add New / Add Existing, Import, Export, Remove,
  * Move Up / Move Down, and Check Out / Check In for shared sets.
- * docs/TOOL-SET-SHARING.md.
+ * docs/reference/editor/tool-chest.md.
  */
 export default function ManageToolSetsDialog() {
   const { t } = useTranslation('common');

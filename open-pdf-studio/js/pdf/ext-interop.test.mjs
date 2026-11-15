@@ -1,4 +1,4 @@
-// externally marked PDFs (docs/MARKUP-INTEROP.md) through real PDF bytes: a
+// externally marked PDFs (docs/reference/editor/markup-interop.md) through real PDF bytes: a
 // synthetic external plan-review files sheet (saver/test-fixtures/ext-fixture.mjs) is opened
 // with the real load pipeline (pdf.js annotations + pdf-lib extras +
 // converter + page conversion) and saved with the real saver.

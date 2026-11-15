@@ -36,8 +36,8 @@ function displayName(job) {
 let _pdfjs = null;
 async function getPdfjs() {
   if (_pdfjs) return _pdfjs;
-  const lib = await import('pdfjs-dist');
-  try { lib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url).href; } catch (_) {}
+  const [lib, { pdfjsWorkerSrc }] = await Promise.all([import('pdfjs-dist'), import('../../pdf/pdfjs-worker-src.js')]);
+  try { lib.GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc(); } catch (_) {}
   _pdfjs = lib;
   return lib;
 }

@@ -16,7 +16,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(server.resolvedUrls.local[0], { waitUntil: 'networkidle' });
 
-  // plan-review panel hosts (docs/WORKSPACE-SPEC.md §5, WP2): each host
+  // plan-review panel hosts (docs/reference/editor/workspace.md, WP2): each host
   // has an inner edge (.ws-host-edge-<host>) that resizes on drag and arrow
   // keys and collapses/expands on click; sizes persist per profile in
   // preferences.workspaceLayout.profileSizes.

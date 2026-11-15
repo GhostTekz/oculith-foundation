@@ -108,6 +108,8 @@ export default function GeneralTab(props) {
         <div class="pref-row">
           <button type="button" class="pref-btn pref-btn-secondary" id="prefs-mcp-tool-log"
             onClick={() => openDialog('addon-tool-log')}>{tDialogs('addonTools.openLog')}</button>
+          <button type="button" class="pref-btn pref-btn-secondary" id="prefs-mcp-connections" style={{ 'margin-left': '6px' }}
+            onClick={() => openDialog('ai-connections')}>{tDialogs('aiConnections.openPanel')}</button>
         </div>
         <For each={toolFailures()}>{(f) => (
           <div class="pref-row" role="status" style={{ color: 'var(--ox-warn-ink)', 'font-size': '11px' }}>

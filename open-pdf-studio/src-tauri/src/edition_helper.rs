@@ -14,6 +14,12 @@
 //! The editor knows nothing about the methods. A package without a verified
 //! helper receives a "no helper" error.
 //!
+//! A call may bound its wait: `timeoutMs` fails it when no answer comes in
+//! that time, `idleMs` when the helper writes no line at all (no event, no
+//! reply) for that long. Either way the call fails with a plain error and
+//! its slot is freed; a late answer is dropped. Without them a call waits
+//! until the helper answers or stops.
+//!
 //! One writer task owns the helper's input and takes lines from a channel, so
 //! a large request never holds up other calls behind a lock. The reader looks
 //! only at a line's top-level keys: results and event lines are passed on as
@@ -23,6 +29,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
@@ -51,7 +58,43 @@ struct Running {
     queue: mpsc::Sender<Outgoing>,
     child: Child,
     pending: Pending,
+    activity: Arc<Activity>,
 }
+
+/// When the helper last wrote a line (any line), for the calls that wait
+/// with an idle limit.
+struct Activity {
+    epoch: Instant,
+    last_ms: AtomicU64,
+}
+
+impl Activity {
+    fn new() -> Self { Self { epoch: Instant::now(), last_ms: AtomicU64::new(0) } }
+    fn touch(&self) {
+        let ms = u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.last_ms.fetch_max(ms, Ordering::Relaxed);
+    }
+    fn last(&self) -> Instant { self.epoch + Duration::from_millis(self.last_ms.load(Ordering::Relaxed)) }
+}
+
+/// How long one call may wait (see the module notes). The longest accepted
+/// limit is a day; a larger or zero value means no limit.
+#[derive(Clone, Copy, Default, Debug)]
+struct Limits {
+    total: Option<Duration>,
+    idle: Option<Duration>,
+}
+
+const LONGEST_LIMIT_MS: u64 = 24 * 60 * 60 * 1000;
+
+impl Limits {
+    fn from_ms(timeout_ms: Option<u64>, idle_ms: Option<u64>) -> Self {
+        let pick = |ms: Option<u64>| ms.filter(|ms| *ms > 0 && *ms <= LONGEST_LIMIT_MS).map(Duration::from_millis);
+        Self { total: pick(timeout_ms), idle: pick(idle_ms) }
+    }
+}
+
+fn whole_seconds(d: Duration) -> u64 { d.as_millis().div_ceil(1000) as u64 }
 
 #[derive(Default)]
 pub struct EditionHelper {
@@ -169,10 +212,13 @@ async fn start(app: &tauri::AppHandle, path: std::path::PathBuf, package_id: Opt
     });
 
     let reader_pending = pending.clone();
+    let activity = Arc::new(Activity::new());
+    let reader_activity = activity.clone();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            reader_activity.touch();
             dispatch(&app, &reader_pending, line, package_id.as_deref());
         }
         // The helper ended: every call still waiting fails, and the page is
@@ -187,7 +233,7 @@ async fn start(app: &tauri::AppHandle, path: std::path::PathBuf, package_id: Opt
             let _ = app.emit_str(EVENT, r#"{"event":"helper-exit"}"#.to_owned());
         }
     });
-    Ok(Running { queue, child, pending })
+    Ok(Running { queue, child, pending, activity })
 }
 
 /// Send one call to the edition helper and wait for its answer. Methods
@@ -198,18 +244,26 @@ pub async fn edition_helper_call(
     state: tauri::State<'_, EditionHelper>,
     method: String,
     params: Option<Value>,
+    timeout_ms: Option<u64>,
+    idle_ms: Option<u64>,
 ) -> Result<Box<RawValue>, String> {
     if method.starts_with("host.") {
         return Err(format!("Unknown helper method: {method}"));
     }
-    send(&app, &state, None, &method, params.unwrap_or(Value::Null)).await
+    send(&app, &state, None, &method, params.unwrap_or(Value::Null), Limits::from_ms(timeout_ms, idle_ms)).await
+}
+
+/// Whether one enabled add-on package has a verified helper. Verifying hashes
+/// the helper and its companion files, so it runs on a blocking thread, never
+/// on the main (UI) thread a synchronous command would use.
+#[tauri::command]
+pub async fn addon_helper_available(app: tauri::AppHandle, package_id: String) -> bool {
+    tauri::async_runtime::spawn_blocking(move || crate::package_helper_path(&app, &package_id).is_some())
+        .await
+        .unwrap_or(false)
 }
 
 /// Call the verified helper belonging to one enabled add-on package.
-#[tauri::command]
-pub fn addon_helper_available(app: tauri::AppHandle, package_id: String) -> bool {
-    crate::package_helper_path(&app, &package_id).is_some()
-}
 
 #[tauri::command]
 pub async fn addon_helper_call(
@@ -218,9 +272,11 @@ pub async fn addon_helper_call(
     package_id: String,
     method: String,
     params: Option<Value>,
+    timeout_ms: Option<u64>,
+    idle_ms: Option<u64>,
 ) -> Reply {
     if method.starts_with("host.") { return Err(format!("Unknown helper method: {method}")); }
-    send(&app, &state, Some(&package_id), &method, params.unwrap_or(Value::Null)).await
+    send(&app, &state, Some(&package_id), &method, params.unwrap_or(Value::Null), Limits::from_ms(timeout_ms, idle_ms)).await
 }
 
 /// Share a file the page may open (one in the editor's file scope) with the
@@ -235,7 +291,7 @@ pub async fn edition_helper_share_file(
     if !std::path::Path::new(&path).is_absolute() || !app.fs_scope().is_allowed(std::path::Path::new(&path)) {
         return Err("This file is not open in the editor.".into());
     }
-    send(&app, &state, None, "host.shareFile", json!({ "path": path })).await?;
+    send(&app, &state, None, "host.shareFile", json!({ "path": path }), Limits::default()).await?;
     Ok(true)
 }
 
@@ -259,7 +315,7 @@ pub async fn addon_helper_share_file(
     {
         return Err("This file is not open in the editor.".into());
     }
-    send(&app, &state, Some(&package_id), "host.shareFile", json!({ "path": &pdf })).await?;
+    send(&app, &state, Some(&package_id), "host.shareFile", json!({ "path": &pdf }), Limits::default()).await?;
     Ok(pdf.to_string_lossy().into_owned())
 }
 
@@ -282,7 +338,7 @@ fn check_shareable_pdf(path: &std::path::Path) -> Result<std::path::PathBuf, Str
     Ok(real)
 }
 
-async fn send(app: &tauri::AppHandle, state: &EditionHelper, package_id: Option<&str>, method: &str, params: Value) -> Reply {
+async fn send(app: &tauri::AppHandle, state: &EditionHelper, package_id: Option<&str>, method: &str, params: Value, limits: Limits) -> Reply {
     if let Some(package_id) = package_id {
         if !crate::package_helper_enabled(app, package_id) {
             let mut running = state.running.lock().await;
@@ -296,7 +352,7 @@ async fn send(app: &tauri::AppHandle, state: &EditionHelper, package_id: Option<
     let (tx, rx) = oneshot::channel();
     // The lock covers only the liveness check and the registration; the
     // write itself happens in the writer task.
-    let (queue, pending) = {
+    let (queue, pending, activity) = {
         let mut running = state.running.lock().await;
         let key = package_id.unwrap_or("").to_owned();
         // Start (or restart, after it stopped) the helper.
@@ -312,13 +368,63 @@ async fn send(app: &tauri::AppHandle, state: &EditionHelper, package_id: Option<
         }
         let helper = running.get(&key).expect("started above");
         helper.pending.lock().unwrap().insert(id, tx);
-        (helper.queue.clone(), helper.pending.clone())
+        (helper.queue.clone(), helper.pending.clone(), helper.activity.clone())
     };
-    if queue.send(Outgoing { id, line }).await.is_err() {
+    let started = Instant::now();
+    // A full queue counts against the call's limits too.
+    let queued = queue.send(Outgoing { id, line });
+    let queued = match limits.total {
+        Some(total) => tokio::time::timeout(total, queued).await.unwrap_or(Ok(())),
+        None => queued.await,
+    };
+    if queued.is_err() {
         pending.lock().unwrap().remove(&id);
         return Err(STOPPED.into());
     }
-    rx.await.map_err(|_| STOPPED.to_string())?
+    wait_reply(rx, &pending, id, method, limits, &activity, started).await
+}
+
+/// Wait for the answer to call `id` within `limits`. On a limit the call's
+/// slot is freed (a late answer is dropped) and the call fails.
+async fn wait_reply(
+    mut rx: oneshot::Receiver<Reply>,
+    pending: &Pending,
+    id: u64,
+    method: &str,
+    limits: Limits,
+    activity: &Activity,
+    started: Instant,
+) -> Reply {
+    let deadline = limits.total.map(|d| started + d);
+    loop {
+        let idle_at = limits.idle.map(|d| activity.last().max(started) + d);
+        let wake = match (deadline, idle_at) {
+            (Some(a), Some(b)) => a.min(b),
+            (Some(a), None) | (None, Some(a)) => a,
+            (None, None) => return rx.await.map_err(|_| STOPPED.to_string())?,
+        };
+        tokio::select! {
+            reply = &mut rx => return reply.map_err(|_| STOPPED.to_string())?,
+            _ = tokio::time::sleep_until(wake.into()) => {}
+        }
+        let now = Instant::now();
+        let failure = match (deadline, limits.total) {
+            (Some(at), Some(total)) if now >= at => Some(format!("The edition helper did not answer {method} within {} s.", whole_seconds(total))),
+            _ => None,
+        };
+        let failure = failure.or_else(|| {
+            let idle = limits.idle?;
+            (now >= activity.last().max(started) + idle)
+                .then(|| format!("The edition helper sent nothing for {} s while running {method}.", whole_seconds(idle)))
+        });
+        let Some(message) = failure else { continue };
+        pending.lock().unwrap().remove(&id);
+        // An answer that came in just now still counts.
+        return match rx.try_recv() {
+            Ok(reply) => reply,
+            Err(_) => Err(message),
+        };
+    }
 }
 
 const FILE_CAP: u64 = 250 * 1024 * 1024;
@@ -394,5 +500,104 @@ mod share_file_tests {
             assert!(check_shareable_pdf(&link).is_err());
         }
         std::fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::{wait_reply, Activity, Limits, Pending, Reply};
+    use serde_json::value::RawValue;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use tokio::sync::oneshot;
+
+    fn call(pending: &Pending, id: u64) -> (oneshot::Sender<Reply>, oneshot::Receiver<Reply>) {
+        let (tx, rx) = oneshot::channel();
+        // The bridge keeps the sender in `pending`; the test answers through
+        // a second channel to keep a handle of its own.
+        let (keep, _) = oneshot::channel();
+        pending.lock().unwrap().insert(id, keep);
+        (tx, rx)
+    }
+
+    fn ok() -> Reply { Ok(RawValue::from_string("true".into()).unwrap()) }
+
+    #[test]
+    fn limits_take_only_sensible_values() {
+        let l = Limits::from_ms(Some(0), Some(25 * 60 * 60 * 1000));
+        assert!(l.total.is_none() && l.idle.is_none());
+        let l = Limits::from_ms(Some(1500), None);
+        assert_eq!(l.total, Some(Duration::from_millis(1500)));
+        assert!(Limits::from_ms(None, None).total.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_call_without_limits_waits_for_its_answer() {
+        let pending: Pending = Default::default();
+        let (tx, rx) = call(&pending, 1);
+        tokio::spawn(async move { tokio::time::sleep(Duration::from_millis(60)).await; let _ = tx.send(ok()); });
+        let r = wait_reply(rx, &pending, 1, "m", Limits::default(), &Activity::new(), Instant::now()).await;
+        assert_eq!(r.unwrap().get(), "true");
+    }
+
+    #[tokio::test]
+    async fn a_silent_helper_fails_the_call_at_its_timeout_and_frees_the_slot() {
+        let pending: Pending = Default::default();
+        let (_tx, rx) = call(&pending, 7);
+        let started = Instant::now();
+        let r = wait_reply(rx, &pending, 7, "store.status", Limits::from_ms(Some(150), None), &Activity::new(), started).await;
+        let waited = started.elapsed();
+        assert_eq!(r.unwrap_err(), "The edition helper did not answer store.status within 1 s.");
+        assert!(waited >= Duration::from_millis(150) && waited < Duration::from_secs(2), "{waited:?}");
+        assert!(pending.lock().unwrap().is_empty(), "a late answer has nowhere to go");
+    }
+
+    #[tokio::test]
+    async fn helper_lines_keep_an_idle_limited_call_alive_until_they_stop() {
+        let pending: Pending = Default::default();
+        let activity = Arc::new(Activity::new());
+        // Lines every 40 ms for 400 ms keep a 150 ms idle limit from firing.
+        let (tx, rx) = call(&pending, 3);
+        let a = activity.clone();
+        tokio::spawn(async move {
+            for _ in 0..10 { tokio::time::sleep(Duration::from_millis(40)).await; a.touch(); }
+            let _ = tx.send(ok());
+        });
+        let started = Instant::now();
+        let r = wait_reply(rx, &pending, 3, "events.run", Limits::from_ms(None, Some(150)), &activity, started).await;
+        assert_eq!(r.unwrap().get(), "true");
+        assert!(started.elapsed() >= Duration::from_millis(380));
+
+        // Then nothing: the same limit ends the next call.
+        let (_tx, rx) = call(&pending, 4);
+        let started = Instant::now();
+        let r = wait_reply(rx, &pending, 4, "events.run", Limits::from_ms(None, Some(150)), &activity, started).await;
+        assert_eq!(r.unwrap_err(), "The edition helper sent nothing for 1 s while running events.run.");
+        let waited = started.elapsed();
+        assert!(waited >= Duration::from_millis(150) && waited < Duration::from_secs(2), "{waited:?}");
+        assert!(!pending.lock().unwrap().contains_key(&4));
+    }
+
+    #[tokio::test]
+    async fn the_total_limit_holds_even_while_the_helper_writes() {
+        let pending: Pending = Default::default();
+        let activity = Arc::new(Activity::new());
+        let (_tx, rx) = call(&pending, 9);
+        let a = activity.clone();
+        let busy = tokio::spawn(async move { loop { tokio::time::sleep(Duration::from_millis(20)).await; a.touch(); } });
+        let started = Instant::now();
+        let r = wait_reply(rx, &pending, 9, "m", Limits::from_ms(Some(200), Some(100)), &activity, started).await;
+        busy.abort();
+        assert!(r.unwrap_err().contains("did not answer m within"));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_arrives_at_the_limit_still_counts() {
+        let pending: Pending = Default::default();
+        let (tx, rx) = call(&pending, 5);
+        tx.send(ok()).unwrap();
+        let r = wait_reply(rx, &pending, 5, "m", Limits::from_ms(Some(1), None), &Activity::new(), Instant::now() - Duration::from_secs(1)).await;
+        assert_eq!(r.unwrap().get(), "true");
     }
 }

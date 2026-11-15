@@ -1,4 +1,4 @@
-/* plan-review panel hosts (docs/WORKSPACE-SPEC.md §1.4, §6, WP2):
+/* plan-review panel hosts (docs/reference/editor/workspace.md):
    36 px access bars with 20 px icons, a 36 px panel header "Title ▾",
    a 5 px inner edge that resizes on drag and collapses on click, the bottom
    host with its own access bar, and the 36 px vertical toolbar on the right.

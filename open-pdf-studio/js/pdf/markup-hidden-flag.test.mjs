@@ -1,4 +1,4 @@
-// The Markups List row eye (docs/MARKUP-LAYERS.md) through real PDF bytes:
+// The Markups List row eye (docs/reference/editor/layers.md) through real PDF bytes:
 // a markup's own `hidden` flag is the annotation Hidden flag (/F bit 2). The
 // the external editor layers fixture is opened with the real load pipeline, a markup is
 // hidden or shown with the real list action, and the real saver writes it.

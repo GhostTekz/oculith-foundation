@@ -1,4 +1,4 @@
-/* Capture: photos on markups and File Attachment (docs/CAPTURE.md). */
+/* Capture: photos on markups and File Attachment (docs/reference/editor/markup-tools.md). */
 
 .capture-viewer-dialog .modal-body { padding: var(--ox-sp-3); }
 .capture-viewer { display: flex; flex-direction: column; gap: var(--ox-sp-2); min-width: 420px; }

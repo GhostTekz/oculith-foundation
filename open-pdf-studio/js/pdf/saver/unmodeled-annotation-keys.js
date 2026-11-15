@@ -36,9 +36,9 @@ export function carryUnmodeledAnnotationKeys(context, annotationRefs, model, tar
   const ref = annotationRefs.find((item) => item instanceof PDFRef && item.toString() === source.ref);
   if (!ref) return [];
   const original = context.lookup(ref);
-  if (!(original instanceof PDFDict)) throw new Error('PDF annotation source is unreadable; save again.');
+  if (!(original instanceof PDFDict)) throw new Error('PDF annotation source is unreadable.');
   if (source.nm != null && text(context, original.get(N('NM'))) !== source.nm) {
-    throw new Error('PDF annotation source changed; save again.');
+    throw new Error('PDF annotation source changed: the markup no longer matches the annotation it was read from.');
   }
   if (original.get(N('Subtype'))?.toString() !== target.get(N('Subtype'))?.toString()) {
     // The external PDF interop writer handles image annotations that the

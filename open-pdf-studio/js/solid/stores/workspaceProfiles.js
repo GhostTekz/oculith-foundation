@@ -1,5 +1,5 @@
 // Adapter: the old workspace-profile API on top of workspaceLayout.js.
-// Profiles are now whole panel layouts (docs/WORKSPACE-SPEC.md §5):
+// Profiles are now whole panel layouts (docs/reference/editor/workspace.md):
 // oculith (default), oculithAdvanced, quantityTakeoff, document. The old ids
 // (review/markup/takeoff/document) still work and map via LEGACY_PROFILE_MAP.
 

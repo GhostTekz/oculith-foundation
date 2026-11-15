@@ -27,7 +27,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(url, { waitUntil: 'networkidle' });
 
-  // plan-review workspace (docs/WORKSPACE-SPEC.md §5): profiles come
+  // plan-review workspace (docs/reference/editor/workspace.md): profiles come
   // from Oculith ▸ Profiles in the menu bar; panels live in the left / right
   // / bottom hosts, each with an access bar.
   async function chooseProfile(name) {

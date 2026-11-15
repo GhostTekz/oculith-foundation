@@ -1,5 +1,5 @@
 // Flatten / Unflatten markups (the external editor Document ▸ Flatten… / Unflatten,
-// docs/FLATTEN.md). Pure pdf-lib: no app state, so node tests run it on real
+// docs/reference/editor/markup-tools.md). Pure pdf-lib: no app state, so node tests run it on real
 // PDF bytes.
 //
 // Flatten draws each chosen annotation's normal appearance (/AP /N) into the

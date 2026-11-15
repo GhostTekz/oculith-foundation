@@ -6,7 +6,9 @@
 // and status), carried copies are added to the new revision, and the saver
 // writes them to a COPY next to the revised PDF ("<name>-slip-sheet.pdf").
 // Neither the revised PDF as received nor the old revision is overwritten;
-// the old revision stays in the sheet's history with its own markups.
+// the old revision stays in the sheet's history with its own markups. A
+// revised PDF that receives no markups is neither opened nor copied: the set
+// records it as received.
 
 import * as pdfjsLib from 'pdfjs-dist';
 import { state } from '../core/state.js';
@@ -122,10 +124,9 @@ export async function runSlipSheet({ register, rows, pageCounts, revision, align
       continue;
     }
     onProgress?.(`${extractFileName(filePath)}…`);
-    const output = await slipSheetOutputPath(filePath, register);
-    const target = await openDocument(filePath);
-    const usedIds = new Set(target.annotations.map(annotation => annotation.id));
-    const added = [];
+    // The old revisions' markups first: a revised PDF that receives none is
+    // recorded as received, without opening it or writing a copy.
+    const carries = [];
     for (const row of matched) {
       const sheet = register.sheets.find(item => item.id === row.sheetId);
       if (!sheet) throw new Error('A matched sheet is no longer in this set.');
@@ -135,13 +136,26 @@ export async function runSlipSheet({ register, rows, pageCounts, revision, align
       }
       const source = await openDocument(sheet.filePath);
       await pageReady(source, sheet.page);
+      const markups = carryableMarkups(source.annotations, sheet.page);
+      if (markups.length) carries.push({ row, sheet, source, markups });
+    }
+    if (!carries.length) {
+      outputs.set(filePath, { path: filePath, fingerprint: await fingerprintPdfBytes(await readRevisionFile(filePath)) });
+      continue;
+    }
+    const output = await slipSheetOutputPath(filePath, register);
+    const target = await openDocument(filePath);
+    const usedIds = new Set(target.annotations.map(annotation => annotation.id));
+    const added = [];
+    for (const { row, sheet, source, markups } of carries) {
+      if (!state.documents.includes(source)) throw new Error(`${extractFileName(sheet.filePath)} was closed.`);
       await pageReady(target, row.page);
       const [oldPage, newPage] = await Promise.all([source.pdfDoc.getPage(sheet.page), target.pdfDoc.getPage(row.page)]);
       const align = alignments[row.key];
       const { matrix } = align
         ? twoPointTransform(align.oldA, align.oldB, align.newA, align.newB)
         : pageAlignTransform(oldPage.getViewport({ scale: 1 }), newPage.getViewport({ scale: 1 }));
-      const copies = carryMarkups(carryableMarkups(source.annotations, sheet.page), {
+      const copies = carryMarkups(markups, {
         matrix, targetPage: row.page, usedIds,
         source: { sheetId: sheet.id, label: sheet.label, revision: sheet.revision, filePath: sheet.filePath, page: sheet.page },
       });
@@ -167,7 +181,7 @@ export async function runSlipSheet({ register, rows, pageCounts, revision, align
     if (!isTauri()) cacheWebFile(output, bytes);
     outputs.set(filePath, { path: output, fingerprint: await fingerprintPdfBytes(bytes) });
     carried += added.length;
-    try { await goToPage(matched[0].page); } catch { /* the set is updated regardless */ }
+    try { await goToPage(carries[0].row.page); } catch { /* the set is updated regardless */ }
   }
   const result = applySlipSheet(register, rows, { revision, outputs, pageCounts });
   return { ...result, carried, outputs };

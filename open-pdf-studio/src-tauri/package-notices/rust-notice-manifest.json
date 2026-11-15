@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "cargoLockSha256": "84e33a48981670d7eb4c5d575c70ba04b82b1f479b57ef9550210914734dac8f",
-  "externalPackageCount": 772,
+  "cargoLockSha256": "e846b7ea79bc6d333a0c6ba433e01369e8a922e6df1ec4f995dd5bfcaf070026",
+  "externalPackageCount": 780,
   "standardTextIds": [
     "Apache-2.0",
     "BSD-3-Clause",
@@ -2993,6 +2993,24 @@
       "standardTextIds": []
     },
     {
+      "name": "filetime",
+      "version": "0.2.29",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT/Apache-2.0",
+      "sourceFiles": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+        }
+      ],
+      "upstreamFiles": [],
+      "standardTextIds": []
+    },
+    {
       "name": "find-msvc-tools",
       "version": "0.1.12",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -5259,6 +5277,20 @@
       "standardTextIds": []
     },
     {
+      "name": "minisign-verify",
+      "version": "0.2.5",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "sourceFiles": [
+        {
+          "path": "LICENSE",
+          "sha256": "42c8695fbc468866d9756be99af0ba4e37d733f8daa3c8827c8d80b8bec1b2f9"
+        }
+      ],
+      "upstreamFiles": [],
+      "standardTextIds": []
+    },
+    {
       "name": "miniz_oxide",
       "version": "0.8.9",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -5835,6 +5867,19 @@
       ]
     },
     {
+      "name": "objc2-osa-kit",
+      "version": "0.3.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "Zlib OR Apache-2.0 OR MIT",
+      "sourceFiles": [],
+      "upstreamFiles": [],
+      "standardTextIds": [
+        "Apache-2.0",
+        "MIT",
+        "Zlib"
+      ]
+    },
+    {
       "name": "objc2-quartz-core",
       "version": "0.3.2",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -6043,6 +6088,24 @@
         {
           "path": "LICENSE",
           "sha256": "8f71659370c5268d9a1dc962a46232540e8fca63462586d8efaa95aab492a208"
+        }
+      ],
+      "upstreamFiles": [],
+      "standardTextIds": []
+    },
+    {
+      "name": "osakit",
+      "version": "0.3.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "sourceFiles": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "5fb3573f6e7198ff6c203dbbd58d1da4bec9e8c5a828edefd9e98587d0443471"
         }
       ],
       "upstreamFiles": [],
@@ -8852,6 +8915,24 @@
       "standardTextIds": []
     },
     {
+      "name": "tar",
+      "version": "0.4.46",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "sourceFiles": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "8ca6b96cea9e67c6c5c63f452c31bd396db8bd2406231fdea5d48ef462b48077"
+        }
+      ],
+      "upstreamFiles": [],
+      "standardTextIds": []
+    },
+    {
       "name": "target-lexicon",
       "version": "0.12.16",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -9203,6 +9284,28 @@
     {
       "name": "tauri-plugin-store",
       "version": "2.4.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "Apache-2.0 OR MIT",
+      "sourceFiles": [
+        {
+          "path": "LICENSE.spdx",
+          "sha256": "eb8a6c84630461b352badcab1dbe5d0168c56d377358b2b8c86b51003272d5ef"
+        },
+        {
+          "path": "LICENSE_APACHE-2.0",
+          "sha256": "0cec06e0e55fbc3dc5cee4fca9b607f66cb8f4e4dbcf3b3c013594dd156732e9"
+        },
+        {
+          "path": "LICENSE_MIT",
+          "sha256": "89ff9689dcf9dd53968785d05a26f7898bb169dbfcada8d032b3e68cf0d55607"
+        }
+      ],
+      "upstreamFiles": [],
+      "standardTextIds": []
+    },
+    {
+      "name": "tauri-plugin-updater",
+      "version": "2.10.1",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "license": "Apache-2.0 OR MIT",
       "sourceFiles": [
@@ -12793,6 +12896,24 @@
       "standardTextIds": []
     },
     {
+      "name": "xattr",
+      "version": "1.6.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT OR Apache-2.0",
+      "sourceFiles": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "8b427f5bc501764575e52ba4f9d95673cf8f6d80a86d0d06599852e1a9a20a36"
+        }
+      ],
+      "upstreamFiles": [],
+      "standardTextIds": []
+    },
+    {
       "name": "xkeysym",
       "version": "0.2.1",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -13055,6 +13176,20 @@
     {
       "name": "zip",
       "version": "2.4.2",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "license": "MIT",
+      "sourceFiles": [
+        {
+          "path": "LICENSE",
+          "sha256": "04dc52136d82400b11df5f474949863a70a5d05d2278dec45b99c479494450a6"
+        }
+      ],
+      "upstreamFiles": [],
+      "standardTextIds": []
+    },
+    {
+      "name": "zip",
+      "version": "4.6.1",
       "source": "registry+https://github.com/rust-lang/crates.io-index",
       "license": "MIT",
       "sourceFiles": [

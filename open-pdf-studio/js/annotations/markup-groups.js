@@ -1,4 +1,4 @@
-// Markup groups (the external editor parity, docs/MARKUP-GROUPS.md).
+// Markup groups (the external editor parity, docs/reference/editor/markups-list.md).
 //
 // Model, on every member of a group:
 //   groupId    the top-level group's id. Everything that selects, moves or

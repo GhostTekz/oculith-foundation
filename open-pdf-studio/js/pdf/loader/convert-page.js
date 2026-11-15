@@ -12,6 +12,7 @@ import { linkMarkupGroups } from '../markup-group-pdf.js';
 import { onthoudExtBron } from '../ext-interop.js';
 import { unwrap } from 'solid-js/store';
 import { timeSlicer } from '../../core/yield-to-main.js';
+import { markupReadsHeld, markupReadsReleased } from '../markup-read-hold.js';
 
 // Convert one batch of pdf.js annotations and push them to doc.annotations,
 // detecting textbox-leader PolyLines (linked via IRT) and attaching them
@@ -29,7 +30,11 @@ import { timeSlicer } from '../../core/yield-to-main.js';
 // the last slice: the ID snapshot and the push below stay one synchronous
 // step. `onStep(name, ms)` receives the timings of the steps; the models
 // pushed are returned.
-export async function convertAndPushAnnotations(annots, pageNum, viewport, stampImageMap, annotColorMap, doc, { onStep } = {}) {
+// A save running on `doc` holds that step until it is done (markup-read-hold.js).
+// `stillCurrent()` is asked after the conversion and the wait: false (the
+// pages changed, the read was cancelled) pushes nothing and returns null.
+// `beforePush()` runs in the same synchronous step as the push.
+export async function convertAndPushAnnotations(annots, pageNum, viewport, stampImageMap, annotColorMap, doc, { onStep, stillCurrent, beforePush } = {}) {
   const t0 = performance.now();
   const slice = timeSlicer();
   const textboxByRect = new Map();
@@ -89,6 +94,10 @@ export async function convertAndPushAnnotations(annots, pageNum, viewport, stamp
   }
   onStep?.('load.convertModels', performance.now() - t0);
   onStep?.('load.convertSlices', slice.yields);
+  if (markupReadsHeld(doc)) await markupReadsReleased(doc);
+  if (stillCurrent && !stillCurrent()) return null;
+  // In the same synchronous step as the push (the color pass swaps a page).
+  beforePush?.();
   const t1 = performance.now();
   // The raw array: through the store every element read made a proxy.
   const usedIds = new Set();

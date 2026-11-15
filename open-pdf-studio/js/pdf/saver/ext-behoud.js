@@ -1,5 +1,5 @@
 // Saving a externally marked PDF without losing what the external editor wrote (see
-// ../ext-interop.js and docs/MARKUP-INTEROP.md).
+// ../ext-interop.js and docs/reference/editor/markup-interop.md).
 //
 // Per page the saver asks this module, before it rebuilds /Annots, which
 // the external editor markups are unchanged (their objects stay exactly as they are) and

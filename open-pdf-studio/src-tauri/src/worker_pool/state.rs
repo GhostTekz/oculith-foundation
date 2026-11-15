@@ -52,6 +52,9 @@ pub struct WorkerState {
     pub supports_annot_appearance: AtomicBool,
     /// The worker also selects markups by /Annots position.
     pub supports_annot_appearance_index: AtomicBool,
+    /// Set when the app stops the pool: a failure seen after this point is
+    /// the shutdown itself, so recovery must not spawn a replacement.
+    pub stopping: AtomicBool,
 }
 
 impl WorkerState {
@@ -76,6 +79,7 @@ impl WorkerState {
             supports_ocg_visibility: AtomicBool::new(false),
             supports_annot_appearance: AtomicBool::new(false),
             supports_annot_appearance_index: AtomicBool::new(false),
+            stopping: AtomicBool::new(false),
         }
     }
 

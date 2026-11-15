@@ -29,7 +29,7 @@
 // OCG's (herkenbaar aan /OPS_LayerId) worden toegevoegd, bijgewerkt of
 // verwijderd. Een document zonder lagen raakt het bestand niet aan.
 //
-// Markeringslagen van een ander programma (the external editor, docs/MARKUP-LAYERS.md): een
+// Markeringslagen van een ander programma (the external editor, docs/reference/editor/layers.md): een
 // OCG zonder /OPS_LayerId waar markeringen met /OC naar wijzen en die de
 // pagina-inhoud nergens gebruikt, is een markeringslaag. De app neemt hem
 // over met het id "ocg-<object>-<generatie>" en schrijft bij het opslaan

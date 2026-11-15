@@ -123,7 +123,7 @@ registerCommand({
   run: () => watermarks().then((m) => m.showManageWatermarksDialog()),
 });
 
-// the external editor "Flatten" / "Unflatten" (docs/FLATTEN.md). `{ selection: true }`
+// the external editor "Flatten" / "Unflatten" (docs/reference/editor/markup-tools.md). `{ selection: true }`
 // (the Markups List and markup context menus) opens the dialog on the
 // selected markups.
 registerCommand({

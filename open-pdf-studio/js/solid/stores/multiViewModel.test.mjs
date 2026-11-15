@@ -1,4 +1,4 @@
-// MultiView pane model (docs/MULTIVIEW.md): split duplicates the active tab,
+// MultiView pane model (docs/reference/editor/workspace.md): split duplicates the active tab,
 // unsplit keeps the live pane, tabs move between splits, closed documents
 // leave the panes, and Sync remembers its mode and page offset.
 import { test } from 'node:test';

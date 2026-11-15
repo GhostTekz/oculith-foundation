@@ -212,6 +212,7 @@ export interface Preferences {
   autoSelectAfterCreate: boolean;
   confirmBeforeDelete: boolean;
   wheelZoomWithoutCtrl: boolean;
+  wheelChangesPage: 'never' | 'edge';
 
   // Startup
   restoreLastSession: boolean;

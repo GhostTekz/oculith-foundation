@@ -503,7 +503,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 #annotations-panel .annotations-list-page-header > .annotation-eye:first-child {
   margin-left: calc(-1 * var(--ml-header-pad));
 }
-/* Section and Group row eyes (docs/MARKUP-GROUPS.md): some markups hidden =
+/* Section and Group row eyes (docs/reference/editor/markups-list.md): some markups hidden =
    a half eye; a category whose layers hide it all is dimmed like a row. */
 #annotations-panel .annotation-eye.is-mixed { color: var(--ox-accent); opacity: 0.7; }
 #annotations-panel .annotation-eye.is-mixed svg { clip-path: inset(0 50% 0 0); }

@@ -44,7 +44,7 @@ setToolChestCountCategoryResolver((name, props) => {
   return { categoryId: id, number: _nextCountNumber(id) };
 });
 
-// A tool layer created or shown on placement (docs/MARKUP-LAYERS.md): the
+// A tool layer created or shown on placement (docs/reference/editor/layers.md): the
 // Layers panel recounts.
 setToolChestLayerListener(() => {
   import('../solid/stores/annotationLayersStore.js').then(m => m.refreshAnnotationLayers()).catch(() => {});

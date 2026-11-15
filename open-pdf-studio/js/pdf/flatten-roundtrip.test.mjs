@@ -1,4 +1,4 @@
-// Flatten / Unflatten on real PDF bytes (docs/FLATTEN.md, WP1).
+// Flatten / Unflatten on real PDF bytes (docs/reference/editor/markup-tools.md, WP1).
 //
 // A 3-page drawing with a line, a cloud, a text box, a count and a length
 // measurement goes through the real saver; flatten burns them into the page

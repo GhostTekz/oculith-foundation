@@ -1,4 +1,4 @@
-// the external editor markups into the OcuDraw model (docs/MARKUP-INTEROP.md). The converter
+// the external editor markups into the OcuDraw model (docs/reference/editor/markup-interop.md). The converter
 // has already turned the annotation into a model as for any PDF; this adds
 // what only an external editor markup says: where it came from (for the saver), its
 // blend mode, text alignment, the rotation the external editor keeps out of /Vertices and

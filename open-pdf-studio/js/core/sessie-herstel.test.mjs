@@ -18,6 +18,13 @@ test('bureaublad: de voorkeur beslist, dev herstelt altijd', () => {
     { herstellen: true, reden: 'dev' });
 });
 
+test('after the web process ended, the open drawings come back whatever the preference', () => {
+  assert.deepEqual(sessieHerstelBeleid({ inTauri: true, voorkeurAan: false, afterCrash: true }),
+    { herstellen: true, reden: 'na-crash' });
+  assert.deepEqual(sessieHerstelBeleid({ inTauri: false, voorkeurAan: false, afterCrash: true }),
+    { herstellen: false, reden: 'geen-webopslag' });
+});
+
 test('browser: nooit herstellen, ook niet met de voorkeur aan of in dev', () => {
   for (const voorkeurAan of [true, false]) {
     for (const inDev of [true, false]) {

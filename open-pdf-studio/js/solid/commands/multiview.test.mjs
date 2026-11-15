@@ -1,4 +1,4 @@
-// MultiView commands (docs/MULTIVIEW.md, spec §7 WP5): the split commands
+// MultiView commands (docs/reference/editor/workspace.md): the split commands
 // are registered under the ids the View menu waited for, the menu entries
 // are live, the keys reach them, and the Navigation bar, status bar Sync and
 // tab menu run them. Runs the real registry, store and state (browser build

@@ -1,5 +1,5 @@
 import { state, getActiveDocument } from '../core/state.js';
-import { getCachedPdfBytes, getPdfBytes, setCachedPdfBytes, forgetPdfRangeSource, cancelAnnotationLoading, markAllAnnotationPagesLoaded } from './loader.js';
+import { getCachedPdfBytes, getPdfBytes, setCachedPdfBytes, forgetPdfRangeSource, cancelAnnotationLoading, markAnnotationPagesLoaded } from './loader.js';
 import { setViewMode } from './renderer.js';
 import { generateThumbnails, clearThumbnailCache } from '../ui/panels/left-panel.js';
 import { markDocumentModified } from '../ui/chrome/tabs.js';
@@ -22,6 +22,10 @@ import { showMessage } from '../bridge.js';
 import { onthoudWerkbestand, losgelatenWerkbestanden, ruimWerkbestandenOp } from './document-release.js';
 import { nieuwMergeVerslag, REDEN_VOORBEELD, REDEN_GEEN_PAGINAS } from './merge-verslag.js';
 import { spacesOnPages } from '../spaces/model.js';
+import { pageChange, writePageChange, announcePageChange } from './page-changes.js';
+import {
+  annotationRefsByPage, remapPageAnnotations, readMarkupPages, readPagesAfterChange,
+} from './page-markup-state.js';
 
 // Page clipboard for cut/copy/paste
 let pageClipboard = null; // { bytes: Uint8Array, cut: boolean, sourcePageNum: number }
@@ -118,6 +122,7 @@ export async function pastePage(afterPageNum) {
 
   const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
+  const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
 
@@ -147,15 +152,19 @@ export async function pastePage(afterPageNum) {
       }
     }
 
+    // Read in the same moment as the markups it goes with.
+    const readNow = readMarkupPages(doc);
     const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
+    const change = pageChange(doc, 'paste', pageMapping, oldNumPages, destDoc.getPageCount());
+    await writePageChange(change, destDoc);
     const newBytes = new Uint8Array(await destDoc.save());
     const targetPage = insertIdx + 1;
 
     // Meetschalen van de ingevoegde pagina's komen uit die pagina's zelf (#400).
     const newViewports = viewportsVanPaginas(copiedPages, insertIdx + 1);
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports });
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage);
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
   } finally {
     hideLoading();
   }
@@ -169,12 +178,19 @@ export function getCacheKey() {
   return `__memory__${doc.id}`;
 }
 
-// Reload PDF.js from new bytes, preserving annotations and rotations
+// Reload PDF.js from new bytes, preserving annotations and rotations.
+// `viewportUpdate.read` is the set of read pages taken with `annotations`
+// (before the change), `viewportUpdate.readPages` the set recorded with
+// restored markups (undo, redo). Returns the pages now marked read.
 export async function reloadFromBytes(newBytes, annotations, rotations, targetPage, viewportUpdate = null, doc = getActiveDocument()) {
   if (!doc) return;
 
   const oldPath = doc.filePath || `__memory__${doc.id}`;
   if (!oldPath) return;
+
+  // The pages whose markups are in the model, before the loading state is
+  // reset: they stay read on their new numbers (page-markup-state.js).
+  const readBefore = readMarkupPages(doc);
 
   // Cancel any in-progress annotation loading
   cancelAnnotationLoading(doc);
@@ -269,6 +285,10 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
     isEvalSupported: false,
     verbosity: 0,
   }).promise;
+  // A markup read that started while the old document was still in place
+  // (a panel asking for a page during the awaits above) read the old file
+  // and its pdf-lib reads: drop both, so every page is read from these bytes.
+  cancelAnnotationLoading(doc);
 
   // Meetschalen uit de PDF zelf (/VP + /Measure) staan per paginanummer; na
   // invoegen, verwijderen of verplaatsen horen ze bij andere pagina's (#400).
@@ -300,12 +320,26 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
   doc.annotations = annotations;
   doc.pageRotations = rotations;
 
-  // Clamp current page
-  const numPages = doc.pdfDoc.numPages;
-  doc.currentPage = Math.max(1, Math.min(targetPage, numPages));
+  // The pages read before stay read; the others are read from the new file
+  // when shown, and until then a save keeps their markups as the file has
+  // them. Marking every page read would make the saver drop the markups of
+  // every sheet that was not read yet. Marked before anything else can ask
+  // for a page's markups (a page change listener), or that read would add
+  // them a second time.
+  const readNow = readPagesAfterChange({
+    read: viewportUpdate?.read || readBefore,
+    pageMapping: viewportUpdate?.pageMapping || null,
+    explicit: viewportUpdate?.readPages || null,
+    numPages: doc.pdfDoc.numPages,
+    annotations,
+  });
+  markAnnotationPagesLoaded(readNow, doc);
 
-  // Mark all pages as loaded so background loader won't overwrite
-  markAllAnnotationPagesLoaded(numPages, doc);
+  // What keeps its own data by page number follows its pages (page-changes.js).
+  if (viewportUpdate?.change) await announcePageChange(viewportUpdate.change);
+
+  // Clamp current page
+  doc.currentPage = Math.max(1, Math.min(targetPage, doc.pdfDoc.numPages));
 
   // Clear selection
   if (doc) {
@@ -315,7 +349,7 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
   clearThumbnailCache(doc.id);
   doc.modified = true;
   doc.savedUndoStackLength = -1;
-  if (getActiveDocument() !== doc) return;
+  if (getActiveDocument() !== doc) return readNow;
   hideProperties();
 
   // Re-render (preserve the book-spread / facing layout variants of continuous)
@@ -324,9 +358,10 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
     : doc?.bookSpread && doc?.viewMode === 'continuous' ? 'book'
     : (doc?.viewMode || 'single')
   );
-  if (getActiveDocument() !== doc) return;
+  if (getActiveDocument() !== doc) return readNow;
   generateThumbnails();
   updateAllStatus();
+  return readNow;
 }
 
 // Leest de viewports van deze bytes op de achtergrond. Een lezing die nog liep
@@ -347,16 +382,10 @@ function leesViewportsOpnieuw(doc, bytes) {
     .catch(() => { rondViewportLezingAf(doc, kenmerk, null); /* viewports zijn optioneel */ });
 }
 
-// Build remapped annotations array based on page mapping
-function remapAnnotations(annotations, pageMapping) {
-  const remapped = [];
-  for (const ann of annotations) {
-    const newPage = pageMapping[ann.page];
-    if (newPage !== undefined && newPage !== null) {
-      remapped.push({ ...ann, page: newPage });
-    }
-  }
-  return remapped;
+// Markups on their new pages. Pass each page's /Annots before and after the
+// change (annotationRefsByPage) when the change renumbered the PDF objects.
+function remapAnnotations(annotations, pageMapping, refsBefore = null, refsAfter = null) {
+  return remapPageAnnotations(annotations, pageMapping, refsBefore, refsAfter);
 }
 
 // Build remapped rotations object based on page mapping
@@ -389,6 +418,7 @@ export async function insertBlankPages(position, refPage, count, widthPt, height
 
   const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
+  const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
 
@@ -422,18 +452,22 @@ export async function insertBlankPages(position, refPage, count, widthPt, height
       }
     }
 
+    // Read in the same moment as the markups it goes with.
+    const readNow = readMarkupPages(doc);
     const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
+    const change = pageChange(doc, 'insert', pageMapping, oldNumPages, pdfDoc.getPageCount());
+    await writePageChange(change, pdfDoc);
 
     const newBytes = new Uint8Array(await pdfDoc.save());
 
     // Determine which page to navigate to
     let targetPage = insertIdx + 1; // First inserted page
 
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping });
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, change, read: readNow });
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage);
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
   } finally {
     hideLoading();
   }
@@ -483,6 +517,7 @@ export async function insertPagesFromFile(refPage, position, sourcePath = null, 
 
   const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
+  const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
 
@@ -544,8 +579,12 @@ export async function insertPagesFromFile(refPage, position, sourcePath = null, 
       }
     }
 
+    // Read in the same moment as the markups it goes with.
+    const readNow = readMarkupPages(doc);
     const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
+    const change = pageChange(doc, 'insert', pageMapping, oldNumPages, destDoc.getPageCount());
+    await writePageChange(change, destDoc);
 
     const newBytes = new Uint8Array(await destDoc.save());
     const targetPage = insertIdx + 1; // Navigate to first inserted page
@@ -553,10 +592,10 @@ export async function insertPagesFromFile(refPage, position, sourcePath = null, 
     // De meetschalen van de ingevoegde pagina's komen uit de pagina's zelf;
     // die zijn hier al ingelezen (#400).
     const newViewports = viewportsVanPaginas(copiedPages, insertIdx + 1);
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports });
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage);
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
     inserted = true;
   } catch (err) {
     console.error('Failed to insert pages from file:', err);
@@ -589,6 +628,7 @@ export async function deletePages(pageNumbers) {
 
   const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
+  const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
 
@@ -615,8 +655,12 @@ export async function deletePages(pageNumbers) {
       }
     }
 
+    // Read in the same moment as the markups it goes with.
+    const readNow = readMarkupPages(doc);
     const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
+    const change = pageChange(doc, 'delete', pageMapping, numPages, pdfDoc.getPageCount());
+    await writePageChange(change, pdfDoc);
 
     const newBytes = new Uint8Array(await pdfDoc.save());
     const newNumPages = pdfDoc.getPageCount();
@@ -624,10 +668,10 @@ export async function deletePages(pageNumbers) {
     // Clamp current page
     let targetPage = Math.min(doc.currentPage, newNumPages);
 
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping });
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, change, read: readNow });
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage);
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
   } finally {
     hideLoading();
   }
@@ -725,6 +769,7 @@ export async function reorderPages(newPageOrder) {
 
   const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
+  const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
 
@@ -747,8 +792,17 @@ export async function reorderPages(newPageOrder) {
       pageMapping[oldP] = newP + 1;
     }
 
-    const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
+    // The copies are numbered afresh: each loaded markup's source follows
+    // its annotation, which keeps its place in the page's /Annots.
+    // Read in the same moment as the markups it goes with.
+    const readNow = readMarkupPages(doc);
+    const newAnnotations = remapAnnotations(doc.annotations, pageMapping,
+      annotationRefsByPage(srcDoc), annotationRefsByPage(newDoc));
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
+    // The pages were copied into a new document: what the old one kept in
+    // its catalog is offered from `srcDoc`.
+    const change = pageChange(doc, 'move', pageMapping, numPages, newDoc.getPageCount());
+    await writePageChange(change, srcDoc, newDoc);
 
     const newBytes = new Uint8Array(await newDoc.save());
 
@@ -758,10 +812,10 @@ export async function reorderPages(newPageOrder) {
     // Alle pagina's zijn gekopieerd; hun meetschalen komen uit de pagina's
     // zelf, genummerd vanaf de eerste (#400).
     const newViewports = viewportsVanPaginas(copiedPages, 1);
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports });
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage);
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
   } finally {
     hideLoading();
   }
@@ -774,10 +828,10 @@ export async function reorderPages(newPageOrder) {
  * @param {Object} rotations - Page rotations to restore
  * @param {number} currentPage - Page to navigate to
  */
-export async function restorePageState(bytes, annotations, rotations, currentPage) {
+export async function restorePageState(bytes, annotations, rotations, currentPage, readPages = null) {
   showLoading('Restoring...');
   try {
-    await reloadFromBytes(bytes, annotations, rotations, currentPage);
+    await reloadFromBytes(bytes, annotations, rotations, currentPage, readPages ? { readPages } : null);
   } finally {
     hideLoading();
   }
@@ -813,6 +867,7 @@ export async function replacePages(pageNumber) {
 
   const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
+  const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
 
@@ -860,8 +915,12 @@ export async function replacePages(pageNumber) {
       }
     }
 
+    // Read in the same moment as the markups it goes with.
+    const readNow = readMarkupPages(doc);
     const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
+    const change = pageChange(doc, 'replace', pageMapping, oldNumPages, destDoc.getPageCount());
+    await writePageChange(change, destDoc);
 
     const newBytes = new Uint8Array(await destDoc.save());
     const targetPage = pageNumber; // Navigate to where replacement starts
@@ -869,10 +928,10 @@ export async function replacePages(pageNumber) {
     // De vervangende pagina's brengen hun eigen meetschalen mee, vanaf de
     // plek van de vervangen pagina (#400).
     const newViewports = viewportsVanPaginas(copiedPages, pageNumber);
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports });
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage);
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
   } catch (err) {
     console.error('Failed to replace page:', err);
     showMessage(i18next.t('failedToReplacePage', { error: err.message }));
@@ -908,6 +967,7 @@ export async function mergeFiles(filePaths, position) {
   }
   if (!currentBytes) return nieuwMergeVerslag('no-bytes');
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
+  const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
 
@@ -985,8 +1045,12 @@ export async function mergeFiles(filePaths, position) {
       }
     }
 
+    // Read in the same moment as the markups it goes with.
+    const readNow = readMarkupPages(doc);
     const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
+    const change = pageChange(doc, 'merge', pageMapping, oldNumPages, destDoc.getPageCount());
+    await writePageChange(change, destDoc);
 
     const newBytes = new Uint8Array(await destDoc.save());
 
@@ -995,10 +1059,10 @@ export async function mergeFiles(filePaths, position) {
 
     // Meetschalen van alle samengevoegde pagina's, op hun nieuwe nummer (#400).
     const newViewports = viewportsVanPaginas(destDoc.getPages().slice(insertIdx, insertIdx + totalInserted), insertIdx + 1);
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports });
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage);
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
     return verslag;
   } finally {
     hideLoading();

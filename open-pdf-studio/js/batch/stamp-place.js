@@ -1,5 +1,5 @@
-// Batch ▸ Apply Stamp, the PDF side (docs/BATCH-OPS.md): put a dynamic stamp
-// (docs/STAMPS.md) on pages of a file that is not open. Per page the fields
+// Batch ▸ Apply Stamp, the PDF side (docs/reference/editor/sets-and-batch.md): put a dynamic stamp
+// (docs/reference/editor/markup-tools.md) on pages of a file that is not open. Per page the fields
 // are evaluated with that file and page ({fileName}, {pageLabel}, {page},
 // {date}, {time}, {user}), the stamp gets the size Tools ▸ Stamp gives it on
 // that sheet, and it is written with the saver's own pieces: the /Stamp

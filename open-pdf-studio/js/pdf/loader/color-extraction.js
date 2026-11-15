@@ -253,7 +253,7 @@ export async function extractAnnotationColors(pageNum, pdfDoc, {
       const dict = context.lookup(ref);
       return !!(dict && refMetadataKeys.some((key) => dict.get?.(key)));
     });
-    // the external editor markups (docs/MARKUP-INTEROP.md): identified per dictionary and
+    // the external editor markups (docs/reference/editor/markup-interop.md): identified per dictionary and
     // always mapped by reference, so the saver can keep or rewrite exactly
     // the object the model came from.
     const extProducer = producerIsExt(pdfDoc);
@@ -482,7 +482,7 @@ export async function extractAnnotationColors(pageNum, pdfDoc, {
           const tekst = leesPdfTekst(context, opsTekstRaw);
           if (tekst) colors.opsStampText = tekst;
         }
-        // Dynamic stamp design (docs/STAMPS.md), validated by the converter.
+        // Dynamic stamp design (docs/reference/editor/markup-tools.md), validated by the converter.
         const designRaw = annotDict.get(PDFName.of('OPS_StampDesign'));
         if (designRaw) {
           const json = leesPdfTekst(context, designRaw);

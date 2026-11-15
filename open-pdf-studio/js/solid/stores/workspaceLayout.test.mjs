@@ -99,6 +99,10 @@ test('workflow fields: kept when stored, and the old never-rendered standard fla
   const migrated = wl.normalizeLayout(old);
   assert.deepEqual([migrated.toolbars.standard.visible, migrated.workflow, migrated.workflowBar], [true, 'markup', 1]);
   assert.equal(wl.profileLabelKey('basic'), 'common:panelHost.profile.basic');
+  // A tab the profile no longer offers leaves a layout saved with it.
+  const basic = { ...wl.createProfileLayout('basic'), workflow: 'takeoff', workflows: ['review', 'takeoff', 'markup'] };
+  const trimmed = wl.normalizeLayout(JSON.parse(JSON.stringify(basic)));
+  assert.deepEqual(trimmed.workflows, ['review', 'markup']);
 });
 
 test('movePanel between hosts, show/hide, active neighbour', () => {

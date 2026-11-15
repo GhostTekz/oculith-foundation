@@ -1,5 +1,5 @@
 // Lasso (Shift+O) and Offset (O): the external editor Edit-menu tools of WP13
-// (docs/EDIT-TOOLS.md). The geometry is pure and tested in
+// (docs/reference/editor/markup-tools.md). The geometry is pure and tested in
 // lasso-geometry.js / offset-geometry.js, the document side in
 // edit-tools-core.js; this file is the pointer flow.
 

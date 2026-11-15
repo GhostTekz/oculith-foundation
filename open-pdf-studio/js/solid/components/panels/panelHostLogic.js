@@ -1,7 +1,7 @@
 // Pure helpers behind the panel hosts (PanelHost / AccessBar / PanelHeader).
 // No Solid, no DOM: layout in, answer (or new layout) out, so the node tests
 // can cover what the hosts render and do. The layout is the workspaceLayout
-// shape (docs/WORKSPACE-SPEC.md §5 and §9.2).
+// shape (docs/reference/editor/workspace.md).
 
 import {
   HOSTS, PANEL_IDS, clampHostSize, findPanelHost,

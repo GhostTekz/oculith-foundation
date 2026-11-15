@@ -1,4 +1,4 @@
-// Batch operations (docs/BATCH-OPS.md) on real PDF bytes: three files written
+// Batch operations (docs/reference/editor/sets-and-batch.md) on real PDF bytes: three files written
 // by the real saver (markups, page labels, a /Rotate 90 page, drawn text and
 // lines) plus a corrupt file, through the runner. Each op over the set gives
 // for every file what the single-document operation gives for that file:

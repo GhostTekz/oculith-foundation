@@ -4,7 +4,7 @@ import { closeDialog } from '../../stores/dialogStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { getActiveDocument } from '../../../core/state.js';
 
-// Put markups in a category by name (docs/MARKUP-GROUPS.md):
+// Put markups in a category by name (docs/reference/editor/markups-list.md):
 // - mode 'subject': "Subject…" on the canvas or Markups List menu sets the
 //   subject of the selected markups (the subjects in the document are offered);
 // - mode 'groupName': renames a group (its Subject in the Markups List).

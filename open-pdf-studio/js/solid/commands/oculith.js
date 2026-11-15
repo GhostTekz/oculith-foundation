@@ -88,6 +88,13 @@ registerCommand({
   run: () => openDialog('extensions'),
 });
 registerCommand({
+  // Settings ▸ General ▸ AI link (MCP) opens the same panel.
+  id: 'help.aiConnections', label: 'common:commands.aiConnections', icon: lucide('cable'), category: 'help',
+  enabled: () => isTauri(),
+  keywords: ['ai', 'mcp', 'assistant', 'claude', 'copilot', 'vs code', 'cursor', 'codex', 'opencode', 'openai', 'link'],
+  run: () => openDialog('ai-connections'),
+});
+registerCommand({
   id: 'help.fileAssociations', label: 'common:commands.fileAssociations', icon: fileAssocIcon, category: 'help',
   enabled: () => isTauri(), keywords: ['default', 'pdf', 'application'],
   run: () => import('../../core/preferences.js').then((m) => m.showPreferencesDialog('fileassoc')),

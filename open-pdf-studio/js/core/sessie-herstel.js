@@ -22,12 +22,16 @@ export const WEB_SESSIE_SLEUTEL = 'webSessionStartsEmpty';
  * @param {boolean} o.voorkeurAan staat "vorige sessie herstellen" aan?
  * @param {boolean} [o.inDev]     Vite-dev herlaadt bij elke bewerking; daar
  *   moet het testdocument sowieso terugkomen.
- * @returns {{herstellen: boolean, reden: 'bureaublad'|'dev'|'voorkeur-uit'|'geen-webopslag'}}
+ * @param {boolean} [o.afterCrash] the page was reloaded after its web
+ *   process ended (core/crash-recovery-runtime.js): the open drawings come
+ *   back whatever the preference says.
+ * @returns {{herstellen: boolean, reden: 'bureaublad'|'dev'|'na-crash'|'voorkeur-uit'|'geen-webopslag'}}
  */
-export function sessieHerstelBeleid({ inTauri, voorkeurAan, inDev = false }) {
+export function sessieHerstelBeleid({ inTauri, voorkeurAan, inDev = false, afterCrash = false }) {
   // Zonder schil is er niets om te herstellen, ook niet in dev.
   if (!inTauri) return { herstellen: false, reden: 'geen-webopslag' };
   if (inDev) return { herstellen: true, reden: 'dev' };
+  if (afterCrash) return { herstellen: true, reden: 'na-crash' };
   if (!voorkeurAan) return { herstellen: false, reden: 'voorkeur-uit' };
   return { herstellen: true, reden: 'bureaublad' };
 }

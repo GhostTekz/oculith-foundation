@@ -2,7 +2,7 @@
 // (js/solid/commands/registry.js). Used by the plan-review workspace for the
 // vertical Markup/Measure toolbars (WP2) and any other named toolbar.
 //
-// Props (stable API, see docs/WORKSPACE-SPEC.md §9.3):
+// Props (stable API, see docs/reference/editor/workspace.md):
 //   ids          array of command ids; '|' (or '-') draws a separator.
 //                Unknown ids are skipped, so a toolbar can list commands a
 //                later package registers.

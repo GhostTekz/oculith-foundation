@@ -1,5 +1,5 @@
 // Import an external plan-review program tool set (.btx) as a Tool Chest set
-// (docs/TOOL-SET-SHARING.md, "the external editor .btx").
+// (docs/reference/editor/tool-chest.md, "the external editor .btx").
 //
 // What is publicly known about .btx (no official specification exists):
 // an XML file with a <BluebeamRevuToolSet> root, a <Title>, and one
@@ -567,7 +567,7 @@ export function mapExtMarkup(dict, { name, mode }) {
   const details = {
     ...(typeof dict.Subj === 'string' && dict.Subj.trim() ? { subject: dict.Subj.trim().slice(0, 200) } : {}),
     ...(typeof dict.Contents === 'string' && dict.Contents.trim() ? { comment: dict.Contents.trim().slice(0, 200) } : {}),
-    // Markup layer (docs/MARKUP-LAYERS.md): only an inline /OC optional
+    // Markup layer (docs/reference/editor/layers.md): only an inline /OC optional
     // content group carries its /Name; an indirect reference cannot be
     // resolved from the tool alone. The Tool Chest validates the name.
     ...(dict.OC && typeof dict.OC === 'object' && !dict.OC.ref && typeof dict.OC.Name === 'string' &&

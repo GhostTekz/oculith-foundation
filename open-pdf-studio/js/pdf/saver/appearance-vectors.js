@@ -1097,8 +1097,8 @@ export function polylijnOmhullende(punten, lineWidth) {
 // De caller schrijft daarom:
 //     /BBox   [0 0 w h]      (= /Rect-afmeting)
 //     /Matrix [1 0 0 1 0 0]  (= IDENTITEIT)
-// Dat is de canonieke conventie uit docs/superpowers/
-// research-pdf-rotatie-mechanica.md §12.5.5: de getransformeerde appearance-box
+// Dat is de canonieke conventie uit docs/reference/editor/
+// drafting-and-signatures.md (ISO 32000-1 §12.5.5): de getransformeerde appearance-box
 // is dan exact de BBox, dus matrix A uit stap (b) wordt een zuivere translatie
 // met sx = sy = 1. Geen vervorming, en verplaatsen in een andere editor
 // (die alleen /Rect verschuift) laat de tekening netjes meeschuiven.

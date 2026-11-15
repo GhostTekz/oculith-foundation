@@ -70,7 +70,7 @@ const groupOptions = [
   { key: 'lastStatusAuthor', label: 'groupByLastStatusAuthor' },
   { key: 'space', common: 'spaces.groupBySpace' },
   { key: 'layer', common: 'markupLayers.groupByLayer' },
-  // the external editor groups (docs/MARKUP-GROUPS.md): a section per group name.
+  // the external editor groups (docs/reference/editor/markups-list.md): a section per group name.
   { key: 'markupGroup', common: 'markupGroups.groupByGroup' },
 ];
 
@@ -949,7 +949,7 @@ export default function AnnotationsPanel() {
     refreshList();
   };
 
-  // The eyes (docs/MARKUP-LAYERS.md): a click or key on them never reaches
+  // The eyes (docs/reference/editor/layers.md): a click or key on them never reaches
   // the row or group header, so it neither selects nor folds.
   const stopEye = (event) => event.stopPropagation();
   const onEyeKeyDown = (event) => {
@@ -1014,7 +1014,7 @@ export default function AnnotationsPanel() {
       on:keydown={onEyeKeyDown}
       innerHTML={item.layerHidden ? eyeOffIcon : eyeIcon}></button>
   );
-  // The eye of a section (every Group By) or of a Group row (docs/MARKUP-GROUPS.md):
+  // The eye of a section (every Group By) or of a Group row (docs/reference/editor/markups-list.md):
   // its markups' own Hidden flags. 'mixed' shows a half eye; a click then
   // shows all. 'layer': their layers hide them all, the layer decides.
   const categoryEye = (item, eyeKey, label) => (
@@ -1048,7 +1048,7 @@ export default function AnnotationsPanel() {
   const headerEye = (item) => (item.sortMode === 'layer' && item.layerId ? groupEye(item) : sectionEye(item));
 
   // Drag rows onto a section header or a Group row: put them in that
-  // category (Subject, Author, Layer, or the group). docs/MARKUP-GROUPS.md.
+  // category (Subject, Author, Layer, or the group). docs/reference/editor/markups-list.md.
   const DRAG_TYPE = 'application/x-ocudraw-markups';
   const onRowDragStart = (item, event) => {
     const doc = getActiveDocument();
@@ -1536,7 +1536,7 @@ export default function AnnotationsPanel() {
     }
   };
 
-  // Document ▸ Flatten… on the selected markups (docs/FLATTEN.md).
+  // Document ▸ Flatten… on the selected markups (docs/reference/editor/markup-tools.md).
   const flattenSelected = () => {
     import('../../../commands/index.js').then(m => m.runCommand('document.flatten', { selection: true }))
       .catch(() => {});

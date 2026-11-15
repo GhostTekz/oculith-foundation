@@ -4300,6 +4300,37 @@ select.ste-field { padding: 2px 4px; cursor: pointer; }
 .addon-tool-log-write td:first-child { box-shadow: inset 3px 0 0 var(--ox-warn); }
 .addon-tool-log-failed td:last-child { color: var(--ox-danger-ink); }
 
+/* ── AI connections (AiConnectionsDialog.jsx) ── */
+.ai-connections-dialog { width: 780px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); box-sizing: border-box; }
+.ai-conn { display: flex; flex-direction: column; gap: var(--ox-sp-2); max-height: calc(100vh - 160px); overflow: auto; font-size: var(--ox-fs-sm); }
+.ai-conn-hint, .ai-conn-sub { color: var(--ox-text-2); font-size: var(--ox-fs-xs); }
+.ai-conn-row { display: flex; align-items: center; gap: var(--ox-sp-2); flex-wrap: wrap; }
+.ai-conn-test[data-ok="true"] { color: var(--ox-ok-ink); }
+.ai-conn-test[data-ok="false"] { color: var(--ox-danger-ink); }
+.ai-conn-msg { padding: var(--ox-sp-1) var(--ox-sp-2); border-radius: var(--ox-r-xs); border: 1px solid var(--ox-line-2); }
+.ai-conn-ok { background: var(--ox-ok-soft); color: var(--ox-ok-ink); }
+.ai-conn-warn { background: var(--ox-warn-soft); color: var(--ox-warn-ink); }
+.ai-conn-err { background: var(--ox-danger-soft); color: var(--ox-danger-ink); }
+.ai-conn-table { width: 100%; border-collapse: collapse; border: 1px solid var(--ox-line-2); border-radius: var(--ox-r-xs); }
+.ai-conn-table th, .ai-conn-table td { padding: 3px 6px; text-align: start; border-bottom: 1px solid var(--ox-line); vertical-align: middle; }
+.ai-conn-table th { background: var(--ox-surface-2); font-weight: var(--ox-fw-medium); }
+.ai-conn-path { font-family: var(--ox-font-mono); font-size: var(--ox-fs-2xs); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ox-text-2); }
+.ai-conn-actions { white-space: nowrap; text-align: end; }
+.ai-conn-actions .pref-btn + .pref-btn { margin-inline-start: 4px; }
+.ai-conn-state-linked { color: var(--ox-ok-ink); }
+.ai-conn-state-stale { color: var(--ox-warn-ink); }
+.ai-conn-state-error { color: var(--ox-danger-ink); }
+.ai-conn-preview { border: 1px solid var(--ox-accent-line); border-radius: var(--ox-r-sm); padding: var(--ox-sp-2); display: flex; flex-direction: column; gap: var(--ox-sp-1); }
+.ai-conn-preview-head { font-weight: var(--ox-fw-medium); }
+.ai-conn-diff, .ai-conn-snippet pre { margin: 0; max-height: 260px; overflow: auto; padding: var(--ox-sp-1) var(--ox-sp-2); background: var(--ox-surface-0); border: 1px solid var(--ox-line); border-radius: var(--ox-r-xs); font-family: var(--ox-font-mono); font-size: var(--ox-fs-2xs); white-space: pre; }
+.ai-conn-add { background: var(--ox-ok-soft); color: var(--ox-ok-ink); }
+.ai-conn-del { background: var(--ox-danger-soft); color: var(--ox-danger-ink); }
+.ai-conn-hunk { color: var(--ox-text-3); }
+.ai-conn-section > summary { cursor: default; font-weight: var(--ox-fw-medium); padding: var(--ox-sp-1) 0; }
+.ai-conn-section { display: flex; flex-direction: column; gap: var(--ox-sp-1); border-top: 1px solid var(--ox-line); padding-top: var(--ox-sp-1); }
+.ai-conn-snippet { margin-bottom: var(--ox-sp-1); }
+.ai-conn-mono { font-family: var(--ox-font-mono); font-size: var(--ox-fs-xs); }
+
 /* CAD-uitwisseling: export naar DXF/DWG en import van DWG/DXF (#400).
    Windows-Forms-stijl: rechte hoeken, compact, thema-kleuren. */
 .cad-dialog { width: 600px; }

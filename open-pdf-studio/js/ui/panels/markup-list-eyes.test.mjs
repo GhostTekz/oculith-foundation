@@ -1,4 +1,4 @@
-// Markups List eyes (docs/MARKUP-LAYERS.md): with Group By Layer each group
+// Markups List eyes (docs/reference/editor/layers.md): with Group By Layer each group
 // header has the layer's eye, the same switch as the Layers panel, and every
 // row has an eye for that one markup. The list runs with the real list store
 // (annotations-list.testhulp.mjs); the Layers panel rows come from the same
@@ -116,7 +116,7 @@ test('the component: real buttons at the left, labelled, pressed state, clicks s
   assert.match(src, /const eyeOffIcon = lucide\('eye-off'\);/);
   // Row eye in the gutter cell (the first, left column); group eye before the chevron.
   assert.match(src, /<div class="annotation-cell annotation-cell-gutter">\s*<Show when=\{item\.accentColor\}>[\s\S]*?<\/Show>\s*\{rowEye\(item\)\}\s*<\/div>/);
-  // Every section has an eye now (docs/MARKUP-GROUPS.md); Group By Layer's is the layer switch.
+  // Every section has an eye now (docs/reference/editor/markups-list.md); Group By Layer's is the layer switch.
   assert.match(src, /\{headerEye\(item\)\}\s*<svg class="annotations-group-chevron"/);
   assert.match(src, /const headerEye = \(item\) => \(item\.sortMode === 'layer' && item\.layerId \? groupEye\(item\) : sectionEye\(item\)\)/);
   const rowEye = src.slice(src.indexOf('const rowEye = '), src.indexOf('const groupEye = '));

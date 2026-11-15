@@ -1,4 +1,4 @@
-// The menu bar and the command registry (docs/WORKSPACE-SPEC.md §4, §7
+// The menu bar and the command registry (docs/reference/editor/workspace.md
 // WP1): every former ribbon button id runs a registry command that a menu also
 // offers, every menu entry names a registered command, labels exist in en
 // and nl, the command palette finds commands by their menu wording, and no

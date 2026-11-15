@@ -1,4 +1,4 @@
-// OcuDraw tool set FILE (docs/TOOL-SET-SHARING.md): the file a shared tool
+// OcuDraw tool set FILE (docs/reference/editor/tool-chest.md): the file a shared tool
 // set lives in (Manage Tool Sets ▸ Add ▸ Add New / Add Existing) and the
 // file Export writes. Unlike portable JSON (tool-set-portable.js, a strict
 // interchange contract for a few tool types), the set file holds every

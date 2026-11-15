@@ -11,7 +11,7 @@ import CollapsibleSection from './CollapsibleSection.jsx';
 /**
  * Properties ▸ Capture: the selected markup's photos (thumbnails open the
  * viewer) with Attach photo…, and for a File Attachment its file
- * (Open / Save… / Replace…). See docs/CAPTURE.md.
+ * (Open / Save… / Replace…). See docs/reference/editor/markup-tools.md.
  */
 export default function CaptureSection() {
   const { t } = useTranslation('common');

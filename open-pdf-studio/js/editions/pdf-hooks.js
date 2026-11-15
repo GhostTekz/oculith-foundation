@@ -250,24 +250,24 @@ function annotationFields(extra, keys) {
 function verifiedAnnotationSource(model, target, tools) {
   const source = model?.pdfSource;
   if (!source) return null; // newly drawn markup
-  if (source.modelId !== model.id) throw new Error('PDF annotation source changed; save again.');
+  if (source.modelId !== model.id) throw new Error('PDF annotation source changed: the markup no longer matches the annotation it was read from.');
   const context = tools.sourceContext;
   const refs = tools.sourceRefs;
   const ref = Array.isArray(refs)
     ? refs.find((item) => item instanceof PDFRef && item.toString() === source.ref) : null;
-  if (!context || !ref) throw new Error('PDF annotation source changed; save again.');
+  if (!context || !ref) throw new Error('PDF annotation source changed: the markup no longer matches the annotation it was read from.');
   const original = context.lookup(ref);
-  if (!(original instanceof PDFDict)) throw new Error('PDF annotation source is unreadable; save again.');
+  if (!(original instanceof PDFDict)) throw new Error('PDF annotation source is unreadable.');
   const name = original.get(PDFName.of('NM'));
   const decoded = name == null ? '' : context.lookup(name);
   if (decoded && (!(decoded instanceof PDFString || decoded instanceof PDFHexString)
-      || decoded.value.length > 4096)) throw new Error('PDF annotation source is unreadable; save again.');
+      || decoded.value.length > 4096)) throw new Error('PDF annotation source is unreadable.');
   let originalName;
   try { originalName = decoded ? decoded.decodeText() : ''; }
-  catch { throw new Error('PDF annotation source is unreadable; save again.'); }
+  catch { throw new Error('PDF annotation source is unreadable.'); }
   if ((source.nm ?? '') !== originalName
       || original.get(PDFName.of('Subtype'))?.toString() !== target.get(PDFName.of('Subtype'))?.toString()) {
-    throw new Error('PDF annotation source changed; save again.');
+    throw new Error('PDF annotation source changed: the markup no longer matches the annotation it was read from.');
   }
   return original;
 }

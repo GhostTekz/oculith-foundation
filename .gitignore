@@ -96,3 +96,6 @@ open-pdf-cad/scripts/*.local.json
 !docs/images/*.png
 !open-pdf-studio/docs/readme/*.png
 
+
+# Scratch scripts
+*.tmp.mjs

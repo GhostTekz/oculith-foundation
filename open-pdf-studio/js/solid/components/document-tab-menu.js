@@ -1,11 +1,11 @@
-// Document tab strip helpers (external plan-review files tabs, docs/WORKSPACE-SPEC.md §1.8
+// Document tab strip helpers (external plan-review files tabs, docs/reference/editor/workspace.md
 // and WP4). Pure: no Solid, no app state, so node tests can cover them.
 
 /**
  * Items of a tab's right-click menu, in order, with `null` for a separator.
  * the external editor: Close / Close All / Close Others | Split Vertical / Split Horizontal /
  * Switch (+ Detach) | Show in folder | Properties. Split Vertical /
- * Horizontal split the workspace (MultiView, docs/MULTIVIEW.md); Switch
+ * Horizontal split the workspace (MultiView, docs/reference/editor/workspace.md); Switch
  * moves the tab to the other split, so it needs a split view (`split`).
  * Detach and Show in folder need the desktop shell; Show in folder also
  * needs a real file on disk.

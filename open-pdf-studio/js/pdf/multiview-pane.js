@@ -1,4 +1,4 @@
-// The passive MultiView pane (docs/MULTIVIEW.md): a read-only second view of
+// The passive MultiView pane (docs/reference/editor/workspace.md): a read-only second view of
 // a document. One page, rendered with PDF.js at the pane's own scale, plus an
 // annotation canvas drawn with the shared drawAnnotation() in page
 // coordinates. The live pane (#pdf-container) keeps the real renderer; this

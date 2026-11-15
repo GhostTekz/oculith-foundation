@@ -1,4 +1,4 @@
-// the external editor .btx import (docs/TOOL-SET-SHARING.md): the synthetic fixture from
+// the external editor .btx import (docs/reference/editor/tool-chest.md): the synthetic fixture from
 // scripts/make-synthetic-btx.mjs, and hostile input.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

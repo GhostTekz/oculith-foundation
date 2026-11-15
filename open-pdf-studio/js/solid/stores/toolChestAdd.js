@@ -1,6 +1,6 @@
 // Add to Tool Chest (markup right-click / Properties ▾): one markup, a
 // whole group, or a same-page multi-selection, into one or several tool sets
-// (docs/TOOL-SET-SHARING.md). Rules: tools/tool-chest-groups.js; data:
+// (docs/reference/editor/tool-chest.md). Rules: tools/tool-chest-groups.js; data:
 // tools/tool-chest-presets.js.
 
 import { getActiveDocument } from '../../core/state.js';

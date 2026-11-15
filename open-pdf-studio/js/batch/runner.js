@@ -1,4 +1,4 @@
-// Generic batch runner (the external editor Batch menu, docs/BATCH-SUMMARY.md): one job runs
+// Generic batch runner (the external editor Batch menu, docs/reference/editor/sets-and-batch.md): one job runs
 // over a list of PDFs, one file at a time, with progress, cancel and a
 // per-file log. The runner only READS the sources. A job returns its output
 // as data ({ name, bytes } items); writeBatchOutputs() writes them afterwards

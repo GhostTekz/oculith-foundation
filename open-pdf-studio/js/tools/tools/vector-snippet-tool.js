@@ -9,11 +9,11 @@
  * omrekening als de saver doet, inclusief de CropBox-verschuiving. Daarna staat
  * het knipsel op het klembord en kun je het in een ander tabblad plakken.
  */
-import { getActiveDocument, getPageRotation } from '../../core/state.js';
+import { getActiveDocument } from '../../core/state.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { annotationCtx } from '../../ui/dom-elements.js';
-import { getPdfBytes } from '../../pdf/loader.js';
-import { knipselAlsMiniPdf, appVakNaarPdfVak, paginaRotatie } from '../../pdf/vector-embed.js';
+import { getPdfBytes, getPdfByteLength, getCachedPdfBytes } from '../../pdf/loader.js';
+import { knipselAlsMiniPdf, knipselAlsMiniPdfVanBestand, appVakNaarPdfVak, paginaRotatie } from '../../pdf/vector-embed.js';
 import { bewaar } from '../../annotations/vector-snippet-store.js';
 import { zetKnipselOpKlembord } from '../../annotations/vector-snippet-clipboard.js';
 import { updateStatusMessage } from '../../ui/chrome/status-bar.js';
@@ -59,32 +59,80 @@ async function _knipsel(vak) {
   return knipselVanVak(vak, null);
 }
 
+/** Bytes uit een ruw IPC-antwoord (ArrayBuffer, getypte array of getallenlijst). */
+function _alsBytes(res) {
+  if (res instanceof Uint8Array) return res;
+  if (res instanceof ArrayBuffer) return new Uint8Array(res);
+  if (ArrayBuffer.isView(res)) return new Uint8Array(res.buffer, res.byteOffset, res.byteLength);
+  if (Array.isArray(res)) return Uint8Array.from(res);
+  return null;
+}
+
 /**
- * Knipt een vak (app-coördinaten) uit een pagina van het actieve document.
- * Gedeeld door het gereedschap en de MCP-tool app_snippet_cut.
+ * De bronpagina als eenpagina-PDF, door de app zelf uit het bestand gehaald
+ * (extract_pdf_page). PDFium leest daarvoor alleen wat die pagina nodig heeft;
+ * het hele bestand inlezen en met pdf-lib ontleden duurt bij een set van
+ * honderden bladen minuten, of lukt niet. Null = niet mogelijk (geen bestand
+ * op schijf, geen desktop-app, of de bytes in de app zijn niet die van het
+ * bestand); dan knipt de aanroeper uit de bytes in het geheugen.
+ */
+async function _miniPdfUitBestand(doc, paginaNr, appRotatie) {
+  const pad = doc.filePath;
+  if (!pad || pad.startsWith('__memory__') || !window.__TAURI__?.core?.invoke) return null;
+  const lengte = getPdfByteLength(pad);
+  try {
+    const { invoke } = await import('../../core/platform.js');
+    return await knipselAlsMiniPdfVanBestand(pad, paginaNr - 1, appRotatie, async () => {
+      const bytes = _alsBytes(await invoke('extract_pdf_page', {
+        path: pad,
+        pageIndex: paginaNr - 1,
+        ...(Number.isFinite(lengte) ? { expectedLen: lengte } : {}),
+      }));
+      if (!bytes || bytes.length < 8) throw new Error('lege pagina-PDF');
+      return bytes;
+    }, lengte);
+  } catch (err) {
+    console.warn('[knipsel] pagina niet uit het bestand gehaald, knip uit het geheugen:', err?.message || err);
+    return null;
+  }
+}
+
+/**
+ * Knipt een vak (app-coördinaten) uit een pagina van een document (standaard
+ * het actieve). Gedeeld door het gereedschap, het knippen van een
+ * selectiegebied (annotations/region-clipboard.js) en de MCP-tool
+ * app_snippet_cut.
  * @param {{x:number,y:number,width:number,height:number}} vak
  * @param {number|null} paginaNr  null = huidige pagina
+ * @param {object} [doc]
  */
-export async function knipselVanVak(vak, paginaNr) {
-  const doc = getActiveDocument();
-  if (!doc?.filePath) return { fout: 'geen bestand' };
-
-  const bronBytes = await getPdfBytes(doc.filePath);
-  if (!bronBytes) return { fout: 'bronbytes niet in de cache' };
-
+export async function knipselVanVak(vak, paginaNr, doc = getActiveDocument()) {
+  if (!doc) return { fout: 'geen document' };
   paginaNr = paginaNr || doc.currentPage || 1;
-  const { PDFDocument } = await import('pdf-lib');
-  const bron = await PDFDocument.load(bronBytes);
-  const pagina = bron.getPage(paginaNr - 1);
   // Het vak is getrokken op het blad zoals je het ziet: de /Rotate uit het
   // bestand plus een draaiing die alleen in de app bestaat.
-  const appRotatie = getPageRotation(paginaNr) || 0;
-  const srcBox = appVakNaarPdfVak(vak, pagina.getCropBox(), paginaRotatie(pagina) + appRotatie);
-  if (!srcBox) return { fout: 'vak te klein' };
+  const appRotatie = doc.pageRotations?.[paginaNr] || 0;
+  const { PDFDocument } = await import('pdf-lib');
 
-  // De hele bronpagina gaat mee, niet het bijgesneden vak: dat is wat het
-  // inbedden nodig heeft. Zie js/pdf/vector-embed.js.
-  const mini = await knipselAlsMiniPdf(bronBytes, paginaNr - 1, appRotatie, bron);
+  let mini = await _miniPdfUitBestand(doc, paginaNr, appRotatie);
+  let srcBox;
+  if (mini) {
+    // De mini-PDF draagt de CropBox en de totale draaiing (bestand + app) al.
+    const pagina = (await PDFDocument.load(mini)).getPage(0);
+    srcBox = appVakNaarPdfVak(vak, pagina.getCropBox(), paginaRotatie(pagina));
+    if (!srcBox) return { fout: 'vak te klein' };
+  } else {
+    const bronBytes = (doc.filePath ? await getPdfBytes(doc.filePath) : null)
+      || getCachedPdfBytes(`__memory__${doc.id}`);
+    if (!bronBytes) return { fout: doc.filePath ? 'bronbytes niet in de cache' : 'geen bestand' };
+    const bron = await PDFDocument.load(bronBytes);
+    const pagina = bron.getPage(paginaNr - 1);
+    srcBox = appVakNaarPdfVak(vak, pagina.getCropBox(), paginaRotatie(pagina) + appRotatie);
+    if (!srcBox) return { fout: 'vak te klein' };
+    // De hele bronpagina gaat mee, niet het bijgesneden vak: dat is wat het
+    // inbedden nodig heeft. Zie js/pdf/vector-embed.js.
+    mini = await knipselAlsMiniPdf(bronBytes, paginaNr - 1, appRotatie, bron);
+  }
   const sleutel = bewaar(mini);
 
   return {

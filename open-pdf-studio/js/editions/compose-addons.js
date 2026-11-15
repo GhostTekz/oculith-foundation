@@ -26,7 +26,8 @@ const CORE_SHORTCUTS = new Set(`V Shift+V L A R E C K Q T N P H S I W Shift+H Sh
   Ctrl+Shift+F7 Ctrl+Shift+F9 Shift+F9 Ctrl+4 Ctrl+6 Ctrl+7 Ctrl+3 Ctrl+F5
   Ctrl+Alt+2 Ctrl+H Ctrl+Shift+2 Alt+ArrowLeft Alt+ArrowRight Shift+F4 Ctrl+B
   Alt+X Alt+L Alt+T Alt+P Alt+U Alt+Y Alt+B Alt+N Alt+1 Alt+2 Alt+Q Alt+4
-  Alt+S Ctrl+K Ctrl+, Alt+F4 Ctrl+Y Alt+O Alt+F Alt+E Alt+V Alt+D Alt+W Alt+H`
+  Alt+S Ctrl+K Ctrl+, Alt+F4 Ctrl+Y Alt+O Alt+F Alt+E Alt+V Alt+D Alt+W Alt+H
+  PageUp PageDown`
   .split(/\s+/).filter(Boolean).map((key) => key.toLowerCase()));
 const CORE_COMMAND_IDS = new Set(`format.applyStyle format.applyStylePreset format.copyStyle
   format.pasteStyle format.resetLocation format.openProperties format.hideMarkup
@@ -51,7 +52,7 @@ const CORE_COMMAND_IDS = new Set(`format.applyStyle format.applyStylePreset form
   file.email file.annotateScreenshot view.splitVertical view.splitHorizontal
   view.toggleSplit view.switchPane view.unsplit view.syncDocument view.syncPage
   oculith.about oculith.preferences oculith.keyboardShortcuts oculith.exit
-  help.findCommands help.showTour help.showBasicsTour help.extensions help.fileAssociations help.startupDiagnostics
+  help.findCommands help.showTour help.showBasicsTour help.extensions help.fileAssociations help.startupDiagnostics help.aiConnections
   file.open file.save file.saveAs file.print edit.undo edit.redo view.fitPage
   view.fitWidth view.zoomIn view.zoomOut batch.setLink document.bookmarksFromLabels
   tools.markup.image tools.markup.removeImage tools.measure.setScale tools.measure.detectScales tools.quantities
@@ -77,7 +78,7 @@ const CORE_DIALOG_IDS = new Set(`doc-properties preferences new-doc insert-page
   capture-viewer page-labels batch-link multiply offset undoHistory compare
   cad-export cad-import annotation-layer-delete batch-summary batch-ops
   set-batch-link manage-tool-sets add-to-tool-chest assemblies copy-to-pages
-  markup-name addon-tool-log`.split(/\s+/).filter(Boolean));
+  markup-name addon-tool-log ai-connections`.split(/\s+/).filter(Boolean));
 
 function unique(name, values) {
   const ids = new Set();

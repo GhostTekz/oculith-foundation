@@ -1,4 +1,5 @@
 import { state, getActiveDocument, selectAllOnPage, clearSelection } from '../core/state.js';
+import { useNativeClipboard } from '../core/system-clipboard.js';
 import { undo, redo, recordAdd, recordModify, recordBulkModify } from '../core/undo-manager.js';
 import { setTool } from './manager.js';
 import { setAsDefaultStyle } from '../core/preferences.js';
@@ -6,6 +7,8 @@ import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { copyAndMove } from './edit-ops.js';
 import { showNewDocDialog } from '../ui/chrome/dialogs.js';
 import { copyAnnotation, copyAnnotations, pasteAnnotation, pasteAnnotations } from '../annotations/clipboard.js';
+import { copyRegionSelection, pasteRegion, regionPasteIsLatest } from '../annotations/region-clipboard.js';
+import { hasRegionSelection } from './region-selection.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
 import { applyMove } from '../annotations/transforms.js';
 import { cloneAnnotation } from '../annotations/factory.js';
@@ -694,6 +697,11 @@ export async function handleKeydown(e) {
       clearSelection();
       hideProperties();
       redraw();
+    } else if (hasRegionSelection()) {
+      // Geen markeringen maar een selectiegebied: dat deel van het blad gaat
+      // als vectorknipsel op het klembord. Het blad zelf blijft zoals het is.
+      e.preventDefault();
+      void copyRegionSelection();
     }
   } else if (ctrl && !shift && e.key === 'c') {
     // Copy selected annotations (if none selected, let native copy handle text selection)
@@ -703,6 +711,9 @@ export async function handleKeydown(e) {
       e.preventDefault();
       if (selected.length > 1) copyAnnotations(selected);
       else copyAnnotation(selected[0]);
+    } else if (hasRegionSelection()) {
+      e.preventDefault();
+      void copyRegionSelection();
     }
   } else if (ctrl && shift && (e.key === 'V' || e.key === 'v')) {
     // Plakken op plaats (paste in place) — GitHub #269: plak het interne
@@ -714,6 +725,14 @@ export async function handleKeydown(e) {
     if (isPdfAReadOnly()) return;
     import('../annotations/clipboard.js').then(({ pasteAnnotationsInPlace }) => pasteAnnotationsInPlace());
   } else if (ctrl && !shift && e.key === 'v') {
+    // Een geknipt gebied (selectiegebied, Ctrl+X/C) dat de laatste kopie is,
+    // ook als het knippen nog loopt: plakken wacht daarop.
+    if (!isInInput && getActiveDocument()?.pdfDoc && regionPasteIsLatest()) {
+      e.preventDefault();
+      if (isPdfAReadOnly()) return;
+      void pasteRegion();
+      return;
+    }
     // An annotation copied inside the app must be pasted directly. Asking the
     // native Clipboard API first can open a WebView permission prompt and
     // indefinitely postpone the internal paste (notably for line annotations).
@@ -743,9 +762,17 @@ export async function handleKeydown(e) {
       else pasteAnnotation();
       return;
     }
+    // Linux: the webview's own paste read the clipboard through GTK in the
+    // app's process and crashed it (system-clipboard.js). The image is read
+    // natively instead; no paste event, no second read.
+    if (useNativeClipboard() && !isInInput) {
+      e.preventDefault();
+      if (!getActiveDocument()?.pdfDoc || isPdfAReadOnly()) return;
+      import('../annotations/clipboard.js').then(({ pasteImageOrMarkups }) => pasteImageOrMarkups());
+      return;
+    }
     // Don't preventDefault — let native paste event fire so handlePaste can
-    // read clipboardData.items (required on Linux/WebKitGTK where the async
-    // Clipboard API is unavailable).
+    // read clipboardData.items.
     //
     // Fallback: in some Tauri webview contexts the native 'paste' event does
     // not fire when no editable element has focus (canvas focused, or no focus

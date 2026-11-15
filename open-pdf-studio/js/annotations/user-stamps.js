@@ -1,4 +1,4 @@
-// User stamps (docs/STAMPS.md): templates made in the stamp editor, kept in
+// User stamps (docs/reference/editor/markup-tools.md): templates made in the stamp editor, kept in
 // preferences (`userStamps`) and exported/imported as JSON.
 
 import { createSignal } from 'solid-js';

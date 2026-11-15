@@ -400,7 +400,7 @@ function SymbolContent(props) {
   const [renameText, setRenameText] = createSignal('');
   const [editingToolId, setEditingToolId] = createSignal(null);
   const [editName, setEditName] = createSignal('');
-  // "Layer…" on a saved tool (docs/MARKUP-LAYERS.md): the tool id and the name being typed.
+  // "Layer…" on a saved tool (docs/reference/editor/layers.md): the tool id and the name being typed.
   const [layerToolId, setLayerToolId] = createSignal(null);
   const [layerText, setLayerText] = createSignal('');
   const [dragged, setDragged] = createSignal(null); // { id, setId }
@@ -415,7 +415,7 @@ function SymbolContent(props) {
   const namedSets = () => getToolChestSets();
   startToolSetSharing();
   const tShare = (key, params) => t(`common:toolSetSharing.${key}`, params);
-  // Shared sets (docs/TOOL-SET-SHARING.md): read-only until checked out.
+  // Shared sets (docs/reference/editor/tool-chest.md): read-only until checked out.
   const editable = (setId) => { toolSetShareRevision(); return canEditToolSet(setId); };
   const shareOf = (setId) => toolSetShareStatus(setId);
   const runShare = async (section, action, kind) => {

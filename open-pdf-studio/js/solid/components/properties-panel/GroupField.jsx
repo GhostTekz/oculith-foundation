@@ -7,7 +7,7 @@ import { openDialog } from '../../stores/dialogStore.js';
 import { runCommand } from '../../commands/index.js';
 
 // Group in the Properties panel (the external editor: Options ▸ Group / Ungroup), see
-// docs/MARKUP-GROUPS.md. Group when the selection holds two or more markups
+// docs/reference/editor/markups-list.md. Group when the selection holds two or more markups
 // or groups, Ungroup when it holds a group; the name of a selected group is
 // its Subject in the Markups List and opens the rename dialog.
 export default function GroupField() {

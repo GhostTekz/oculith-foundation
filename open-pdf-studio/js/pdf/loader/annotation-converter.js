@@ -231,7 +231,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
     printable: !!(annot.annotationFlags & 4),       // Bit 3: Print
     readOnly: !!(annot.annotationFlags & 64),       // Bit 7: ReadOnly
     // Bit 2: Hidden. Only set when on, so a markup that was never hidden
-    // keeps the model (and the external editor fingerprint) it had (docs/MARKUP-LAYERS.md).
+    // keeps the model (and the external editor fingerprint) it had (docs/reference/editor/layers.md).
     ...(annot.annotationFlags & 2 ? { hidden: true } : {}),
     marked: false
   };
@@ -1644,7 +1644,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
         if (Math.abs(stRotation) <= 1) stRotation = 0;
       }
 
-      // Dynamic stamp (docs/STAMPS.md): the design written by the saver,
+      // Dynamic stamp (docs/reference/editor/markup-tools.md): the design written by the saver,
       // with the box inside a /Rect that holds it at its rotation.
       const stampDesign = cleanStampDesign(extraColors.opsStampDesign);
       if (stampDesign) {

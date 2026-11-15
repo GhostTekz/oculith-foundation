@@ -16,7 +16,7 @@ import { lucide } from '../data/lucideIcons.js';
 import * as icons from '../data/ribbonIcons.js';
 import { edition } from '../../editions/active.js';
 
-// external plan-review files Properties toolbar (docs/WORKSPACE-SPEC.md §1.5, WP4): 36 px,
+// external plan-review files Properties toolbar (docs/reference/editor/workspace.md, WP4): 36 px,
 // directly under the menu row, no caption. Nothing selected: the document
 // (doc ▾ · Name · Pages · Insert Blank Page). A markup selected, or a drawing
 // tool active (its defaults): the fields from properties-toolbar-fields.js.

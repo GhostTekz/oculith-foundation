@@ -1,17 +1,19 @@
-// Non-modal approval cards for add-on tools that change something
-// (js/mcp/addon-tools.js). One card per waiting call, bottom-right; the user
+// Non-modal approval cards for add-on tools that change something, and for
+// the editor's own tools on an asking AI link (js/mcp/addon-tools.js). One card per waiting call, bottom-right; the user
 // keeps working while a card is open. Approve, Deny or Always for this
 // session; a card that is not answered counts as Deny.
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useTranslation } from '../../i18n/useTranslation.js';
-import { answerApproval, pendingApprovals, subscribe } from '../../mcp/addon-tools.js';
+import { answerApproval, pendingApprovals, shownInline, subscribe } from '../../mcp/addon-tools.js';
 import { openDialog } from '../stores/dialogStore.js';
 
 export default function AddonToolApprovals() {
   const { t } = useTranslation('dialogs');
-  const [cards, setCards] = createSignal(pendingApprovals());
+  // Cards a panel shows itself (an in-app assistant) are left out here.
+  const floating = () => pendingApprovals().filter((card) => !shownInline(card));
+  const [cards, setCards] = createSignal(floating());
   onMount(() => {
-    const stop = subscribe(() => setCards(pendingApprovals()));
+    const stop = subscribe(() => setCards(floating()));
     onCleanup(stop);
   });
   return (

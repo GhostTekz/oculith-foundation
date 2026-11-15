@@ -4,6 +4,7 @@ import { state, getActiveDocument } from '../core/state.js';
 import { isTauri, extractFileName } from '../core/platform.js';
 import { loadPDF, loadPDFIfNeeded } from '../pdf/loader.js';
 import { fitWidth, fitPage, goToPage, setZoom } from '../pdf/renderer.js';
+import { pageStepTarget } from '../pdf/page-step.js';
 import { draaiVanafKnop } from '../pdf/pagina-draaien.js';
 import { createTab } from '../ui/chrome/tabs.js';
 import { initDomElements } from '../ui/dom-elements.js';
@@ -150,7 +151,7 @@ export default function MobileApp() {
     if (!hasDocument()) return;
     const doc = getActiveDocument();
     if (doc && doc.currentPage > 1) {
-      goToPage(doc.currentPage - 1);
+      goToPage(pageStepTarget(doc, -1));
     }
   }
 
@@ -158,7 +159,7 @@ export default function MobileApp() {
     if (!hasDocument()) return;
     const doc = getActiveDocument();
     if (doc && doc.currentPage < totalPages()) {
-      goToPage(doc.currentPage + 1);
+      goToPage(pageStepTarget(doc, 1));
     }
   }
 
@@ -383,7 +384,8 @@ export default function MobileApp() {
               </svg>
             </button>
 
-            <button class="mobile-page-info" onClick={handleOpenGoto} aria-label="Go to page">
+            <button class="mobile-page-info" onClick={handleOpenGoto} aria-label="Go to page"
+              style={{ width: `calc(${String(totalPages() || 1).length * 2 + 3}ch + 16px)` }}>
               {state.documents[state.activeDocumentIndex]?.currentPage || 1} / {totalPages()}
             </button>
 

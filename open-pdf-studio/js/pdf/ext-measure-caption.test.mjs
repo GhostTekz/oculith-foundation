@@ -1,4 +1,4 @@
-// the external editor measurements without a caption (docs/MARKUP-INTEROP.md): an external editor
+// the external editor measurements without a caption (docs/reference/editor/markup-interop.md): an external editor
 // measurement whose appearance draws no text shows no value on the drawing
 // in the external editor, so OcuDraw opens it with its label off (measureShowLabel false)
 // instead of writing the value over the drawing; a dense the external editor sheet with

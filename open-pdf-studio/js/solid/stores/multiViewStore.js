@@ -1,4 +1,4 @@
-// MultiView (split screen) and Sync, docs/MULTIVIEW.md. The pane model lives
+// MultiView (split screen) and Sync, docs/reference/editor/workspace.md. The pane model lives
 // in multiViewModel.js (pure); this module keeps it in a Solid signal and
 // joins it to the live renderer (#pdf-container, switchToTab) and to the
 // passive pane (js/pdf/multiview-pane.js, mounted by MultiViewPanes.jsx).

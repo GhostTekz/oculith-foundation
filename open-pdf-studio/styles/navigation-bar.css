@@ -27,7 +27,12 @@
 }
 
 /* Auto basis: the sides share the spare room, so the page navigation sits
-   near the centre without the right side being clipped first. */
+   near the centre without the right side being clipped first. Every control
+   whose text changes from page to page (page field, zoom, page size, scale)
+   has a FIXED width, so the sides keep their width and First / Previous /
+   Next / Last stay put while the user pages through a set. Before, a sheet
+   with another size or scale text moved them by up to ~35 px and quick
+   clicks on Next landed beside it (or on Last). */
 .nav-bar-left,
 .nav-bar-right {
   flex: 1 1 auto;
@@ -130,11 +135,14 @@
 
 .nav-page-input {
   width: 200px;
+  flex: 0 0 auto;
   margin: 0 4px;
+  text-overflow: ellipsis;
 }
 
 .nav-zoom-input {
   width: 54px;
+  flex: 0 0 auto;
 }
 
 .nav-page-input:focus,
@@ -153,17 +161,32 @@
   gap: 2px;
 }
 
+/* Page size: room for "36.00 x 24.00 in" / "1189 x 841 mm"; a longer text
+   ends in an ellipsis (the tooltip has it all). */
 .nav-readout {
+  box-sizing: border-box;
+  width: 132px;
+  flex: 0 0 auto;
   padding: 0 6px;
   font-family: var(--ox-font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--theme-status-text-value);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 
 /* Page scale; a click opens Set Scale. Unset / only detected uses the
-   accent ink, never the "ok" look (same rule as the status bar). */
+   accent ink, never the "ok" look (same rule as the status bar). A fixed
+   width like the page size; the tooltip names the full scale. */
 .nav-scale {
+  box-sizing: border-box;
+  width: 150px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
   height: 24px;
   padding: 0 8px;
   border: 1px solid transparent;

@@ -40,7 +40,7 @@ const [searchQuery, setSearchQuery] = createSignal('');
 // die de gebruiker via Tonen > Status heeft verborgen. Leeg = alles zichtbaar.
 const [hiddenStatuses, setHiddenStatuses] = createSignal(new Set());
 const [collapsedGroups, setCollapsedGroups] = createSignal(new Set());
-// Markup groups (Group rows, docs/MARKUP-GROUPS.md) shown open: closed by
+// Markup groups (Group rows, docs/reference/editor/markups-list.md) shown open: closed by
 // default, as in the external editor. Only shapes the list rows.
 const [expandedMarkupGroups, setExpandedMarkupGroups] = createSignal(new Set());
 

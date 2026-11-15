@@ -17,7 +17,7 @@
  * Esc cancels everything and returns to Select.
  *
  * Geometry: js/tools/dynamic-fill/fill-region.js; session state, Apply and
- * Clear: js/tools/dynamic-fill/session.js; docs/DYNAMIC-FILL.md.
+ * Clear: js/tools/dynamic-fill/session.js; docs/reference/editor/measuring.md.
  */
 
 import { encirclingLoop } from '../dynamic-fill/fill-region.js';

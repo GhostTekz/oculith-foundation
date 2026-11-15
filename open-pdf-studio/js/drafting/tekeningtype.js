@@ -7,7 +7,7 @@
 // Regelsets zijn DATA (JSON in de app-preferences), geen code.
 //
 // Ontwerpkeuzes (overgenomen uit het Open 2D Studio 1.0-onderzoek, zie
-// docs/superpowers/specs/2026-07-28-nl-ifc-tekenlaag-design.md):
+// docs/reference/editor/drafting-and-signatures.md):
 //
 //  1. PER-SCHAAL-TABELLEN. Schaalafhankelijke waarden staan als
 //     `Record<schaalKey, waarde>` met schaalKey = 1/N als string

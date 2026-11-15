@@ -1,7 +1,7 @@
 // Capture (photos on markups) and File Attachment: the app actions behind the
 // context menu, the Properties section, the Markups List, the viewer and the
 // File Attachment tool. Model and pure helpers: capture.js. PDF: saver/
-// capture-files.js and loader/capture-load.js. See docs/CAPTURE.md.
+// capture-files.js and loader/capture-load.js. See docs/reference/editor/markup-tools.md.
 
 import { createSignal } from 'solid-js';
 import i18next from '../i18n/config.js';

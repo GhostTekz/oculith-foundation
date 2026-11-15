@@ -1,5 +1,5 @@
 // MultiView commands (View menu, Navigation bar, tab menu, status bar Sync):
-// docs/MULTIVIEW.md. the external editor keys: Ctrl+H Split Horizontal, Ctrl+Shift+2
+// docs/reference/editor/workspace.md. the external editor keys: Ctrl+H Split Horizontal, Ctrl+Shift+2
 // Unsplit. the external editor's Ctrl+2 stays Fit Page here, so Split Vertical is
 // Ctrl+Alt+2 (shortcut-table.js).
 

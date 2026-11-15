@@ -13,7 +13,7 @@ import { addToToolChestBlockReason, cleanGroupMembers, MAX_GROUP_MEMBERS } from 
 const STORAGE_KEY = 'oculith-tool-chest-presets-v1';
 const SETS_STORAGE_KEY = 'oculith-tool-chest-sets-v1';
 export const DEFAULT_TOOL_SET_ID = 'my-tools';
-// Every tool of every set, shared sets included (docs/TOOL-SET-SHARING.md).
+// Every tool of every set, shared sets included (docs/reference/editor/tool-chest.md).
 export const MAX_TOOL_CHEST_TOOLS = 2000;
 const MAX_PRESETS = MAX_TOOL_CHEST_TOOLS;
 export const MAX_TOOL_SETS = 80;
@@ -86,7 +86,7 @@ function cleanStyle(source, tool) {
     return Object.keys(style).length ? { ...style, ...opacityOf(source) } : {};
   }
   if (tool === 'stamp' && typeof source.stampTemplateId === 'string') {
-    // A dynamic stamp (docs/STAMPS.md): the template id, looked up again at
+    // A dynamic stamp (docs/reference/editor/markup-tools.md): the template id, looked up again at
     // placement, where its fields are evaluated. No design or image data.
     if (!/^(?:ct|user):[A-Za-z0-9._-]{1,80}$/u.test(source.stampTemplateId)) return {};
     const name = typeof source.stampName === 'string' ? source.stampName.slice(0, 80) : '';
@@ -198,7 +198,7 @@ function toolDetails(value) {
   return { ...(subject ? { subject } : {}), ...(comment ? { comment } : {}) };
 }
 
-// Tool layers (the external editor "Add tool sets to PDF layers", docs/MARKUP-LAYERS.md):
+// Tool layers (the external editor "Add tool sets to PDF layers", docs/reference/editor/layers.md):
 // a saved tool can name a markup layer. Tools with the same name share one
 // layer; it is created in the document when the first markup is placed.
 export const TOOL_LAYER_NAME_LIMIT = 120;
@@ -872,7 +872,7 @@ export function finishToolPresetPlacement(annotation, doc) {
   return annotation;
 }
 
-// --- Manage Tool Sets (docs/TOOL-SET-SHARING.md) ---
+// --- Manage Tool Sets (docs/reference/editor/tool-chest.md) ---
 
 const newId = (prefix) => `${prefix}_${globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`}`;
 

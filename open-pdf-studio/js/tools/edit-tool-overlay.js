@@ -1,4 +1,4 @@
-// Live overlay of the Lasso and Offset tools (docs/EDIT-TOOLS.md): the lasso
+// Live overlay of the Lasso and Offset tools (docs/reference/editor/markup-tools.md): the lasso
 // path while it is drawn and the offset preview before the side click.
 // rendering.js draws it in the overlay pass (next to the rubber band), so a
 // redraw never wipes it. No imports: rendering.js loads this module.

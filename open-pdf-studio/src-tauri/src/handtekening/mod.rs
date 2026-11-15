@@ -1,5 +1,5 @@
 //! Digitale handtekeningen met certificaten (#374).
-//! Ontwerp: docs/superpowers/specs/2026-09-16-digitale-handtekeningen-design.md
+//! Ontwerp: docs/reference/editor/drafting-and-signatures.md
 
 pub mod algoritme;
 pub mod ber;

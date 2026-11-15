@@ -1,4 +1,4 @@
-// Markup Selection Cycle (current plan-review releases, docs/EDIT-TOOLS.md): clicking again at
+// Markup Selection Cycle (current plan-review releases, docs/reference/editor/markup-tools.md): clicking again at
 // the same spot selects the next markup under the pointer, through the whole
 // stack of overlapping markups, and wraps. Pure: no app imports.
 

@@ -1,5 +1,5 @@
-// Tool layers on shared tool sets (docs/MARKUP-LAYERS.md,
-// docs/TOOL-SET-SHARING.md): two simulated users, each with their own Tool
+// Tool layers on shared tool sets (docs/reference/editor/layers.md,
+// docs/reference/editor/tool-chest.md): two simulated users, each with their own Tool
 // Chest (tool-chest-presets.js with its own storage) wired to the share
 // manager like toolSetLibrary.js does, against one temporary folder.
 import assert from 'node:assert/strict';

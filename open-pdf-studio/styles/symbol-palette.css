@@ -923,7 +923,7 @@
   font-weight: 700;
   line-height: 10px;
 }
-/* Tool layer (docs/MARKUP-LAYERS.md): a small layers glyph bottom-right. */
+/* Tool layer (docs/reference/editor/layers.md): a small layers glyph bottom-right. */
 .tc-tool-layer {
   position: absolute;
   right: 1px;
@@ -972,7 +972,7 @@
 }
 .tc-tools-lib.tc-view-symbol .tc-tool-icon { padding: 1px; }
 
-/* Tool set sharing (docs/TOOL-SET-SHARING.md): Properties Mode badge, the
+/* Tool set sharing (docs/reference/editor/tool-chest.md): Properties Mode badge, the
    Detail view's Subject/Comment and a shared set's lock / check mark. */
 .tc-tool-mode.tc-tool-mode-properties { color: var(--theme-text-secondary); }
 .tc-tool-detail { display: flex; flex-direction: column; min-width: 0; }
