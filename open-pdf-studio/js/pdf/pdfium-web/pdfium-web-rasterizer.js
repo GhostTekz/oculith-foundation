@@ -109,12 +109,16 @@ export function pdfiumWebRasterizer({ bytes, inTauri, voorkeur, ocgAfwijkend, to
   async function teken(page, viewport, k, uitsnede, breedte, hoogte, renderParams) {
     if (moduleKapot || kapotteBytes.has(bytes)) return null;
     try {
+      // PDF.js levert ook voor een PDF zonder /UserUnit expliciet 1.
+      // Ontbrekende of ongeldige metadata blijft bij de PDF.js-renderroute.
+      const userUnit = page.userUnit;
+      if (!Number.isFinite(userUnit) || userUnit <= 0) return null;
       const docKey = await openBytes(bytes);
       const basis = page.getViewport({ scale: 1, rotation: page.rotate || 0 });
       const matrix = pdfiumMatrix({
         W: basis.width, H: basis.height,
         rotatie: extraRotatie(viewport.rotation, page.rotate),
-        schaal: viewport.scale, k, minX: uitsnede.minX, minY: uitsnede.minY,
+        schaal: viewport.scale, k, userUnit, minX: uitsnede.minX, minY: uitsnede.minY,
       });
       const t0 = performance.now();
       const antwoord = await vraag({ type: 'render', docKey, pageIndex: page.pageNumber - 1,
