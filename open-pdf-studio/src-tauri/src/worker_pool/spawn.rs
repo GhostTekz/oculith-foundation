@@ -89,6 +89,14 @@ pub async fn spawn_worker(worker: Arc<WorkerState>, exe_path: &std::path::Path) 
     #[cfg(unix)]
     let _ = std::fs::remove_file(&shm_path);
 
+    // The app stopped the pool while this worker started (a respawn): it
+    // must not outlive the shutdown.
+    if worker.stopping.load(std::sync::atomic::Ordering::Acquire) {
+        drop(stdin);
+        let _ = child.kill().await;
+        return Err(anyhow!("worker {} started while the pool was stopping", worker.slot));
+    }
+
     // Stash handles in the WorkerState
     *worker.child.lock().await = Some(child);
     *worker.stdin.lock().await = Some(stdin);

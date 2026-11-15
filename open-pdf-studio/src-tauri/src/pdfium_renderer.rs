@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 use pdfium_render::prelude::*;
 use ocg_render_copy::LayerVisibility;
+use crate::single_flight::SingleFlight;
 
 /// Global PDFium instance. Initialised once at app start by
 /// `init_pdfium`. Subsequent calls to `pdfium()` are zero-cost lookups.
@@ -79,18 +80,38 @@ pub(crate) fn inproc_guard() -> std::sync::MutexGuard<'static, ()> {
     PDFIUM_INPROC_LOCK.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-/// Wrapper around a loaded PDFium document. Holds the parsed byte buffer
-/// alive for the document's lifetime via `Arc<Vec<u8>>`, and the raw
-/// `PdfDocument<'static>` (lifetime extended unsafely via the static
-/// PDFIUM ref). We never let the bytes outlive the wrapper, so this is
-/// sound.
+/// Wrapper around a loaded PDFium document and the raw `PdfDocument<'static>`
+/// (lifetime extended unsafely via the static PDFIUM ref). A document loaded
+/// from bytes keeps them alive for its lifetime via `Arc<Vec<u8>>`; a document
+/// loaded from a file owns the open file inside the `PdfDocument`, and PDFium
+/// reads only the parts it needs. We never let the bytes outlive the wrapper,
+/// so this is sound.
 pub struct PdfiumDocumentHandle {
     // Order matters: `_bytes` must outlive `document`.
     document: Option<PdfDocument<'static>>,
-    _bytes: Arc<Vec<u8>>,
+    _bytes: Option<Arc<Vec<u8>>>,
 }
 
 impl PdfiumDocumentHandle {
+    /// Open the file at `path` and let PDFium read it on demand, the way the
+    /// worker processes do: a 600 MB drawing set no longer has to sit in this
+    /// process's memory for one fallback render. Rust opens files with read,
+    /// write and delete sharing on Windows, so an atomic save can still
+    /// rename over the path; cache invalidation drops the handle.
+    pub fn load_from_file(path: &Path) -> Result<Self, String> {
+        if PDFIUM.get().is_none() {
+            return Err("PDFium is not available — rendering is disabled on this build.".into());
+        }
+        let file = std::fs::File::open(path).map_err(|e| format!("Open {}: {}", path.display(), e))?;
+        let document = {
+            let _guard = inproc_guard();
+            pdfium()
+                .load_pdf_from_reader(file, None)
+                .map_err(|e| format!("Failed to load PDF via PDFium: {}", e))?
+        };
+        Ok(Self { document: Some(document), _bytes: None })
+    }
+
     /// Construct a handle from raw PDF bytes. Returns Err on parse failure
     /// (corrupt PDF / unsupported encryption / etc).
     pub fn load_from_bytes(bytes: Arc<Vec<u8>>) -> Result<Self, String> {
@@ -118,7 +139,7 @@ impl PdfiumDocumentHandle {
 
         Ok(Self {
             document: Some(document),
-            _bytes: bytes,
+            _bytes: Some(bytes),
         })
     }
 
@@ -137,7 +158,8 @@ impl Drop for PdfiumDocumentHandle {
 
 /// Document-handle cache. Tauri state. Keyed by full file path. Bounded by
 /// count (LRU): every open document holds PDFium parse state in this process.
-pub struct PdfiumDocCache(pub Mutex<DocMap<PdfiumDocumentHandle>>);
+/// The second field lets concurrent misses for one path share one load.
+pub struct PdfiumDocCache(pub Mutex<DocMap<PdfiumDocumentHandle>>, pub SingleFlight);
 
 pub type DocMap<T> = crate::byte_lru::ByteLru<String, Arc<T>>;
 const PDFIUM_DOC_CACHE_MAX_DOCS: usize = 6;
@@ -148,7 +170,7 @@ pub fn new_doc_map<T>() -> DocMap<T> {
 
 impl Default for PdfiumDocCache {
     fn default() -> Self {
-        Self(Mutex::new(new_doc_map()))
+        Self(Mutex::new(new_doc_map()), SingleFlight::new())
     }
 }
 
@@ -161,35 +183,8 @@ fn insert_doc<T: Send + Sync + 'static>(map: &mut DocMap<T>, path: &str, handle:
     }
 }
 
-/// Get an Arc-wrapped PdfiumDocumentHandle for `path`. Reads bytes from
-/// disk on cache miss. For the production hot path where bytes are already
-/// cached, prefer `get_or_load_pdfium_doc_with_bytes`.
-pub fn get_or_load_pdfium_doc(
-    path: &str,
-    cache: &PdfiumDocCache,
-) -> Result<Arc<PdfiumDocumentHandle>, String> {
-    {
-        let mut map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
-        if let Some(h) = map.get(path) {
-            return Ok(h.clone());
-        }
-    }
-
-    let bytes = std::fs::read(path).map_err(|e| format!("Read {}: {}", path, e))?;
-    let arc_bytes = Arc::new(bytes);
-    let handle = Arc::new(PdfiumDocumentHandle::load_from_bytes(arc_bytes)?);
-
-    let mut map = cache.0.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
-    // Double-check after parse to avoid race-double-load.
-    if let Some(existing) = map.get(path) {
-        return Ok(existing.clone());
-    }
-    insert_doc(&mut map, path, handle.clone());
-    Ok(handle)
-}
-
-/// Same as above but bytes are supplied directly. Used by Tauri commands
-/// that already cache bytes via PdfBytesCache.
+/// Get an Arc-wrapped PdfiumDocumentHandle for `path` from bytes the caller
+/// already holds. Used by commands with their own short-lived caches.
 pub fn get_or_load_pdfium_doc_with_bytes(
     path: &str,
     bytes: Arc<Vec<u8>>,
@@ -222,14 +217,29 @@ pub fn get_or_load_pdfium_doc_for_render(
     pixmap_cache: &PixmapCacheState,
     generation: Option<u64>,
 ) -> Result<Arc<PdfiumDocumentHandle>, String> {
-    get_or_load_at_generation(path, &cache.0, pixmap_cache, generation, || {
+    get_or_load_at_generation(path, &cache.0, &cache.1, pixmap_cache, generation, || {
         PdfiumDocumentHandle::load_from_bytes(bytes).map(Arc::new)
+    })
+}
+
+/// The default view of `path` for the in-process fallback, read from the
+/// file on demand rather than from a whole in-memory copy. Concurrent misses
+/// for the same path share one load.
+pub fn get_or_load_pdfium_file_for_render(
+    path: &str,
+    cache: &PdfiumDocCache,
+    pixmap_cache: &PixmapCacheState,
+    generation: Option<u64>,
+) -> Result<Arc<PdfiumDocumentHandle>, String> {
+    get_or_load_at_generation(path, &cache.0, &cache.1, pixmap_cache, generation, || {
+        PdfiumDocumentHandle::load_from_file(Path::new(path)).map(Arc::new)
     })
 }
 
 fn get_or_load_at_generation<T, F>(
     path: &str,
     cache: &Mutex<DocMap<T>>,
+    flight: &SingleFlight,
     pixmap_cache: &PixmapCacheState,
     generation: Option<u64>,
     load: F,
@@ -243,26 +253,37 @@ where
     };
     // The pixmap lock also protects this document-cache lookup. Invalidation
     // acquires the locks in the same order and evicts both caches atomically.
-    {
+    let cached = || -> Result<Option<Arc<T>>, String> {
         let guard = pixmap_cache.0.lock().map_err(|e| format!("Pixmap cache lock: {}", e))?;
         if guard.as_ref().is_some_and(|c| c.is_current(path, generation)) {
             let mut map = cache.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
             if let Some(handle) = map.get(path) {
-                return Ok(handle.clone());
+                return Ok(Some(handle.clone()));
             }
         }
+        Ok(None)
+    };
+    if let Some(handle) = cached()? {
+        return Ok(handle);
     }
 
-    let handle = load()?;
-    let guard = pixmap_cache.0.lock().map_err(|e| format!("Pixmap cache lock: {}", e))?;
-    if guard.as_ref().is_some_and(|c| c.is_current(path, generation)) {
-        let mut map = cache.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
-        if let Some(existing) = map.get(path) {
-            return Ok(existing.clone());
+    // One load per path: a request that missed together with another waits
+    // for it and then finds its document in the cache.
+    flight.run(path, || {
+        if let Some(handle) = cached()? {
+            return Ok(handle);
         }
-        insert_doc(&mut map, path, handle.clone());
-    }
-    Ok(handle)
+        let handle = load()?;
+        let guard = pixmap_cache.0.lock().map_err(|e| format!("Pixmap cache lock: {}", e))?;
+        if guard.as_ref().is_some_and(|c| c.is_current(path, generation)) {
+            let mut map = cache.lock().map_err(|e| format!("Pdfium doc cache lock: {}", e))?;
+            if let Some(existing) = map.get(path) {
+                return Ok(existing.clone());
+            }
+            insert_doc(&mut map, path, handle.clone());
+        }
+        Ok(handle)
+    })
 }
 
 /// Page size in PDF points (width, height) as rendered, i.e. with the page's
@@ -740,7 +761,7 @@ impl PixmapCacheState {
 
 #[cfg(test)]
 mod pixmap_cache_tests {
-    use super::{get_or_load_at_generation, CachedPixmap, PixmapCache, PixmapCacheState};
+    use super::{get_or_load_at_generation, CachedPixmap, PixmapCache, PixmapCacheState, SingleFlight};
     use std::collections::HashMap;
     use std::sync::{mpsc, Arc, Mutex};
     use ocg_render_copy::LayerVisibility;
@@ -948,6 +969,7 @@ mod pixmap_cache_tests {
             get_or_load_at_generation(
                 "drawing.pdf",
                 &render_documents,
+                &SingleFlight::new(),
                 &render_pixmaps,
                 generation,
                 || {
@@ -969,6 +991,7 @@ mod pixmap_cache_tests {
         let new_handle = get_or_load_at_generation(
             "drawing.pdf",
             &documents,
+            &SingleFlight::new(),
             &pixmaps,
             current,
             || Ok(Arc::new(2_u8)),
@@ -978,12 +1001,41 @@ mod pixmap_cache_tests {
         let cached = get_or_load_at_generation(
             "drawing.pdf",
             &documents,
+            &SingleFlight::new(),
             &pixmaps,
             current,
             || panic!("current document should be cached"),
         )
         .unwrap();
         assert!(Arc::ptr_eq(&new_handle, &cached));
+    }
+
+    #[test]
+    fn concurrent_document_misses_share_one_load() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let pixmaps = Arc::new(PixmapCacheState::default());
+        let documents = Arc::new(Mutex::new(super::new_doc_map::<u32>()));
+        let flight = Arc::new(SingleFlight::new());
+        let loads = Arc::new(AtomicUsize::new(0));
+        let start = Arc::new(std::sync::Barrier::new(6));
+        let threads: Vec<_> = (0..6)
+            .map(|_| {
+                let (p, d, f, l, b) = (pixmaps.clone(), documents.clone(), flight.clone(), loads.clone(), start.clone());
+                std::thread::spawn(move || {
+                    let generation = p.snapshot_generation("set.pdf");
+                    b.wait();
+                    get_or_load_at_generation("set.pdf", &d, &f, &p, generation, || {
+                        l.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(30));
+                        Ok(Arc::new(7_u32))
+                    })
+                    .unwrap()
+                })
+            })
+            .collect();
+        let handles: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        assert_eq!(loads.load(Ordering::SeqCst), 1, "one parse for six concurrent misses");
+        assert!(handles.iter().all(|h| Arc::ptr_eq(h, &handles[0])));
     }
 
     #[test]
@@ -996,7 +1048,7 @@ mod pixmap_cache_tests {
         let p = Arc::clone(&pixmaps);
         let d = Arc::clone(&documents);
         let selected = std::thread::spawn(move || {
-            get_or_load_at_generation("drawing.pdf", &d, &p, None, || {
+            get_or_load_at_generation("drawing.pdf", &d, &SingleFlight::new(), &p, None, || {
                 started_tx.send(()).unwrap();
                 resume_rx.recv().unwrap();
                 Ok(Arc::new(2_u8))
@@ -1285,6 +1337,48 @@ pub fn render_page_region_to_rgba_with_annotations(
     let rgba = bitmap.as_rgba_bytes();
 
     Ok((actual_w, actual_h, rgba))
+}
+
+// ─── Eén pagina als zelfstandige PDF ────────────────────────────────────────
+
+/// Copies one page of the PDF at `path` into a new one-page PDF and returns
+/// its bytes. This is what a vector snippet carries (the whole source page;
+/// the cut-out box is applied when it is embedded).
+///
+/// The source is opened from the file, not from bytes in memory: PDFium then
+/// reads only the cross-reference table and the objects that page uses, so a
+/// set of hundreds of pages costs about as much as a single sheet. The page
+/// keeps its MediaBox, CropBox, /Rotate and resources (FPDF_ImportPages copies
+/// the inheritable attributes onto the page).
+pub fn extract_page_pdf(path: &Path, page_index: u32) -> Result<Vec<u8>, String> {
+    if PDFIUM.get().is_none() {
+        return Err("PDFium is not available — page extraction is disabled on this build.".into());
+    }
+    let index = PdfPageIndex::try_from(page_index)
+        .map_err(|_| format!("Page index {page_index} is out of range"))?;
+    // Opening, copying, saving and closing are all PDFium FFI work; the
+    // documents are dropped inside the guard (see PDFIUM_INPROC_LOCK).
+    let _guard = inproc_guard();
+    let source = pdfium()
+        .load_pdf_from_file(path, None)
+        .map_err(|e| format!("Failed to open PDF via PDFium: {e}"))?;
+    let count = source.pages().len();
+    if index < 0 || index >= count {
+        return Err(format!("Page {} not found (the document has {count} pages)", page_index + 1));
+    }
+    let mut single = pdfium()
+        .create_new_pdf()
+        .map_err(|e| format!("Failed to create a PDF via PDFium: {e}"))?;
+    single
+        .pages_mut()
+        .copy_page_from_document(&source, index, 0)
+        .map_err(|e| format!("Failed to copy page {}: {e}", page_index + 1))?;
+    let bytes = single
+        .save_to_bytes()
+        .map_err(|e| format!("Failed to write the page PDF: {e}"))?;
+    drop(single);
+    drop(source);
+    Ok(bytes)
 }
 
 // ─── Printen van een pagina die al op papiergrootte is opgemaakt ─────────────

@@ -786,7 +786,7 @@ export function findAnnotationAt(x, y, pageNum = null, opts = null) {
 // Check if point is inside annotation (for moving)
 /**
  * Every markup under (x, y), top first, with the same hit rules as
- * findAnnotationAt (Markup Selection Cycle, docs/EDIT-TOOLS.md).
+ * findAnnotationAt (Markup Selection Cycle, docs/reference/editor/markup-tools.md).
  */
 export function findAnnotationsAt(x, y, pageNum = null, limit = 50) {
   return collectStack(findAnnotationAt, x, y, pageNum, limit);

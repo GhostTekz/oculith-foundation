@@ -49,18 +49,49 @@ async function isAssetReady(asset) {
   }
 }
 
-async function downloadAsset(asset) {
-  const response = await fetch(asset.url, { redirect: 'follow' });
-  if (!response.ok || !response.body) {
-    throw new Error(`Download failed for ${asset.name} (${response.status} ${response.statusText})`);
-  }
+/**
+ * Where an asset may be fetched from: its URL, then the same file of the
+ * same repository and branch from GitHub's raw host and from a public
+ * mirror of GitHub repositories. The bytes are checked against the pinned
+ * SHA-256 whichever answers, so a mirror cannot change what is used.
+ */
+export function assetSources(url) {
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/raw\/([^/]+)\/(.+)$/.exec(url);
+  if (!m) return [url];
+  const [, owner, repo, ref, file] = m;
+  return [url, `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${file}`, `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${file}`];
+}
+
+const ATTEMPTS = 3;
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchVerified(asset, url) {
+  const response = await fetch(url, { redirect: 'follow' });
+  if (!response.ok || !response.body) throw new Error(`${response.status} ${response.statusText}`.trim());
   const bytes = new Uint8Array(await response.arrayBuffer());
   const actual = createHash('sha256').update(bytes).digest('hex');
-  if (actual !== asset.sha256) {
-    throw new Error(`${asset.name}: SHA-256 mismatch (expected ${asset.sha256}, got ${actual})`);
+  if (actual !== asset.sha256) throw new Error(`SHA-256 mismatch (expected ${asset.sha256}, got ${actual})`);
+  return bytes;
+}
+
+async function downloadAsset(asset) {
+  const failures = [];
+  for (const url of assetSources(asset.url)) {
+    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+      try {
+        const bytes = await fetchVerified(asset, url);
+        await mkdir(path.dirname(asset.destination), { recursive: true });
+        await writeFile(asset.destination, bytes);
+        return;
+      } catch (error) {
+        failures.push(`${new URL(url).host} try ${attempt}: ${error.message}`);
+        // A wrong file is not retried; a server error or a dropped connection is.
+        if (/SHA-256/.test(error.message)) break;
+        if (attempt < ATTEMPTS) await pause(1500 * attempt);
+      }
+    }
   }
-  await mkdir(path.dirname(asset.destination), { recursive: true });
-  await writeFile(asset.destination, bytes);
+  throw new Error(`Download failed for ${asset.name} (${failures.join('; ')})`);
 }
 
 export async function ensureOcrRuntime() {

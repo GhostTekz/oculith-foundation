@@ -156,6 +156,51 @@ export async function knipselAlsMiniPdf(bronBytes, paginaIndex = 0, extraRotatie
   return bladen.get(key);
 }
 
+// Mini-PDF's die rechtstreeks uit een bestand komen (zie hieronder), op pad,
+// lengte, pagina en rotatie. Klein gehouden: elke ingang is een hele pagina.
+const miniPdfsVanBestand = new Map();
+const MAX_MINI_VAN_BESTAND = 8;
+
+/**
+ * Als knipselAlsMiniPdf, maar zonder de bronbytes: `haalPagina()` levert de
+ * pagina al als eenpagina-PDF (de app laat PDFium die ene pagina uit het
+ * bestand halen; een set van honderden bladen hoeft dan niet in het geheugen).
+ * Hier komt alleen nog de draaiing bij die alleen in de app bestaat — op een
+ * PDF van één pagina, dus goedkoop.
+ *
+ * De cache-sleutel neemt de bestandslengte mee: een opgeslagen bestand op
+ * hetzelfde pad is een ander bestand.
+ * @param {string} pad
+ * @param {number} paginaIndex
+ * @param {number} extraRotatie
+ * @param {() => Promise<Uint8Array>} haalPagina
+ * @param {number|null} [lengte]
+ * @returns {Promise<Uint8Array>}
+ */
+export function knipselAlsMiniPdfVanBestand(pad, paginaIndex, extraRotatie, haalPagina, lengte = null) {
+  const key = `${pad}|${lengte ?? ''}|${paginaIndex}|${_kwartslag(extraRotatie)}`;
+  let taak = miniPdfsVanBestand.get(key);
+  if (taak) {
+    miniPdfsVanBestand.delete(key);
+  } else {
+    taak = (async () => {
+      const bytes = await haalPagina();
+      if (!_kwartslag(extraRotatie)) return bytes;
+      const { PDFDocument, degrees } = await import('pdf-lib');
+      const mini = await PDFDocument.load(bytes);
+      const pagina = mini.getPage(0);
+      pagina.setRotation(degrees(_kwartslag(paginaRotatie(pagina) + _kwartslag(extraRotatie))));
+      return await mini.save();
+    })();
+    taak.catch(() => { if (miniPdfsVanBestand.get(key) === taak) miniPdfsVanBestand.delete(key); });
+  }
+  miniPdfsVanBestand.set(key, taak);
+  while (miniPdfsVanBestand.size > MAX_MINI_VAN_BESTAND) {
+    miniPdfsVanBestand.delete(miniPdfsVanBestand.keys().next().value);
+  }
+  return taak;
+}
+
 async function maakMiniPdf(bronBytes, paginaIndex, extraRotatie, geladenBron) {
   const { PDFDocument, degrees } = await import('pdf-lib');
   const bron = geladenBron || await PDFDocument.load(bronBytes);

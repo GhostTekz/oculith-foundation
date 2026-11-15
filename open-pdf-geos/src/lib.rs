@@ -2,7 +2,7 @@
 //!
 //! Coordinates are PDF user space: origin at the bottom left, y upward,
 //! before display rotation. The GEOS context is created on the calling
-//! thread and is never shared. See `docs/GEOS.md`.
+//! thread and is never shared. See `docs/developer/geos.md`.
 
 use std::error::Error;
 use std::ffi::c_void;
@@ -361,7 +361,7 @@ pub fn area_with_hole(outer: &[(f64, f64)], hole: &[(f64, f64)]) -> Result<f64, 
 ///
 /// `width` is the full corridor width in page points. The buffer radius is
 /// half of that. End caps are flat, so a straight corridor's area is the
-/// length times the width, within the tolerance recorded in `docs/GEOS.md`.
+/// length times the width, within the tolerance recorded in `docs/developer/geos.md`.
 pub fn flat_buffer_area(start: (f64, f64), end: (f64, f64), width: f64) -> Result<f64, GeosError> {
     if !width.is_finite() || width <= 0.0 {
         return Err(GeosError("corridor width must be positive"));

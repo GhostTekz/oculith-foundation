@@ -1,4 +1,4 @@
-// Batch menu operations (docs/BATCH-OPS.md): each opens the batch dialog for
+// Batch menu operations (docs/reference/editor/sets-and-batch.md): each opens the batch dialog for
 // one operation; the dialog picks the files and runs js/batch/runner.js. No
 // PDF needs to be open. OCR and Print need the desktop app (the OCR engine
 // and the printer spooler are native); in the browser they stay disabled.

@@ -1,6 +1,6 @@
 // Workspace layout: which panels sit in which host (left / right / bottom),
 // the host sizes, which toolbars show, and the active profile. Contract for
-// the plan-review workspace, see docs/WORKSPACE-SPEC.md §5 and "Contract".
+// the plan-review workspace, see docs/reference/editor/workspace.md and "Contract".
 //
 // Shape (WorkspaceLayout, version 1):
 //   { version: 1, profile: 'oculith',
@@ -14,13 +14,17 @@
 //     profileSizes: { [profile]: { left?, right?, bottom? } },
 //     workflow: workflowId|null,        the workflow tab the profile opens on
 //     workflows: [workflowId…]|null,    the workflow tabs shown (null = all)
-//     workflowBar: 1 }                  marks layouts saved since the workflow
+//     workflowBar: 1,                   marks layouts saved since the workflow
 //                                       toolbar ('standard') renders
+//     profileRevision?: n }             the profile's revision it was made from
 //
 // Profiles: the built-in ones below plus any an edition brings
 // (edition.profiles: { id, label, base, workflow?, workflows?, hosts?,
-// toolbars? }; docs/foundation/GUIDE.md, Profiles); an edition profile starts from its
-// base built-in profile and overrides what it names.
+// toolbars?, revision? }; docs/foundation/GUIDE.md, Profiles); an edition
+// profile starts from its base built-in profile and overrides what it names.
+// Raising a profile's revision (a whole number) resets a layout stored under
+// it to the profile's layout once, keeping the remembered sizes: the way to
+// bring a changed default to people who saved the old one.
 //
 // A panel is in at most one host; a panel in no host is hidden (Window >
 // Panels shows it again with showPanel). Tab order = access-bar order.
@@ -62,11 +66,15 @@ export const LEGACY_PROFILE_MAP = Object.freeze({
   review: 'oculithAdvanced', markup: 'oculith', takeoff: 'quantityTakeoff', document: 'document',
 });
 
+// Edition panels that live in the right host (panel `host: 'right'`, like a
+// chat beside the drawing); every other edition panel goes to the left.
+const RIGHT_EDITION = (edition.panels || []).filter((p) => p?.host === 'right').map((p) => p.id);
+
 // Access-bar order of the left host (spec R5).
 const LEFT_ORDER = [
   'thumbnails', 'sheets', 'bookmarks', 'layers', 'toolChest', 'links',
   'measurements', 'properties', 'formFields', 'signatures', 'attachments',
-  'search', 'tags', 'spaces', ...edition.panelIds,
+  'search', 'tags', 'spaces', ...edition.panelIds.filter((id) => !RIGHT_EDITION.includes(id)),
 ];
 const BOTTOM_TABS = ['markupsList', 'quantities'];
 
@@ -177,6 +185,7 @@ function editionProfile(def) {
   }
   if (typeof def.workflow === 'string') base.workflow = def.workflow;
   if (Array.isArray(def.workflows)) base.workflows = [...def.workflows];
+  if (Number.isInteger(def.revision) && def.revision > 0) base.revision = def.revision;
   delete base.addOnWorkflows;
   return base;
 }
@@ -208,6 +217,14 @@ export function clampHostSize(hostName, size) {
 export function createProfileLayout(name = DEFAULT_PROFILE, profileSizes = {}) {
   const profile = PROFILE_IDS.includes(name) ? name : DEFAULT_PROFILE;
   const def = PROFILES[profile]();
+  // A right-host edition panel no profile places joins the right host as a
+  // tab; the host keeps its collapsed state.
+  for (const id of RIGHT_EDITION) {
+    if (HOSTS.some((h) => def.hosts[h].tabs.includes(id))) continue;
+    def.hosts.right.tabs.push(id);
+    // Not the active tab of a folded host: the panel loads when it is opened.
+    if (!def.hosts.right.collapsed) def.hosts.right.active ??= id;
+  }
   const sizes = profileSizes?.[profile] || {};
   for (const h of HOSTS) {
     if (sizes[h] !== undefined) def.hosts[h].size = clampHostSize(h, sizes[h]);
@@ -224,6 +241,7 @@ export function createProfileLayout(name = DEFAULT_PROFILE, profileSizes = {}) {
     workflow: def.workflow ?? null,
     workflows: def.workflows ? [...def.workflows] : null,
     workflowBar: 1,
+    ...(def.revision ? { profileRevision: def.revision } : {}),
   };
 }
 
@@ -328,6 +346,11 @@ export function withProfile(layout, name) {
 export function normalizeLayout(raw) {
   if (!raw || typeof raw !== 'object' || raw.version !== LAYOUT_VERSION) return null;
   const base = createProfileLayout(raw.profile, sanitizeProfileSizes(raw.profileSizes));
+  // Saved before the profile's current revision: its layout, once.
+  if ((base.profileRevision || 0) > (Number(raw.profileRevision) || 0)) {
+    base.autoHidePanelAccess = raw.autoHidePanelAccess === true;
+    return base;
+  }
   const defaults = clone(base.hosts);
   const seen = new Set();
   for (const h of HOSTS) {
@@ -359,8 +382,13 @@ export function normalizeLayout(raw) {
   // such a layout takes the profile's default for it once.
   if (raw.workflowBar !== 1) base.toolbars.standard.visible = createProfileLayout(base.profile).toolbars.standard.visible;
   if (typeof raw.workflow === 'string' && raw.workflow) base.workflow = raw.workflow;
+  // The stored tabs, less any the profile no longer offers: a tab a profile
+  // drops leaves layouts saved before too.
+  const offered = base.workflows;
   if (raw.workflows === null) base.workflows = null;
-  else if (Array.isArray(raw.workflows)) base.workflows = raw.workflows.filter((id) => typeof id === 'string' && id);
+  else if (Array.isArray(raw.workflows)) {
+    base.workflows = raw.workflows.filter((id) => typeof id === 'string' && id && (!offered || offered.includes(id)));
+  }
   base.autoHidePanelAccess = raw.autoHidePanelAccess === true;
   // A panel added since this layout was saved goes where the profile puts
   // it, once; a panel the user closed later stays closed. A layout from
@@ -371,7 +399,7 @@ export function normalizeLayout(raw) {
     const h = HOSTS.find((name) => defaults[name].tabs.includes(id));
     if (!h) continue;
     base.hosts[h].tabs.push(id);
-    base.hosts[h].active ??= id;
+    if (!(RIGHT_EDITION.includes(id) && base.hosts[h].collapsed)) base.hosts[h].active ??= id;
     seen.add(id);
   }
   return base;

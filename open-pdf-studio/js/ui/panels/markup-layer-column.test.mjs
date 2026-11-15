@@ -95,7 +95,7 @@ test('selecting a markup layer highlights its rows and the layer header', async 
   store.expandAllGroups();
 });
 
-test('Group By Layer: one group per layer name, sorted by name (docs/MARKUP-LAYERS.md)', () => {
+test('Group By Layer: one group per layer name, sorted by name (docs/reference/editor/layers.md)', () => {
   showList();
   openDoc();
   const vorige = store.sortMode();

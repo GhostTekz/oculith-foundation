@@ -1,4 +1,4 @@
-// Document ▸ Flatten… / Unflatten for the open document (docs/FLATTEN.md).
+// Document ▸ Flatten… / Unflatten for the open document (docs/reference/editor/markup-tools.md).
 //
 // Flatten: the document is serialized the way a save would write it, but
 // not written (saver.savedPdfBytes, which also tells which annotation each

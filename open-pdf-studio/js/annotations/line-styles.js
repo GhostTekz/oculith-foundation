@@ -1,4 +1,4 @@
-// Custom line styles (the external editor Line Style editor parity, docs/LINE-STYLES.md).
+// Custom line styles (the external editor Line Style editor parity, docs/reference/editor/markup-tools.md).
 //
 // A line style is a list of parallel LINES (offset, dash pattern, width
 // factor) plus repeating MARKS along the line: text ("GAS", "W", "FO") or a

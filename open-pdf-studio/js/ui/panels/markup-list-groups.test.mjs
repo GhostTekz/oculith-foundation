@@ -1,4 +1,4 @@
-// Markups List and markup groups (docs/MARKUP-GROUPS.md): every section has
+// Markups List and markup groups (docs/reference/editor/markups-list.md): every section has
 // an eye (tri-state, one undo step), a group is one Group row with its
 // members under it, in the section of its dominant markup, with its own eye
 // and totals; Group By Group; rows dropped on a section or a Group row go

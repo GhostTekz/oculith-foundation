@@ -22,6 +22,8 @@
     "test:unit": "node scripts/draai-unit-tests.mjs",
     "smoke:native": "node scripts/run-native-markup-smoke.mjs",
     "smoke:community-offline": "node scripts/community-offline-smoke.mjs",
+    "smoke:snapshot-paste": "node scripts/snapshot-paste-smoke.mjs",
+    "smoke:region-cut": "node scripts/region-cut-smoke.mjs",
     "test:web-unit": "node web-unit/demo-e2e.mjs",
     "test:quality": "node --test scripts/native-runtime.test.mjs scripts/package-notices.test.mjs scripts/square-image-annotation.test.mjs scripts/build-community.test.mjs scripts/pdf-extension-preservation.test.mjs scripts/addon-manager.test.mjs scripts/pack-addon.test.mjs js/editions/compose-addons.test.mjs js/editions/pdf-hooks.test.mjs js/pdf/extract-pages-layers.test.mjs js/core/edition-helper.test.mjs js/plugin/host-capability.test.mjs",
     "tauri:build": "node scripts/build-community.mjs"

@@ -34,12 +34,14 @@ dirs = "5"
 # C-bibliotheken die er zelf "/" achter plakken (Tesseract-taaldata).
 # Staat al in Cargo.lock; geen nieuwe crate.
 dunce = "1"
+# Validates Codex settings (TOML) before the AI connections panel writes them.
+toml = "0.9"
 whoami = "1"
 base64 = "0.22"
 open = "5"
 zip = "2"
 # Linked only with `--features geos`. The default build keeps the command,
-# which then reports that the engine is absent. See docs/GEOS.md.
+# which then reports that the engine is absent. See docs/developer/geos.md.
 open-pdf-geos = { path = "../../open-pdf-geos", optional = true }
 
 tauri-plugin-deep-link = "2"
@@ -82,7 +84,7 @@ zeroize = "1"
 rand = "0.8"
 url = "2"
 urlencoding = "2"
-tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "net", "process", "io-util", "time", "fs"] }
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "net", "process", "io-util", "time", "fs", "signal"] }
 memmap2 = "0.9"
 anyhow = "1"
 
@@ -146,6 +148,9 @@ tauri-plugin-drag = "2.1.1"
 # Global system hotkey (PrtScn) for the opt-in screenshot-annotate feature.
 # Desktop only.
 tauri-plugin-global-shortcut = "2"
+# Signed self-update for Foundation builds; registered only when the build
+# config names an update channel (tauri.community.conf.json).
+tauri-plugin-updater = "~2.10"  # same minor as @tauri-apps/plugin-updater
 
 # Rootarchief van het besturingssysteem als DER buiten Windows (macOS-sleutelhanger,
 # OpenSSL-paden op Linux). Staat al in Cargo.lock; geen eigen X.509-lijn.

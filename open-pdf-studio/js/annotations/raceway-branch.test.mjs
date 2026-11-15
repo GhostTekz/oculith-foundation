@@ -1,5 +1,5 @@
 // Raceway branches: tees, crosses and reducers derived from raceway.branchOf
-// (docs/RACEWAYS.md, Branches).
+// (docs/reference/editor/raceways.md, Branches).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';

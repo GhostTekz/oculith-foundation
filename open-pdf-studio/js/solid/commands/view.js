@@ -13,6 +13,7 @@ import {
   thinLinesIcon, readerModeIcon, keystrokesIcon,
 } from '../data/ribbonIcons.js';
 import { hasPdf, activeDoc, currentPage, pageCount, lazyModule } from './util.js';
+import { pageStepTarget } from '../../pdf/page-step.js';
 import { readerTrackingPath } from '../../core/reader-mode-tracking.js';
 import { isSnapToggleOn, toggleSnapPreference } from '../../tools/snap-toggles.js';
 import { currentTheme } from '../stores/ribbonStore.js';
@@ -20,6 +21,12 @@ import { isToolbarVisible, setToolbarVisible } from '../stores/workspaceLayout.j
 
 const C = 'view';
 const renderer = () => import('../../pdf/renderer.js');
+// Previous / Next Page (also PageUp / PageDown, held down): every step builds
+// on the one before it, so quick repeats are not lost (page-step.js).
+const stepPage = (delta) => {
+  const target = pageStepTarget(activeDoc(), delta);
+  return target == null ? undefined : renderer().then((m) => m.goToPage(target));
+};
 const keystrokes = lazyModule(() => import('../components/KeystrokeOverlay.jsx'));
 
 registerCommand({
@@ -73,13 +80,15 @@ registerCommand({
 });
 registerCommand({
   id: 'view.previousPage', label: 'common:commands.previousPage', icon: prevPageIcon, category: C,
+  shortcut: 'PageUp',
   enabled: () => hasPdf() && currentPage() > 1,
-  run: () => renderer().then((m) => m.goToPage(currentPage() - 1)),
+  run: () => stepPage(-1),
 });
 registerCommand({
   id: 'view.nextPage', label: 'common:commands.nextPage', icon: nextPageIcon, category: C,
+  shortcut: 'PageDown',
   enabled: () => hasPdf() && currentPage() < pageCount(),
-  run: () => renderer().then((m) => m.goToPage(currentPage() + 1)),
+  run: () => stepPage(1),
 });
 registerCommand({
   id: 'view.lastPage', label: 'common:commands.lastPage', icon: lastPageIcon, category: C,

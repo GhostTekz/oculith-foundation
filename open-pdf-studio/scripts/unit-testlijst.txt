@@ -4,6 +4,7 @@
 js/annotations/draw-lookup.test.mjs
 js/mcp/addon-tools.test.mjs
 js/mcp/addon-tools-undo.test.mjs
+js/mcp/ai-connections.test.mjs
 js/pdf/large-open.test.mjs
 js/pdf/thumbnail-schedule.test.mjs
 js/pdf/thumbnail-window.test.mjs
@@ -30,7 +31,6 @@ js/annotations/corrections/correction-ui.test.mjs
 js/annotations/corrections/correction-app.test.mjs
 js/annotations/corrections/correction-ui-wiring.test.mjs
 js/annotations/corrections/correction-i18n.test.mjs
-js/constructieoverzicht/skill.test.mjs
 js/pdf/loader/tekstvak-tekst.test.mjs
 js/pdf/loader/tekstvak-marge.test.mjs
 js/pdf/lijnkoppen.test.mjs
@@ -57,6 +57,7 @@ js/pdf/saver/text-edits-save.test.mjs
 js/pdf/tile-cache.test.mjs
 js/ui/panels/markup-virtual-rows.test.mjs
 js/core/atomic-write.test.mjs
+js/core/system-clipboard.test.mjs
 scripts/test-nen-ifc-map.mjs
 scripts/test-systeemraster.mjs
 js/drafting/tekeningtype.test.mjs
@@ -121,6 +122,8 @@ js/pdf/saver/vector-snippet.test.mjs
 js/pdf/loader/vector-snippet-load.test.mjs
 js/annotations/vector-snippet-store.test.mjs
 js/annotations/vector-snippet-cleanup.test.mjs
+js/pdf/vector-embed-bestand.test.mjs
+js/annotations/region-clipboard-logic.test.mjs
 js/pdf/render-route.test.mjs
 js/pdf/pdfjs-canvas-render.test.mjs
 js/pdf/pdfjs-detail-layer.test.mjs
@@ -130,6 +133,8 @@ js/pdf/engine-router-ocg.test.mjs
 js/pdf/template-paths.test.mjs
 js/pdf/untitled-backing.test.mjs
 js/pdf/progressive-render.test.mjs
+js/pdf/progressive-surface.test.mjs
+js/pdf/low-res-preview-cache.test.mjs
 js/pdf/tile-coverage.test.mjs
 js/pdf/continuous-zoom-anchor.test.mjs
 js/pdf/continuous-native-detail.test.mjs
@@ -201,6 +206,9 @@ js/pdf/shift-page-content.test.mjs
 js/pdf/shift-page-i18n.test.mjs
 js/solid/components/dialogs/ShiftPageDialog.test.mjs
 js/pdf/page-manager-reload.test.mjs
+js/pdf/page-markup-state.test.mjs
+js/pdf/markup-read-hold.test.mjs
+js/pdf/page-loads-after-change.test.mjs
 js/pdf/loader/tekstvak-rotatie.test.mjs
 js/annotations/minimummaat.test.mjs
 js/annotations/transforms-minimummaat.test.mjs
@@ -222,6 +230,7 @@ js/pdf/pdf-viewports-draai.test.mjs
 js/pdf/pdf-viewports-herschik.test.mjs
 js/pdf/page-manager-viewports.test.mjs
 js/pdf/cad-import-invoegen.test.mjs
+js/pdf/page-changes.test.mjs
 js/pdf/merge-verslag.test.mjs
 js/i18n/cad-i18n-interpolatie.test.mjs
 js/pdf/print-opdracht.test.mjs
@@ -240,6 +249,7 @@ js/core/app-data-dir.test.mjs
 js/ui/setup/gesleept-bestand.test.mjs
 js/pdf/pagina-getekend.test.mjs
 js/core/sessie-herstel.test.mjs
+js/core/crash-recovery.test.mjs
 js/drafting/constructie/constructieplan.test.mjs
 js/drafting/constructie/draagstructuur.test.mjs
 js/drafting/constructie/mcp-opdracht.test.mjs
@@ -249,7 +259,6 @@ js/plattegrond/maatvoering.test.mjs
 js/plattegrond/ruimte.test.mjs
 js/plattegrond/sparing.test.mjs
 js/plattegrond/mcp-plattegrond.test.mjs
-js/plattegrond/skill.test.mjs
 js/plugins/annotation-batch.test.mjs
 js/plugins/page-access.test.mjs
 js/plugins/plugin-pdf.test.mjs
@@ -299,6 +308,8 @@ js/core/opstart-processen.test.mjs
 js/pdf/printerlijst-bron.test.mjs
 js/pdf/printerlijst-afnemers.test.mjs
 js/pdf/wiel-scroll.test.mjs
+js/pdf/wheel-page-turn.test.mjs
+js/pdf/page-step.test.mjs
 js/pdf/saver/text-markup-dict.test.mjs
 js/text/leesrichting.test.mjs
 js/pdf/count-roundtrip.test.mjs
@@ -351,6 +362,7 @@ js/sets/set-edge-cases.test.mjs
 js/sets/sheet-file-status.test.mjs
 js/sets/sheet-register.test.mjs
 js/sets/slip-sheet.test.mjs
+js/sets/slip-sheet-run.test.mjs
 js/ui/panels/markup-search.test.mjs
 js/ui/panels/markups-dock-count.test.mjs
 js/ui/panels/thumbnail-tile.test.mjs
@@ -391,6 +403,8 @@ js/ui/panels/markup-columns.test.mjs
 js/ui/panels/markup-subject-groups.test.mjs
 js/solid/commands/registry.test.mjs
 js/solid/stores/workspaceLayout.test.mjs
+js/solid/stores/workspaceProfileRevision.test.mjs
+js/solid/stores/workspaceRightPanels.test.mjs
 js/solid/components/panels/panelHosts.test.mjs
 js/core/view-history.test.mjs
 js/ui/chrome/navigation-format.test.mjs
@@ -475,6 +489,7 @@ js/pdf/zoom-settle-render.test.mjs
 js/pdf/outline-bookmarks.test.mjs
 js/pdf/page-frame.test.mjs
 js/pdf/page-canvas-context.test.mjs
+js/pdf/pdfjs-worker-shim.test.mjs
 js/pdf/scaled-page-copy.test.mjs
 js/annotations/clone-annotation.test.mjs
 js/pdf/continuous-clip.test.mjs
@@ -514,3 +529,4 @@ js/pdf/native-ocg-support.test.mjs
 js/tour/tour-i18n.test.mjs
 js/ui/quick-win-styles.test.mjs
 js/ui/panels/panel-popout.test.mjs
+js/pdf/page-readers.test.mjs

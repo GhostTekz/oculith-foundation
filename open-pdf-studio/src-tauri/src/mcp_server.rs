@@ -67,6 +67,11 @@ pub struct AppState {
     pub poort: u16,
     /// Tools an installed add-on registered (see mcp_addon_tools.rs).
     pub addons: Arc<AddonRegister>,
+    /// Ask the user in the app before every tool that changes something:
+    /// the `/mcp/ask` endpoint and the app's own assistant (`mcp_local_call`).
+    /// Add-on tools always ask (js/mcp/addon-tools.js); this adds the
+    /// built-in tools that are not read-only.
+    pub vraag: bool,
 }
 
 impl AppState {
@@ -79,6 +84,7 @@ impl AppState {
             profiel,
             poort,
             addons: mcp_addon_tools::globaal(),
+            vraag: false,
         }
     }
 }
@@ -760,39 +766,6 @@ fn handle_tools_list() -> Value {
                 }
             },
             {
-                "name": "app_assistant_ask",
-                "description": "Submit a message into the app's assistant window as if the user typed it (opens the panel). Returns { ok }. The answer comes through the MCP relay (app_assistant_pending + app_assistant_answer).",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": { "text": { "type": "string", "description": "The user message to submit." } },
-                    "required": ["text"],
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "app_assistant_pending",
-                "description": "Take the oldest assistant question waiting for an MCP client to answer (the relay provider). Returns { ok, question:{ id, prompt, system, docName }|null }. When non-null, compute an answer and deliver it with app_assistant_answer — this is how an external Claude becomes the assistant's AI brain.",
-                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-            },
-            {
-                "name": "app_assistant_answer",
-                "description": "Answer a pending assistant question (id from app_assistant_pending). The text appears in the assistant window as the assistant's reply. Returns { ok, id }.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "id":   { "type": "string", "description": "Question id from app_assistant_pending." },
-                        "text": { "type": "string", "description": "Answer text to show in the assistant window." }
-                    },
-                    "required": ["id", "text"],
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "app_assistant_history",
-                "description": "Return the LIVE assistant conversation: { ok, messages:[{ role, content }] }. Use to verify a delivered answer landed in the window.",
-                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-            },
-            {
                 "name": "app_create_annotation",
                 "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input. Builds the same object the interactive tool would, pushes it onto the document, records an undo step and redraws. Geometry goes in `props` (page coordinates at 100% zoom): line/arrow/measureDistance need startX/startY/endX/endY; box/circle/highlight/cloud/polygon/textbox/callout/scaleRegion need x/y/width/height; polyline/filledArea/measureArea/measurePerimeter need points:[{x,y},...]; spline needs controlPoints; draw needs path; comment needs x/y. Optional style props (color, strokeColor, fillColor, lineWidth, opacity, text, fontSize, scaleString, units, leaderStartX/Y, leaderEndX/Y, dimShowUnit (measureDistance: false shows the number only), dimLineOvershootMm / dimExtGapMm / dimExtOvershootMm (measureDistance: overshoot of the dimension line, gap and overshoot of the extension lines, in paper mm), measureShowLabel (measureArea: false hides its own label), ...) override the tool defaults. measure* annotations get measureText computed from the document scale automatically. Returns the new annotation id.",
                 "inputSchema": {
@@ -1300,6 +1273,11 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
     if let Some(tool) = state.addons.tool(name) {
         return tool_addon_call(state, &tool, &arguments).await;
     }
+    if state.vraag && vraagt_toestemming(name) {
+        if let Some(geweigerd) = vraag_toestemming(state, name, &arguments).await? {
+            return Ok(geweigerd);
+        }
+    }
     match name {
         "list_test_pdfs" => tool_list_test_pdfs(state).await,
         "screenshot_page" => tool_screenshot_page(state, &arguments).await,
@@ -1330,10 +1308,6 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "app_set_window_size"    => tool_set_window_size(state, &arguments).await,
         "app_get_current_tool"   => tool_app_request(state, "mcp:get-current-tool",   &arguments, Duration::from_secs(5)).await,
         "app_merge_pdf"          => tool_app_request(state, "mcp:merge-pdf",           &arguments, Duration::from_secs(60)).await,
-        "app_assistant_ask"      => tool_app_request(state, "mcp:assistant-ask",       &arguments, Duration::from_secs(10)).await,
-        "app_assistant_pending"  => tool_app_request(state, "mcp:assistant-pending",   &arguments, Duration::from_secs(10)).await,
-        "app_assistant_answer"   => tool_app_request(state, "mcp:assistant-answer",    &arguments, Duration::from_secs(10)).await,
-        "app_assistant_history"  => tool_app_request(state, "mcp:assistant-history",   &arguments, Duration::from_secs(10)).await,
         "app_create_annotation"  => tool_app_request(state, "mcp:create-annotation",  &arguments, Duration::from_secs(15)).await,
         "app_list_annotations"   => tool_app_request(state, "mcp:list-annotations",   &arguments, Duration::from_secs(10)).await,
         "app_get_annotation"     => tool_app_request(state, "mcp:get-annotation",     &arguments, Duration::from_secs(10)).await,
@@ -1422,6 +1396,32 @@ async fn tool_set_window_size(state: &AppState, arguments: &Value) -> Result<Val
     }))
 }
 
+/// Does this built-in tool change something (it is not read-only)? On an
+/// asking server the user approves it in the app first.
+pub fn vraagt_toestemming(naam: &str) -> bool {
+    meta(naam).map_or(true, |m| !m.alleen_lezen)
+}
+
+/// Ask the user in the app (the add-on tools' approval card, see
+/// js/mcp/addon-tools.js requestToolApproval). `None` when approved,
+/// otherwise the tool result that tells the client it was declined.
+async fn vraag_toestemming(state: &AppState, naam: &str, arguments: &Value) -> Result<Option<Value>, (i32, String)> {
+    let titel = meta(naam).map_or(naam, |m| m.titel);
+    let verzoek = json!({ "tool": naam, "title": titel, "arguments": arguments, "owner": "assistant" });
+    let antwoord = tool_app_request(state, "mcp:approve", &verzoek, Duration::from_secs(330)).await?;
+    let akkoord = antwoord["content"][0]["text"].as_str()
+        .and_then(|t| serde_json::from_str::<Value>(t).ok())
+        .map_or(false, |v| v["approved"] == true);
+    if akkoord {
+        return Ok(None);
+    }
+    Ok(Some(json!({
+        "content": [{ "type": "text", "text": json!({ "ok": false, "declined": true,
+            "error": "The user declined this action in the app (or did not answer in time); nothing was changed." }).to_string() }],
+        "isError": true,
+    })))
+}
+
 /// The bridge request for an add-on tool: the WebView validates the
 /// arguments, asks the user before a tool that writes, runs it and logs it.
 /// A writing tool gets a long limit, so the user has time to decide.
@@ -1432,15 +1432,47 @@ pub fn addon_verzoek(tool: &AddonTool, arguments: &Value) -> (&'static str, Valu
 }
 
 async fn tool_addon_call(state: &AppState, tool: &AddonTool, arguments: &Value) -> Result<Value, (i32, String)> {
-    let (event, payload, limiet) = addon_verzoek(tool, arguments);
-    let mut uit = tool_app_request(state, event, &payload, limiet).await?;
-    // The WebView answers { ok: false, error } for a refused, denied or
-    // failed call: report it to the client as a tool error.
-    let mislukt = uit["content"][0]["text"].as_str()
-        .and_then(|t| serde_json::from_str::<Value>(t).ok())
-        .map_or(false, |v| v["ok"] == false);
-    uit["isError"] = json!(mislukt);
-    Ok(uit)
+    let (event, mut payload, limiet) = addon_verzoek(tool, arguments);
+    // On an asking server the approval card belongs to the app's assistant.
+    if state.vraag { payload["owner"] = json!("assistant"); }
+    let app = state.app_handle.as_ref().ok_or_else(|| (
+        jsonrpc_error::INTERNAL_ERROR,
+        "AppHandle unavailable — MCP server not started from inside Tauri::setup()".to_string(),
+    ))?;
+    let bridge = app.state::<McpAppBridge>();
+    let antwoord = mcp_app_bridge::request(app, &bridge, event, payload, limiet)
+        .await
+        .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?;
+    Ok(addon_resultaat(antwoord))
+}
+
+/// Image types an add-on tool may return (js/mcp/addon-tools.js IMAGE_TYPES).
+const ADDON_BEELDTYPES: [&str; 3] = ["image/png", "image/jpeg", "image/webp"];
+const ADDON_MAX_BEELDEN: usize = 4;
+/// Base64 characters of the largest image (5 MiB decoded).
+const ADDON_MAX_BEELD_TEKENS: usize = (5 * 1024 * 1024 + 2) / 3 * 4;
+
+/// The MCP result for the WebView's answer to an add-on tool call: the
+/// answer as JSON text, without its `images`, which follow as image content
+/// (checked again: type, base64, size, count). The WebView answers
+/// `{ ok: false, error }` for a refused, denied or failed call: that is
+/// reported to the client as a tool error.
+pub fn addon_resultaat(mut antwoord: Value) -> Value {
+    let mislukt = antwoord["ok"] == false;
+    let beelden = antwoord.as_object_mut().and_then(|o| o.remove("images"));
+    let mut inhoud = vec![json!({ "type": "text", "text": antwoord.to_string() })];
+    if let Some(Value::Array(lijst)) = beelden {
+        for b in lijst.into_iter().take(ADDON_MAX_BEELDEN) {
+            let soort = b["mimeType"].as_str().unwrap_or("");
+            let data = b["data"].as_str().unwrap_or("");
+            let base64 = !data.is_empty() && data.len() % 4 == 0 && data.len() <= ADDON_MAX_BEELD_TEKENS
+                && data.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'+' || c == b'/' || c == b'=');
+            if ADDON_BEELDTYPES.contains(&soort) && base64 {
+                inhoud.push(json!({ "type": "image", "data": data, "mimeType": soort }));
+            }
+        }
+    }
+    json!({ "content": inhoud, "isError": mislukt })
 }
 
 /// Generic dispatch for the `app_*` tools that drive the LIVE WebView via
@@ -1822,6 +1854,27 @@ async fn tool_screenshot_all(
     }))
 }
 
+/// The tool list of the public profile, for the app's own assistant: the
+/// same list an AI client gets from the AI link (`tools/list`), without the
+/// link having to be on.
+#[tauri::command]
+pub fn mcp_local_tools() -> Value {
+    tools_list_met(Profiel::Publiek, &mcp_addon_tools::globaal())
+}
+
+/// Call one tool of that list for the app's own assistant, in process. The
+/// user approves every tool that changes something (see `vraag`).
+#[tauri::command]
+pub async fn mcp_local_call(app: AppHandle, name: String, arguments: Value) -> Result<Value, String> {
+    let state = AppState { vraag: true, ..AppState::nieuw(Profiel::Publiek, 0, Some(app)) };
+    if !aanroepbaar(&state, &name) {
+        return Err(format!("tool '{name}' is not available"));
+    }
+    handle_tools_call(&state, &json!({ "name": name, "arguments": arguments }))
+        .await
+        .map_err(|(_, message)| message)
+}
+
 /// Alleen lokale clients: de Host moet 127.0.0.1/localhost op onze poort zijn
 /// (tegen DNS-rebinding), en een eventuele Origin moet lokaal zijn (tegen een
 /// website die via de browser de app probeert te besturen). De stdio-brug
@@ -1940,6 +1993,7 @@ pub async fn start(
         profiel: Profiel::Ontwikkeling,
         poort: port,
         addons: mcp_addon_tools::globaal(),
+        vraag: false,
     };
 
     let addr: SocketAddr = format!("127.0.0.1:{port}")
@@ -1963,9 +2017,14 @@ pub async fn serveer(
     state: AppState,
     stop: Option<tokio::sync::oneshot::Receiver<()>>,
 ) -> Result<(), String> {
+    // `/mcp/ask`: the same tools, but the user approves in the app every
+    // tool that changes something (the app's assistant points the
+    // command-line agents it starts here).
+    let vragend = AppState { vraag: true, ..state.clone() };
     let app = Router::new()
         .route("/mcp", post(mcp_handler))
-        .with_state(state);
+        .with_state(state)
+        .merge(Router::new().route("/mcp/ask", post(mcp_handler)).with_state(vragend));
     let serve = axum::serve(listener, app);
     match stop {
         Some(rx) => serve.with_graceful_shutdown(async { let _ = rx.await; }).await,
@@ -2015,7 +2074,7 @@ mod tests {
         use crate::mcp_tool_meta::Profiel;
         let publiek = tools_list_voor(Profiel::Publiek);
         let arr = publiek["tools"].as_array().unwrap();
-        assert_eq!(arr.len(), 62);
+        assert_eq!(arr.len(), 58);
         for t in arr {
             let a = &t["annotations"];
             assert!(a["title"].as_str().map_or(false, |s| !s.is_empty()), "{} zonder titel", t["name"]);
@@ -2258,6 +2317,7 @@ mod tests {
             profiel: Profiel::Ontwikkeling,
             poort: 9223,
             addons: Arc::new(AddonRegister::new()),
+            vraag: false,
         };
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -2332,7 +2392,7 @@ mod tests {
         pdfs.sort_by_key(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX));
         let smallest = pdfs.first().expect("no pdfs in corpus").clone();
 
-        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223, addons: Arc::new(AddonRegister::new()) };
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223, addons: Arc::new(AddonRegister::new()), vraag: false };
         let args = serde_json::json!({
             "path": smallest.to_string_lossy(),
             "page_index": 0,
@@ -2386,6 +2446,7 @@ mod tests {
             profiel: Profiel::Ontwikkeling,
             poort: 9223,
             addons: Arc::new(AddonRegister::new()),
+            vraag: false,
         };
         let args = serde_json::json!({ "path": pdf.to_string_lossy() });
         let result = tool_get_pdf_metadata(&state, &args).await.expect("metadata ok");
@@ -2438,7 +2499,7 @@ mod tests {
             .expect("no pdfs in corpus")
             .clone();
 
-        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223, addons: Arc::new(AddonRegister::new()) };
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None, profiel: Profiel::Ontwikkeling, poort: 9223, addons: Arc::new(AddonRegister::new()), vraag: false };
         let args = serde_json::json!({
             "path": smallest.to_string_lossy(),
             "width": 200
@@ -2501,10 +2562,6 @@ mod tests {
             "app_click_element",
             "app_ui_state",
             "app_set_window_size",
-            "app_assistant_ask",
-            "app_assistant_pending",
-            "app_assistant_answer",
-            "app_assistant_history",
             "app_create_annotation",
             "app_list_annotations",
             "app_get_annotation",
@@ -2569,6 +2626,7 @@ mod tests {
             profiel: Profiel::Ontwikkeling,
             poort: 9223,
             addons: Arc::new(AddonRegister::new()),
+            vraag: false,
         };
         for (name, args) in [
             ("app_mouse_move",  serde_json::json!({"x": 100, "y": 100})),
@@ -2604,6 +2662,7 @@ mod tests {
             profiel,
             poort: 9223,
             addons,
+            vraag: false,
         }
     }
 
@@ -2624,6 +2683,48 @@ mod tests {
         // Without add-ons the public list is the published one.
         assert!(!tools_list_voor(Profiel::Publiek)["tools"].as_array().unwrap().iter()
             .any(|t| t["name"].as_str().unwrap_or_default().starts_with(mcp_addon_tools::PREFIX)));
+    }
+
+    #[test]
+    fn een_vragende_server_vraagt_voor_elk_gereedschap_dat_iets_wijzigt() {
+        for m in crate::mcp_tool_meta::TOOLS {
+            assert_eq!(vraagt_toestemming(m.naam), !m.alleen_lezen, "{}", m.naam);
+        }
+        assert!(vraagt_toestemming("app_create_annotation"));
+        assert!(!vraagt_toestemming("app_list_annotations"));
+        assert!(vraagt_toestemming("app_unknown_future_tool"), "unknown tools ask");
+    }
+
+    #[tokio::test]
+    async fn een_vragende_server_vraagt_eerst_de_app() {
+        // Without the app the approval request itself fails: nothing runs.
+        let state = AppState { vraag: true, ..state_met(Arc::new(AddonRegister::new()), Profiel::Publiek) };
+        let (_, msg) = handle_tools_call(&state, &json!({ "name": "app_delete_annotation", "arguments": { "id": "a" } }))
+            .await.unwrap_err();
+        assert!(msg.contains("AppHandle unavailable"), "{msg}");
+    }
+
+    #[test]
+    fn addon_beelden_worden_beeldinhoud() {
+        let png = "iVBORw0KGgo=";
+        let uit = addon_resultaat(json!({
+            "ok": true, "tool": "addon_ab_view", "result": { "image": { "image": 1 } },
+            "images": [
+                { "mimeType": "image/png", "data": png },
+                { "mimeType": "text/html", "data": png },
+                { "mimeType": "image/png", "data": "not base64!" },
+            ],
+        }));
+        assert_eq!(uit["isError"], false);
+        let inhoud = uit["content"].as_array().unwrap();
+        assert_eq!(inhoud.len(), 2, "only the valid image follows the text");
+        let tekst: Value = serde_json::from_str(inhoud[0]["text"].as_str().unwrap()).unwrap();
+        assert!(tekst.get("images").is_none(), "the images are not repeated in the text");
+        assert_eq!(tekst["result"]["image"]["image"], 1);
+        assert_eq!(inhoud[1], json!({ "type": "image", "data": png, "mimeType": "image/png" }));
+        let fout = addon_resultaat(json!({ "ok": false, "error": "declined" }));
+        assert_eq!(fout["isError"], true);
+        assert_eq!(fout["content"].as_array().unwrap().len(), 1);
     }
 
     #[test]

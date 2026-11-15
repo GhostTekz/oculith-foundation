@@ -1,4 +1,5 @@
 import { state, getActiveDocument, imageCache } from '../core/state.js';
+import { readClipboardImage, useNativeClipboard, writeClipboardImage } from '../core/system-clipboard.js';
 import { cloneAnnotation } from './factory.js';
 import { cloneAnnotationsInPlace } from './paste-in-place.js';
 import { relinkPastedCorrections } from './corrections/model.js';
@@ -12,6 +13,7 @@ import { recordAdd, recordBulkAdd } from '../core/undo-manager.js';
 import { getEffectiveScale } from '../tools/effective-scale.js';
 import { plakVerschuivingPt } from './minimummaat.js';
 import { paginaMaat, paginaRectNaarClient, clientNaarPagina, rechtopRotatie } from '../pdf/weergave-ruimte.js';
+import { pasteRegionIfLatest } from './region-clipboard.js';
 
 // Copy annotation to internal clipboard
 export function copyAnnotation(annotation) {
@@ -38,7 +40,7 @@ export function copyAnnotation(annotation) {
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         canvas.toBlob((blob) => {
           if (blob) {
-            navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch(() => {});
+            writeClipboardImage(blob).catch(() => {});
           }
         }, 'image/png');
       }
@@ -53,6 +55,9 @@ export function copyAnnotation(annotation) {
 // can read clipboardData without requiring the async Clipboard API permission.
 export function pasteFromClipboard() {
   if (!getActiveDocument()?.pdfDoc) return;
+  // A region cut from a drawing (select tool, Cut/Copy) as the latest copy.
+  if (pasteRegionIfLatest()) return;
+  if (useNativeClipboard()) { void pasteImageOrMarkups(); return; }
 
   // Try triggering a native paste event which the handlePaste listener will pick up.
   // This avoids navigator.clipboard.read() which requires explicit browser permission.
@@ -65,6 +70,45 @@ export function pasteFromClipboard() {
     } else if (state.clipboardAnnotation) {
       pasteAnnotation();
     }
+  }
+}
+
+/**
+ * Paste the image on the system clipboard, read natively (Linux: the
+ * webview never reads the clipboard for the drawing, system-clipboard.js),
+ * or else the markups copied in the app.
+ */
+export async function pasteImageOrMarkups() {
+  if (getActiveDocument()?.pdfDoc && pasteRegionIfLatest()) return;
+  const blob = await readClipboardImage();
+  if (!getActiveDocument()?.pdfDoc) return;
+  // A snapshot (G) is the latest copy: it is placed where it was taken (as
+  // Ctrl+V does without leaving the app), unless another image has been
+  // copied since. Opening another drawing leaves the app (a file dialog),
+  // and the snapshot must still paste onto it.
+  if (state._snapshotAt && !(state._internalCopyAt > state._snapshotAt)) {
+    const shot = await import('../tools/screenshot.js');
+    if (shot.hasLastCapture() && (!blob || await sameImageSize(blob, shot.lastCaptureSize()))) {
+      await shot.placeLastScreenshotAsOverlay({ opacity: 1, offset: 10 });
+      return;
+    }
+  }
+  if (blob) { await pasteImageFromBlob(blob); return; }
+  const clips = state.clipboardAnnotations;
+  if (clips && clips.length > 1) pasteAnnotations();
+  else if ((clips && clips.length === 1) || state.clipboardAnnotation) pasteAnnotation();
+}
+
+/** Is `blob` an image of `size` ({ width, height }) pixels? */
+async function sameImageSize(blob, size) {
+  if (!size || typeof createImageBitmap !== 'function') return false;
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const same = bitmap.width === size.width && bitmap.height === size.height;
+    bitmap.close?.();
+    return same;
+  } catch {
+    return false;
   }
 }
 
@@ -380,6 +424,8 @@ export function pasteAnnotations() {
 export function pasteAnnotationsInPlace() {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return;
+  // A cut region always goes back where it was taken from.
+  if (pasteRegionIfLatest()) return;
 
   const sources = (state.clipboardAnnotations && state.clipboardAnnotations.length > 0)
     ? state.clipboardAnnotations

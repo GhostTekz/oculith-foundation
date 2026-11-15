@@ -1,4 +1,4 @@
-/* Line Styles manager and the Properties line-style picker (docs/LINE-STYLES.md).
+/* Line Styles manager and the Properties line-style picker (docs/reference/editor/markup-tools.md).
    Oculith tokens only; small radii. */
 
 .ls-preview { display: block; color: var(--ox-text); }

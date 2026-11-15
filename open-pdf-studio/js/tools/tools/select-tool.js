@@ -1,5 +1,7 @@
 import { getActiveDocument } from '../../core/state.js';
-import { paginaVectorNaarWeergave } from '../../pdf/weergave-ruimte.js';
+import { paginaVectorNaarWeergave, paginaMaat } from '../../pdf/weergave-ruimte.js';
+import { setRegionSelection, clearRegionSelection } from '../region-selection.js';
+import { regionFromDrag, intersectWithPage } from '../../annotations/region-clipboard-logic.js';
 
 // Sleeprichting op het SCHERM: bij een gedraaide weergave (#200) is naar links
 // slepen op het scherm niet naar links op de pagina.
@@ -40,7 +42,7 @@ function bevatCorrectie(lijst) {
   return (lijst || []).some(a => correctionKind(a) !== null);
 }
 
-// ── Markup Selection Cycle (docs/EDIT-TOOLS.md) ──
+// ── Markup Selection Cycle (docs/reference/editor/markup-tools.md) ──
 // The spot of the last click on a markup; a second plain click within
 // CYCLE_SPOT_PX screen pixels steps through findAnnotationsAt's stack.
 let _cycleSpot = null;
@@ -101,6 +103,9 @@ export const selectTool = {
   onPointerDown(ctx, e) {
     const { x, y, state } = ctx;
     if (edition.pointer?.event?.('down', ctx, e)) return;
+    // A left click anywhere ends the region selection (a new marquee may set
+    // another one). The right button keeps it: its menu offers Cut and Copy.
+    if (e.button === 0 && clearRegionSelection()) ctx.redraw();
     const pdfaLocked = ctx.isPdfAReadOnly();
     const doc = getActiveDocument();
     const selAnns = doc ? doc.selectedAnnotations : [];
@@ -637,6 +642,16 @@ export const selectTool = {
           if (selNow.length === 1) ctx.showProperties(selNow[0]);
           else if (selNow.length > 1) ctx.showMultiSelectionProperties();
           else ctx.hideProperties();
+          // No markups in the box: the box itself stays selected, a part of
+          // the drawing that Cut/Copy can take (annotations/region-clipboard.js).
+          if (modifier === 'replace' && selNow.length === 0 && !(e?.button > 0)) {
+            const regionPage = state.rubberBandPage ?? ctx.pageNum;
+            const maat = paginaMaat(regionPage, doc);
+            const region = intersectWithPage(
+              regionFromDrag({ x: state.rubberBandStartX, y: state.rubberBandStartY }, { x, y }, rbMin),
+              maat ? { width: maat.breedte, height: maat.hoogte } : null);
+            if (region) setRegionSelection({ docId: doc.id, page: regionPage, ...region });
+          }
         }
       }
       ctx.redraw();

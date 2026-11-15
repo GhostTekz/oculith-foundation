@@ -1,4 +1,4 @@
-// Manage Tool Sets and shared tool sets in the app (docs/TOOL-SET-SHARING.md).
+// Manage Tool Sets and shared tool sets in the app (docs/reference/editor/tool-chest.md).
 //
 // The logic lives in tools/tool-set-share.js (locks, check-out/in, offline
 // cache), tools/tool-set-file.js (the set file) and tools/btx-import.js

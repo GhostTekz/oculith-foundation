@@ -9,7 +9,7 @@ import { slipSheetRowErrors } from '../../../sets/slip-sheet-match.js';
 
 const POINTS = ['oldA', 'oldB', 'newA', 'newB'];
 
-// Batch Slip Sheet confirmation (docs/SLIP-SHEET.md). Opened by the Sets
+// Batch Slip Sheet confirmation (docs/reference/editor/sets-and-batch.md). Opened by the Sets
 // panel, or by another workflow through openDialog('slipSheet', data), with
 // the revised PDFs already read and matched. `data.revision` fills in the new
 // revision; a row with its own `revision` keeps it. `data.onDone(text,

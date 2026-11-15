@@ -1,6 +1,6 @@
 // Command registry: the one place a menu item, toolbar button, shortcut or
 // the command palette (Help > Find Tools + Commands) looks a command up.
-// Contract for the plan-review workspace, see docs/WORKSPACE-SPEC.md
+// Contract for the plan-review workspace, see docs/reference/editor/workspace.md
 // ("Contract").
 //
 // A command:

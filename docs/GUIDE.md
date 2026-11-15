@@ -160,8 +160,21 @@ Element Visibility and Markup Layers start hidden. Open them from **Window ▸ P
 The navigation bar (F4) runs along the bottom of the work area.
 
 - **Left**: Unsplit, Split Vertical, Split Horizontal; single page and continuous; Pan, Select, Select Text.
-- **Centre**: First, Previous, the page field, Next, Last; Previous View and Next View. Type a page number or a page label in the page field and press Enter.
+- **Centre**: First, Previous, the page field, Next, Last; Previous View and Next View. Type a page number or a page label in the page field and press Enter. A long page label is shortened in the field so the page count stays visible; hover the field for the full label.
 - **Right**: zoom field, page size, page scale (click to set the scale), Document Properties, Dimmer, Dark Mode and Profile.
+
+The page field, zoom field, page size and page scale keep a fixed width, so First, Previous, Next and Last stay in the same place from page to page: you can click Next repeatedly without moving the mouse. Quick clicks are never lost; each one counts, and the view draws the page you end on.
+
+### Turning pages and the mouse wheel
+
+In the single-page view the page stays put under the mouse wheel. The wheel scrolls within the page and stops at its edges (Ctrl+wheel zooms); on a page that fits the window there is nothing to scroll and the wheel does nothing. Touchpad scrolling and its momentum behave the same way. Turn pages explicitly:
+
+- **Previous** and **Next** on the navigation bar (or **View ▸ Go To**), **PageUp** and **PageDown** (hold to keep turning), or the page field;
+- a thumbnail, a sheet in the Drawing Set panel, **Go to Sheet** (Ctrl+J), a bookmark or a link on the page.
+
+To turn pages with the wheel instead, set **Preferences ▸ Behavior ▸ Mouse wheel changes page** to **At page edge**. A new wheel turn at the top or bottom of the page then goes to the previous or next page: one page per turn, so a fast spin or a touchpad fling turns a single page, and scrolling down through a zoomed page stops at its bottom until you turn the wheel again.
+
+The continuous, book and side-by-side views scroll from page to page as before. Switching between them and the single-page view keeps the page you are on.
 
 ### Status bar
 
@@ -644,7 +657,7 @@ Slip Sheet replaces sheets in the drawing set with a new revision and carries th
 1. In the Drawing Set panel, choose **Slip sheet…** and select the revised PDFs.
 2. Each revised page is matched to a sheet by its page label, by a file name that contains one sheet ID, or by a sheet ID in the title block. An ambiguous match stays unmatched; page order is never used.
 3. The confirmation dialog lists each page with the sheet it replaces and why. Change a match, choose **Add as new sheet**, set the alignment, enter the new revision and choose **Slip sheet**.
-4. Each matched page's markups are copied onto the revised page and written to a copy, `<revised name>-slip-sheet.pdf`. The set points to the copy, and the old source moves to Earlier revisions.
+4. Each matched page's markups are copied onto the revised page and written to a copy, `<revised name>-slip-sheet.pdf`, and the set points to the copy. A revised PDF that receives no markups gets no copy: the set points to it as received. The old source moves to Earlier revisions.
 
 Alignment:
 
@@ -762,6 +775,7 @@ Flatten is a normal document change: Ctrl+Z undoes it, and Save writes it. The m
 - **Edit ▸ Screenshot ▸ Full Page** and **Region** copy the page or a region as an image. **Place Last as Overlay** places the last capture on the page.
 - **File ▸ Annotate Screenshot** opens the image on the system clipboard as a new document to mark up. With the Preferences option on, PrtScn does this directly.
 - **Vector Snippet ▸ Cut Snippet**: click two corners to cut a region of a page as vector content. **Paste Snippet** pastes it into another drawing.
+- **Cut a region with Select**: with the Select tool, drag a box over a part of the drawing that has no markups. The dashed box stays selected until Esc or a click elsewhere. **Cut** or **Copy** (Ctrl+X, Ctrl+C, the Edit menu or the right-click menu) copies that part of the page as vector content; the page itself does not change. **Paste** (Ctrl+V or right-click ▸ Paste) on another sheet or drawing places it at the same position, at true scale. The most recent copy pastes: a markup copied later pastes the markup.
 
 ## Visual Search
 
@@ -905,7 +919,7 @@ Markups on hidden or non-printing layers are left out.
 - **Annotations**: default colour, line width, font size, highlight opacity, and defaults for text boxes, callouts, highlights, notes, shapes, drawing and measurements.
 - **Drawing** and **Shapes**: defaults for freehand, lines, arrows, polylines, rectangles, ellipses, polygons and clouds.
 - **Markup**: redaction and measurement defaults.
-- **Behavior**: angle snap, grid spacing, polar tracking (F10) with its increment and tolerance, object snaps (end points, midpoints, centres, edges, intersections, perpendicular, quadrant, tangent, nearest) and snap radius, auto-select after creation, confirm before deleting, mouse-wheel zoom without Ctrl, and auto-scale markups.
+- **Behavior**: angle snap, grid spacing, polar tracking (F10) with its increment and tolerance, object snaps (end points, midpoints, centres, edges, intersections, perpendicular, quadrant, tangent, nearest) and snap radius, auto-select after creation, confirm before deleting, mouse-wheel zoom without Ctrl, whether the mouse wheel changes page (Never, the default, or At page edge; see [Turning pages and the mouse wheel](#turning-pages-and-the-mouse-wheel)), and auto-scale markups.
 - **Page Display**: thin lines, progressive rendering for heavy drawings, original appearance for imported markups until edited, canvas scrollbars, and which panels show by default.
 - **File Association**: make Oculith Draw the default PDF app.
 - **Virtual Printer** (Windows): install a printer that sends PDFs printed from any program to this app.
@@ -913,6 +927,8 @@ Markups on hidden or non-printing layers are left out.
 **Reset to Defaults** resets all preferences.
 
 The **AI link (MCP)** lets an AI assistant or a test tool on the same computer operate the app: open, measure, mark up and save documents. It listens only on 127.0.0.1. Turn it off if you do not use it. See [Architecture](ARCHITECTURE.md#automation-mcp-bridge).
+
+**AI connections...** (under the AI link, and **Help ▸ AI connections**) links AI clients on this computer to the AI link without editing their settings by hand: Claude Desktop, Claude Code, VS Code (GitHub Copilot), Cursor, the Codex CLI and OpenCode. It shows which clients are installed and linked, and offers **Connect**, **Disconnect** and **Repair** (for a link to another port). Each change is shown as a diff before it is written; only the app's own entry changes, a file that does not parse is left alone, and the first change keeps a `.bak` copy beside the file. **Test connection** checks that the AI link answers, and **Other clients** has the address and settings to copy for any other client. The panel only edits these settings files and asks the app's own AI link; it contacts nothing else.
 
 ### Help tools
 
@@ -995,6 +1011,7 @@ The **AI link (MCP)** lets an AI assistant or a test tool on the same computer o
 | Ctrl+Shift++ / Ctrl+Shift+_ | Rotate page right / left |
 | Ctrl+F / F3 | Find / Find next |
 | Ctrl+L | Full screen |
+| PageUp / PageDown | Previous / next page (hold to keep turning) |
 | Alt+Left / Alt+Right | Previous / next view |
 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous document |
 | Ctrl+Alt+2 / Ctrl+H / Ctrl+Shift+2 | Split vertical / Split horizontal / Unsplit |

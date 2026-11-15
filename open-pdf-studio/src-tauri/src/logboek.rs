@@ -40,7 +40,9 @@ pub const AANTAL_BESTANDEN: usize = 5;
 pub const BESTANDSNAAM: &str = "open-pdf-studio";
 
 /// Modules waarvoor het gekozen niveau geldt: de app zelf.
-const EIGEN_MODULES: [&str; 2] = ["app_lib", "open_pdf_studio"];
+// `perf` is the target the page's timings are written under (perf_log):
+// ours, so it follows OPDS_LOG instead of the third-party ceiling.
+const EIGEN_MODULES: [&str; 3] = ["app_lib", "open_pdf_studio", "perf"];
 
 /// Pure regel: welk niveau hoort bij een waarde van `OPDS_LOG`?
 ///
@@ -138,6 +140,13 @@ pub fn registreer<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logboek_tijden_van_de_pagina_vallen_onder_het_eigen_niveau() {
+        // perf_log schrijft onder target "perf"; zonder die in de eigen
+        // modules hield het derdenplafond (warn) elke tijdregel tegen.
+        assert!(EIGEN_MODULES.contains(&"perf"));
+    }
 
     #[test]
     fn logboek_niveau_standaard_is_info() {

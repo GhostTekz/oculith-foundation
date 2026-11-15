@@ -1,4 +1,4 @@
-// Capture photos and File Attachment markups in the PDF (see docs/CAPTURE.md).
+// Capture photos and File Attachment markups in the PDF (see docs/reference/editor/markup-tools.md).
 //
 // Photos on a markup: each photo is an embedded file (a /Filespec with an
 // /EF /F /EmbeddedFile stream) marked with /OPS_CaptureFileV1 (JSON: id,

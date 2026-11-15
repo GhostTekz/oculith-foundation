@@ -13,12 +13,14 @@ const RESPAWN_DELAY: Duration = Duration::from_secs(1);
 /// Recover one failed process incarnation. Several queued requests may report
 /// the same failure; only one of them may replace the child and SHM mapping.
 pub async fn handle_worker_crash(worker: Arc<WorkerState>, exe_path: PathBuf, failed_incarnation: u64) {
-    if worker.incarnation.load(Ordering::Acquire) != failed_incarnation
+    if worker.stopping.load(Ordering::Acquire)
+        || worker.incarnation.load(Ordering::Acquire) != failed_incarnation
         || worker.recovery_requested.swap(true, Ordering::AcqRel) {
         return;
     }
     let _recovery = worker.recovery_lock.lock().await;
-    if worker.incarnation.load(Ordering::Acquire) != failed_incarnation
+    if worker.stopping.load(Ordering::Acquire)
+        || worker.incarnation.load(Ordering::Acquire) != failed_incarnation
         || worker.status() == Status::DeadPermanent {
         worker.recovery_requested.store(false, Ordering::Release);
         return;

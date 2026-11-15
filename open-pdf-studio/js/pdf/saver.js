@@ -109,6 +109,7 @@ import { getSysteemTypeById } from '../annotations/systeem-typen-registry.js';
 import { systeemrasterBuildOpts } from '../annotations/systeemraster-scale.js';
 import { computeWallShape, resolveWallMaterial } from '../annotations/rendering/walls.js';
 import { syncTwoPointGeometry } from '../symbols/two-point.js';
+import { holdMarkupReads } from './markup-read-hold.js';
 
 // Tekstvak zoals de WinAnsi-appearance het toont: tekst en runs per teken
 // omgezet met toWinAnsiText, zodat afbreekpunten en regelbreedtes over
@@ -465,8 +466,19 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
   let _svAfter = 0;
   let refreshFailure = null;
   let rendererForRefresh = null;
+  let releaseMarkupReads = null;
   try {
     showLoading('Saving PDF...');
+
+    // The loader's catalog reads (spaces, columns, presets, viewports) fill
+    // the model after the document opens. Take the snapshot after they land:
+    // one landing mid-save would otherwise fail it as an edit.
+    if (activeDoc?._catalogApplied) {
+      const _svCatalog = performance.now();
+      await activeDoc._catalogApplied;
+      perfRecord('save.catalogWait', performance.now() - _svCatalog);
+      if (!stillCurrent()) throw changedDuringSave();
+    }
 
     // Get original PDF bytes (from cache or disk, with memory key fallback for untitled docs)
     const _svBytes = performance.now();
@@ -605,6 +617,10 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
         savedMarkupSecondChoiceColumn?.name, savedMarkupNumberColumn?.name,
         savedMarkupCheckmarkColumn?.name, savedMarkupFormulaColumn?.name]);
     if (!doc.markupNumberColumn2 && savedMarkupSecondNumberColumn) doc.markupNumberColumn2 = savedMarkupSecondNumberColumn;
+    // From here the save writes the markups and read pages of this moment:
+    // markups read from the file meanwhile wait until it is done
+    // (markup-read-hold.js), instead of failing it as an edit.
+    releaseMarkupReads = holdMarkupReads(activeDoc);
     const docAnnotations = [...(doc?.annotations || [])];
     // A missing template cannot reproduce its existing /AP appearance. Check
     // the same snapshot this save will write, after asynchronous page loading
@@ -2072,7 +2088,7 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
             const x2 = convertX(ann.x + ann.width);
             const y2 = convertY(ann.y);
 
-            // Dynamic stamp (docs/STAMPS.md): vector appearance from its design.
+            // Dynamic stamp (docs/reference/editor/markup-tools.md): vector appearance from its design.
             const stampDesign = cleanStampDesign(ann.stampDesign);
             const stampRect = stampDesign ? stampDesignRect(ann, convertX, convertY) : [x1, y1, x2, y2];
 
@@ -2438,7 +2454,7 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
             // andere PDF-editor. Daarom één /Stamp-annotatie met een eigen
             // /AP /N Form-XObject dat de HELE reeks tekent.
             //
-            // Canonieke conventie (research-pdf-rotatie-mechanica.md §12.5.5):
+            // Canonieke conventie (docs/reference/editor/drafting-and-signatures.md, ISO 32000-1 §12.5.5):
             //   /Rect   = AABB van het volledige element (incl. poten, punten
             //             én label)
             //   /BBox   = [0 0 w h]  (= /Rect-afmeting)
@@ -3733,6 +3749,9 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
     // gebakken text-edit-records zijn daarna overbodig — pixels én tekst
     // zitten in het bestand — en de tekstlaag toont de nieuwe tekst als
     // gewone paginatekst, direct opnieuw bewerkbaar.
+    // Written: markups read meanwhile may enter the model (the refresh
+    // below renders pages, which waits for their markups).
+    releaseMarkupReads?.();
     if (textEditsGebakken && !saveAsPath && activeDoc) {
       const refreshSnapshot = saveEditSnapshot(activeDoc);
       try {
@@ -3806,6 +3825,7 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
     showMessage(i18next.t('failedToSavePdf', { error: error?.message || String(error) }));
     return false;
   } finally {
+    releaseMarkupReads?.();
     hideLoading();
   }
 }

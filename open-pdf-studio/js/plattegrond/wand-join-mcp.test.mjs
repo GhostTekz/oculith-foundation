@@ -8,7 +8,6 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
 import { plattegrondOpdracht } from './mcp-plattegrond.js';
-import { PLATTEGROND_PROMPT } from './skill.js';
 
 const K = 0.5;                                    // paginapunten per mm
 
@@ -98,12 +97,3 @@ test('het MCP-schema van app_floorplan kent joinStart en joinEnd (Rust en tools.
   }
 });
 
-test('de plattegrond-instructie noemt de join-argumenten en de spouwmuuropbouw', () => {
-  for (const stuk of ['joinStart', 'joinEnd', 'noJoinStart', 'noJoinEnd', 'app_update_annotation']) {
-    assert.ok(PLATTEGROND_PROMPT.includes(stuk), `de instructie noemt ${stuk}`);
-  }
-  // Nederlandse spouwmuur, van buiten naar binnen.
-  for (const stuk of ['metselwerk 100', 'luchtspouw 40', 'isolatie 100', 'kalkzandsteen 120', '360']) {
-    assert.ok(PLATTEGROND_PROMPT.includes(stuk), `de instructie noemt ${stuk}`);
-  }
-});

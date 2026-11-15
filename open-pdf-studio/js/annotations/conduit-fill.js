@@ -1,4 +1,4 @@
-// Conduit fill: conductors in a conduit run, NEC Chapter 9 (docs/RACEWAYS.md,
+// Conduit fill: conductors in a conduit run, NEC Chapter 9 (docs/reference/editor/raceways.md,
 // "Conduit fill").
 //
 //   Table 1  the fill limit: 1 conductor 53 %, 2 conductors 31 %, over 2 40 %
@@ -22,7 +22,7 @@ export const CONDUCTOR_SIZES = Object.freeze(['14', '12', '10', '8', '6', '4', '
 const row = (values) => Object.freeze(Object.fromEntries(CONDUCTOR_SIZES.map((s, i) => [s, values[i]])));
 
 // Table 5 approximate areas (in²). THHN/THWN-2 and XHHW-2 match the
-// PDHonline course E276 tables (source [8] in docs/RACEWAYS.md) for every
+// PDHonline course E276 tables (source [8] in docs/reference/editor/raceways.md) for every
 // size. RHH/RHW/RHW-2 without an outer covering: 6 AWG–500 kcmil match the
 // THHW rows of the same source (Table 5 lists them in one row group); the
 // 14–8 AWG values are nominal (from the NEC table, not checked against a

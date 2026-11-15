@@ -185,7 +185,7 @@ export default function StatusBar() {
               )}
             </For>
             {/* Sync (the external editor): on/off, and ▾ for Synchronize Document / Page.
-                Needs a split view (MultiView, docs/MULTIVIEW.md). */}
+                Needs a split view (MultiView, docs/reference/editor/workspace.md). */}
             <button type="button" class="status-snap-toggle status-sync" id="status-sync"
               classList={{ active: syncState().enabled }}
               aria-pressed={syncState().enabled ? 'true' : 'false'}

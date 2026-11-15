@@ -1,6 +1,6 @@
 /* Generic command toolbar (js/solid/components/Toolbar.jsx): a row or column
    of icon buttons for command-registry ids. Sizes follow the plan-review
-   workspace spec (docs/WORKSPACE-SPEC.md §6): md = 34 px buttons with
+   workspace spec (docs/reference/editor/workspace.md): md = 34 px buttons with
    20 px icons (vertical Markup/Measure toolbars), sm = 26 px with 16 px. */
 
 .ox-toolbar {

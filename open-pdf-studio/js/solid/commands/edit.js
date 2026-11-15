@@ -27,12 +27,23 @@ async function copySelected() {
   else m.copyAnnotation(sel[0]);
 }
 
+// Without selected markups, Cut and Copy take the select tool's region
+// selection: that part of the drawing as a vector snippet. The page itself is
+// not changed, so Cut copies too.
+async function copyRegion() {
+  const { hasRegionSelection } = await import('../../tools/region-selection.js');
+  if (!hasRegionSelection()) return false;
+  const { copyRegionSelection } = await import('../../annotations/region-clipboard.js');
+  await copyRegionSelection();
+  return true;
+}
+
 // --- Clipboard ---------------------------------------------------------------
 
 registerCommand({
   id: 'edit.cut', label: 'common:commands.cut', icon: cutIcon, shortcut: 'Ctrl+X', category: C,
   enabled: editable, run: async () => {
-    if (!hasSelection()) return;
+    if (!hasSelection()) { await copyRegion(); return; }
     await copySelected();
     // Delete through the keyboard path so locks, groups and undo apply.
     deleteKey();
@@ -40,12 +51,20 @@ registerCommand({
 });
 registerCommand({
   id: 'edit.copy', label: 'common:commands.copy', icon: copyAnnIcon, shortcut: 'Ctrl+C', category: C,
-  enabled: editable, run: copySelected,
+  enabled: editable, run: async () => {
+    if (!hasSelection()) { await copyRegion(); return; }
+    await copySelected();
+  },
 });
 registerCommand({
-  // pasteAnnotations() falls back to pasteAnnotation() for a single item.
+  // pasteAnnotations() falls back to pasteAnnotation() for a single item. A
+  // region cut from a drawing pastes when it is the latest copy.
   id: 'edit.paste', label: 'common:commands.paste', icon: pasteIcon, shortcut: 'Ctrl+V', category: C,
-  enabled: editable, run: () => import('../../annotations/clipboard.js').then((m) => m.pasteAnnotations()),
+  enabled: editable, run: async () => {
+    const region = await import('../../annotations/region-clipboard.js');
+    if (region.regionPasteIsLatest()) { await region.pasteRegion(); return; }
+    (await import('../../annotations/clipboard.js')).pasteAnnotations();
+  },
 });
 registerCommand({
   id: 'edit.pasteInPlace', label: 'common:commands.pasteInPlace', icon: pasteInPlaceIcon, shortcut: 'Ctrl+Shift+V',

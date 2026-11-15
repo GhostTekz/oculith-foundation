@@ -22,6 +22,7 @@ import {
 } from './select-doorval.js';
 import { isGMoveModeActive } from './g-move-mode.js';
 import { isGRotateModeActive } from './g-rotate-mode.js';
+import { clearRegionSelection } from './region-selection.js';
 
 // Tools that are always allowed (view-only, non-modifying)
 const READONLY_ALLOWED_TOOLS = new Set(['select', 'hand']);
@@ -167,6 +168,12 @@ function _deselecteerBijKlikBuitenCanvas(e) {
     }
     handlePointerDown(e);
     return;
+  }
+  // A left click on the page text, a link or the margin also ends the
+  // select tool's region selection.
+  if (actie !== 'selecteer' && state.currentTool === 'select' && e.button === 0 && !opSchuifbalk
+      && ['tekst', 'pagina-inhoud', 'achtergrond'].includes(soort) && clearRegionSelection()) {
+    if (doc.viewMode === 'continuous') redrawContinuous(); else redrawAnnotations();
   }
   if (actie !== 'opheffen') return;
   clearSelection();
@@ -339,6 +346,8 @@ export function setTool(tool) {
   }
   clearActiveToolPreset();
   clearMeasureReadout();
+  // A tool change (Esc also lands here) ends the select tool's region selection.
+  const hadRegion = clearRegionSelection();
 
   // Deactivate the current tool via lifecycle
   if (state.currentTool !== tool) {
@@ -364,6 +373,9 @@ export function setTool(tool) {
 
   const viewportsWaren = viewportsZichtbaarBij(state.currentTool);
   state.currentTool = tool;
+  if (hadRegion && getActiveDocument()) {
+    if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous(); else redrawAnnotations();
+  }
   // "M" in the shortcut table returns to the last measurement tool.
   if (MEASURE_TOOL_NAMES.includes(tool)) state.lastMeasureTool = tool;
   // Benoemde viewports lichten alleen op bij een meetgereedschap: bij een

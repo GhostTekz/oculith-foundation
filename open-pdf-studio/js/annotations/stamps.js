@@ -92,7 +92,7 @@ export function saveStampTemplateToToolChest(template, setId) {
 }
 
 /**
- * Place a dynamic stamp (docs/STAMPS.md): its fields are evaluated now and
+ * Place a dynamic stamp (docs/reference/editor/markup-tools.md): its fields are evaluated now and
  * stored as text; the stamp keeps its template id.
  */
 export async function placeDynamicStamp(template, x, y) {

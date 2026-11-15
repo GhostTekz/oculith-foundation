@@ -1,4 +1,4 @@
-/* MultiView split panes (docs/MULTIVIEW.md, the external editor split screen). Unsplit,
+/* MultiView split panes (docs/reference/editor/workspace.md, the external editor split screen). Unsplit,
    .mv-panes is display: contents and #pdf-container lays out exactly as
    before. Split, it is a grid: one tab row and one view per split.
    #pdf-container is always the live (active) view; data-live says which

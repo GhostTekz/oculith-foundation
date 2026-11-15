@@ -481,7 +481,10 @@
   "vectorSnippet": {
     "copied": "Knipsel gekopieerd — plak het in een andere tekening",
     "failed": "Knippen mislukt",
-    "clipboardEmpty": "Geen knipsel op het klembord"
+    "clipboardEmpty": "Geen knipsel op het klembord",
+    "regionCopying": "Gebied kopiëren...",
+    "regionCopied": "Gebied gekopieerd - druk op Ctrl+V op het doelblad om het te plakken",
+    "regionPasted": "Gebied geplakt"
   },
   "panelHost": {
     "sheets": "Tekeningenset",
@@ -1057,7 +1060,8 @@
     "switchPane": "Wisselen (naar andere helft)",
     "unsplit": "Splitsing opheffen",
     "syncDocument": "Document synchroniseren",
-    "syncPage": "Pagina synchroniseren"
+    "syncPage": "Pagina synchroniseren",
+    "aiConnections": "AI-koppelingen"
   },
   "flattenMarkups": {
     "command": "Platslaan…",
@@ -1359,7 +1363,7 @@
     "button": "Bladvervanging…",
     "buttonHint": "Vervang bladen door herziene PDF's en neem hun markeringen mee",
     "reading": "Herziene PDF's lezen…",
-    "intro": "Herziene pagina's worden gekoppeld aan de bladen in deze set. Een gekoppeld blad krijgt de nieuwe revisie en een kopie van zijn markeringen; de oude revisie blijft in de bladgeschiedenis. Pagina's zonder koppeling worden als nieuw blad toegevoegd. Meegenomen markeringen komen in een kopie van elke herziene PDF („…-slip-sheet.pdf”).",
+    "intro": "Herziene pagina's worden gekoppeld aan de bladen in deze set. Een gekoppeld blad krijgt de nieuwe revisie en een kopie van zijn markeringen; de oude revisie blijft in de bladgeschiedenis. Pagina's zonder koppeling worden als nieuw blad toegevoegd. Meegenomen markeringen komen in een kopie van elke herziene PDF die ze krijgt („…-slip-sheet.pdf”).",
     "revision": "Nieuwe revisie",
     "column": {
       "include": "Meenemen",

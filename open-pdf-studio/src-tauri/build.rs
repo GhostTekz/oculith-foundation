@@ -16,13 +16,17 @@ fn main() {
 
     // De worker staat in DEZELFDE target-directory als deze app-build. Bij een
     // gezette CARGO_TARGET_DIR (test-rig) is dat NIET `../../target`, dus leiden
-    // we het pad af van OUT_DIR: `<target>/<profiel>/build/<crate>-<hash>/out`.
-    // Drie niveaus omhoog vanaf OUT_DIR geeft de `<profiel>`-map waar de worker
-    // ligt — ongeacht CARGO_TARGET_DIR of een cross-target-subpad.
+    // we het pad af van OUT_DIR. Tot Cargo 1.100 is dat
+    // `<target>/<profiel>/build/<crate>-<hash>/out` (drie niveaus omhoog), sinds
+    // Cargo 1.100 `<target>/<profiel>/build/<crate>/<hash>/out` (vier niveaus).
+    // Beide zijn kandidaat; alleen een echt bestand telt, want op drie niveaus
+    // ligt in de nieuwe indeling de map `build/pdfium-worker/`.
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(out_dir) = std::env::var("OUT_DIR") {
-        if let Some(profile_dir) = std::path::Path::new(&out_dir).ancestors().nth(3) {
-            candidates.push(profile_dir.join(&worker_name));
+        for up in [3, 4] {
+            if let Some(profile_dir) = std::path::Path::new(&out_dir).ancestors().nth(up) {
+                candidates.push(profile_dir.join(&worker_name));
+            }
         }
     }
     // Terugval: de klassieke workspace-target-map (geen CARGO_TARGET_DIR).
@@ -32,7 +36,7 @@ fn main() {
 
     let dst = std::path::PathBuf::from("binaries")
         .join(format!("{}-{}{}", sidecar_name, target, exe_suffix));
-    if let Some(src) = candidates.iter().find(|p| p.exists()) {
+    if let Some(src) = candidates.iter().find(|p| p.is_file()) {
         println!("cargo:rerun-if-changed={}", src.display());
         let _ = std::fs::create_dir_all("binaries");
         if let Err(e) = std::fs::copy(src, &dst) {

@@ -1,7 +1,7 @@
 // Capture (the external editor: photos on a markup) and the File Attachment markup: the
 // model and the pure helpers. No DOM, no app state, so node tests load it.
 //
-// Model (see docs/CAPTURE.md):
+// Model (see docs/reference/editor/markup-tools.md):
 //   ann.capturePhotos = [{ id, name, mimeType, date, width, height, size, dataUrl }]
 //     on any markup. `date` is the EXIF capture date ('YYYY-MM-DDTHH:MM:SS',
 //     camera local time) or the import time (ISO) when the file has none.

@@ -1,4 +1,4 @@
-// MultiView (split screen) pane model, docs/MULTIVIEW.md. Pure: no Solid, no
+// MultiView (split screen) pane model, docs/reference/editor/workspace.md. Pure: no Solid, no
 // DOM, no app state, so node tests cover it. Every function returns a new
 // model (or the same object when nothing changed).
 //

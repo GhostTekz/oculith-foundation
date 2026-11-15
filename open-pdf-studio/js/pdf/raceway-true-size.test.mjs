@@ -8,7 +8,7 @@
 //
 // Conduit outside diameters: EMT 1/2" (0.706 in) is checked against
 // published tables; 2" (2.197 in) and 4" (4.500 in) are nominal
-// (docs/RACEWAYS.md). The test checks the drawing against the table, not the
+// (docs/reference/editor/raceways.md). The test checks the drawing against the table, not the
 // table itself.
 
 import assert from 'node:assert/strict';

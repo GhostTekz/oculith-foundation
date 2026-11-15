@@ -1,4 +1,4 @@
-// Loose markups captured as one group tool (docs/TOOL-CHEST-BEHAVIOUR.md).
+// Loose markups captured as one group tool (docs/reference/editor/tool-chest.md).
 // Bounds and move stay local; do not import geometry.js.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

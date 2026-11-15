@@ -37,7 +37,7 @@ const HF_SLOTS = ['headerLeft', 'headerCenter', 'headerRight', 'footerLeft', 'fo
 const pathKey = (path) => String(path ?? '').replace(/\\/g, '/').toLocaleLowerCase();
 const baseName = (path) => String(path ?? '').split(/[\\/]/u).pop();
 
-// Batch operations (docs/BATCH-OPS.md): one Batch menu operation over files
+// Batch operations (docs/reference/editor/sets-and-batch.md): one Batch menu operation over files
 // from the current Set, a file pick or a folder, through js/batch/runner.js.
 export default function BatchOpsDialog(props) {
   const { t } = useTranslation('common');

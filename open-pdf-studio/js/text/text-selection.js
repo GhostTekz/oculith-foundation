@@ -111,8 +111,9 @@ function handleMouseDown(e) {
   // Check if we're clicking on an annotation canvas in select tool mode
   if (state.currentTool === 'select') {
     const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) {
-      // Clear selection when clicking outside text layer
+    // Clear a selection of PDF text when clicking outside the text layer.
+    // Text selected in a panel stays selected, so a right-click can copy it.
+    if (selection && !selection.isCollapsed && findParentTextLayer(selection.anchorNode)) {
       selection.removeAllRanges();
     }
   }

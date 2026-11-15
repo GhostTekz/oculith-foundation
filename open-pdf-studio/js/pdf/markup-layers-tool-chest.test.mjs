@@ -1,5 +1,5 @@
 // Tool Chest tools on markup layers (the external editor "Add tool sets to PDF layers",
-// docs/MARKUP-LAYERS.md), through the real tool creator, saver and PDF.js:
+// docs/reference/editor/layers.md), through the real tool creator, saver and PDF.js:
 // two tools with the layer "Electrical" share one OCG; markups placed before
 // the assignment stay where they were; PDF.js hides both markups when the
 // OCG is off; save/reopen keeps the membership.

@@ -1,4 +1,4 @@
-// MultiView split panes (docs/MULTIVIEW.md): one tab row per split and the
+// MultiView split panes (docs/reference/editor/workspace.md): one tab row per split and the
 // passive view. Mounted inside .mv-panes only while the workspace is split;
 // #pdf-container (the live view) is a sibling and the CSS grid places it in
 // the active split (styles/multiview.css). Unsplit renders nothing here.

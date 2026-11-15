@@ -1,4 +1,4 @@
-// Offset geometry (the external editor O, docs/EDIT-TOOLS.md): a parallel copy of a line,
+// Offset geometry (the external editor O, docs/reference/editor/markup-tools.md): a parallel copy of a line,
 // polyline or polygon at a distance, with mitred joins. Pure: no app imports.
 // Coordinates and distances are PDF page coordinates (points); the tool turns
 // a distance in calibrated units into points with the page scale

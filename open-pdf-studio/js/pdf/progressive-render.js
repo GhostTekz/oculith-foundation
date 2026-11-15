@@ -326,6 +326,78 @@ export function runVolgtViewport(run, vp) {
     && (((vp.rotation || 0) % 360) + 360) % 360 === (((run.rotation || 0) % 360) + 360) % 360;
 }
 
+/**
+ * The pixels one progressive run owns: its accumulator canvas and the
+ * intermediate bitmap it last put on screen. A full-page accumulator and each
+ * intermediate are up to 4096×4096×4 = 64 MB, so every exit of the run (done,
+ * stale, failed, thrown) has to give them back, not wait for the GC.
+ *
+ * publish() snapshots the accumulator and shows it, unless the run is no longer
+ * current or already settled, or a later publish of the same run got there
+ * first. Every await is followed by that check, so a late un-awaited publish
+ * (a preview landing) can never replace the run's final bitmap or a newer view.
+ *
+ * @param {{
+ *   canvas: { width: number, height: number },
+ *   makeBitmap: (canvas: any) => Promise<any>,
+ *   isCurrent: () => boolean,
+ *   show: (bitmap: any) => void,
+ *   close?: (bitmap: any) => void,
+ * }} opts
+ */
+export function createProgressiveSurface({ canvas, makeBitmap, isCurrent, show, close = closeBitmap }) {
+  let settled = false;
+  let intermediate = null;
+  let requested = 0;
+  let shown = 0;
+  const drop = (bitmap) => { if (bitmap) { try { close(bitmap); } catch { /* already gone */ } } };
+  const releaseCanvas = () => {
+    try { canvas.width = 0; canvas.height = 0; } catch { /* nothing to free */ }
+  };
+  return {
+    get settled() { return settled; },
+    get intermediate() { return intermediate; },
+    /** Show the accumulator as it is now. Never rejects. */
+    async publish() {
+      if (settled || !isCurrent()) return false;
+      const seq = ++requested;
+      let bitmap;
+      try {
+        bitmap = await makeBitmap(canvas);
+      } catch {
+        return false;
+      }
+      if (settled || !isCurrent() || seq < shown) { drop(bitmap); return false; }
+      shown = seq;
+      show(bitmap);
+      const previous = intermediate;
+      intermediate = bitmap;
+      if (previous && previous !== bitmap) drop(previous);
+      return true;
+    },
+    /**
+     * The final bitmap of a complete run. Settles first, so a publish still in
+     * flight drops its snapshot; then releases the accumulator and the last
+     * intermediate. Null when the snapshot fails.
+     */
+    async finalize() {
+      settled = true;
+      let bitmap = null;
+      try { bitmap = await makeBitmap(canvas); } catch { bitmap = null; }
+      this.release();
+      return bitmap;
+    },
+    /** Give back everything the run holds. Idempotent. */
+    release() {
+      settled = true;
+      releaseCanvas();
+      const last = intermediate;
+      intermediate = null;
+      drop(last);
+    },
+  };
+}
+
 // Generatie-teller voor stale-guards: elke start bumpt hem; na elke await checken
 // we of onze generatie nog actueel is voor we viewport-state muteren. Zo kan een
 // tragere in-flight progressieve render nooit een nieuwere (zoom/pagina/tab) over-
@@ -493,11 +565,28 @@ export async function ensureProgressiveBitmapForCurrentView() {
       try { actx.drawImage(fallback.bitmap, 0, 0, fullW, fullH); } catch {}
     }
   } catch {
-    _inflightKey = null;
+    if (acc) { try { acc.width = 0; acc.height = 0; } catch {} }
+    if (_inflightKey === runKey) _inflightKey = null;
     const e = await ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, wholePageRenderScale(renderScale, maxAxisPt, MAX_BITMAP_AXIS_PX));
     if (actueel() && e && e.bitmap) { viewport.currentBitmap = e.bitmap; viewport.dirty = true; }
     return;
   }
+
+  // Publiceert de accumulator als viewport-bitmap en sluit de vorige
+  // tussenstand na de swap; geeft accumulator en tussenstand terug op elk
+  // einde van de run (zie createProgressiveSurface).
+  const surface = createProgressiveSurface({
+    canvas: acc,
+    makeBitmap: async (canvas) => {
+      const _p0 = performance.now();
+      const bmp = await createImageBitmap(canvas);
+      perfMark(`createImageBitmap ${fullW}x${fullH} ${Math.round(performance.now() - _p0)}ms`);
+      return bmp;
+    },
+    isCurrent: actueel,
+    show: (bmp) => { viewport.currentBitmap = bmp; viewport.dirty = true; },
+  });
+  const publish = () => surface.publish();
 
   // Tegelgrootte schaalt mee zodat het aantal region-renders HARD begrensd
   // blijft (~4 op de lange as → ~12 totaal). Belangrijk: op extreme vector-
@@ -508,7 +597,6 @@ export async function ensureProgressiveBitmapForCurrentView() {
   const tiles = computeTileGrid(fullW, fullH, tilePx);
   let failed = false;
   let lastPublish = 0;         // throttle tussentijdse publicaties
-  let lastIntermediate = null; // vorige tussenstand-bitmap (sluiten na swap)
   const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
   let tilesDone = 0;
   // The tiles already in the accumulator: a preview is drawn around them.
@@ -517,7 +605,7 @@ export async function ensureProgressiveBitmapForCurrentView() {
   const sink = {
     filePath, pageNum, rotation,
     take: (bmp) => {
-      if (seeded || failed || !actueel() || tilesDone >= tiles.length) return false;
+      if (seeded || failed || surface.settled || !actueel() || tilesDone >= tiles.length) return false;
       seeded = true;
       try {
         actx.save();
@@ -539,23 +627,8 @@ export async function ensureProgressiveBitmapForCurrentView() {
   perfMark(`run-start ${fullW}x${fullH} ${tiles.length} tegels p${pageNum} scale=${renderScale.toFixed(3)}`);
   perfHeartbeat();
 
-  // Publiceer de accumulator als viewport-bitmap; sluit de vorige tussenstand
-  // meteen na de swap zodat het geheugen begrensd blijft (elke ImageBitmap is
-  // ~fullW*fullH*4 bytes; zonder sluiten stapelt dat op tot een OOM-crash). Veilig:
-  // JS is single-threaded, dus geen RAF-frame tekent de oude bitmap na de swap.
-  const publish = async () => {
-    const _p0 = performance.now();
-    const bmp = await createImageBitmap(acc);
-    perfMark(`publish createImageBitmap ${fullW}x${fullH} ${Math.round(performance.now() - _p0)}ms`);
-    if (!actueel()) { closeBitmap(bmp); return; }
-    viewport.currentBitmap = bmp;
-    viewport.dirty = true;
-    if (lastIntermediate) { closeBitmap(lastIntermediate); }
-    lastIntermediate = bmp;
-  };
-
   const renderTile = async (t) => {
-    if (!actueel() || failed) return;
+    if (!actueel() || failed || surface.settled) return;
     // output-pixel-tegel -> PDF-punt-regio (scale = renderScale => tegel = t.pw×t.ph px)
     const regionXPt = t.px / renderScale;
     const regionYPt = t.py / renderScale;
@@ -581,7 +654,7 @@ export async function ensureProgressiveBitmapForCurrentView() {
       failed = true;
       return;
     }
-    if (myGen !== _progGen) return;
+    if (myGen !== _progGen || surface.settled) return;
     if (!bytes || bytes.length <= 8) return;
     const dv = new DataView(bytes.buffer, bytes.byteOffset, 8);
     const w = dv.getUint32(0, true);
@@ -616,38 +689,50 @@ export async function ensureProgressiveBitmapForCurrentView() {
   // renderGeneration); alleen tegels die al op een worker lopen, renderen af.
   const CONC = 4;
   let idx = 0;
-  const workers = Array.from({ length: CONC }, async () => {
-    while (idx < tiles.length && actueel() && !failed) {
-      const t = tiles[idx++];
-      await renderTile(t);
+  let finalBmp = null;
+  try {
+    const workers = Array.from({ length: CONC }, async () => {
+      while (idx < tiles.length && actueel() && !failed) {
+        const t = tiles[idx++];
+        await renderTile(t);
+      }
+    });
+    await Promise.all(workers);
+    dropSink();
+    if (!actueel()) { perfMark(`run-STALE na ${tilesDone} tegels (scale=${renderScale.toFixed(3)})`); return; }
+
+    if (failed) {
+      // Terugval: één gewone whole-page render via de bestaande cache-weg.
+      // Accumulator en tussenstand eerst terug: de terugval rendert zelf
+      // weer een volle bitmap.
+      perfMark(`run-GEFAALD na ${tilesDone} tegels`);
+      console.warn('[prog] tegel-fout — terugval naar whole-page render');
+      surface.release();
+      if (_inflightKey === runKey) _inflightKey = null;
+      const e = await ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, wholePageRenderScale(renderScale, maxAxisPt, MAX_BITMAP_AXIS_PX));
+      if (actueel() && e && e.bitmap) { viewport.currentBitmap = e.bitmap; viewport.dirty = true; }
+      return;
     }
-  });
-  await Promise.all(workers);
-  dropSink();
-  if (!actueel()) { perfMark(`run-STALE na ${tilesDone} tegels (scale=${renderScale.toFixed(3)})`); if (_inflightKey === runKey) _inflightKey = null; return; }
 
-  if (failed) {
-    // Terugval: één gewone whole-page render via de bestaande cache-weg.
-    perfMark(`run-GEFAALD na ${tilesDone} tegels`);
-    console.warn('[prog] tegel-fout — terugval naar whole-page render');
-    if (_inflightKey === runKey) _inflightKey = null;
-    const e = await ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, wholePageRenderScale(renderScale, maxAxisPt, MAX_BITMAP_AXIS_PX));
-    if (actueel() && e && e.bitmap) { viewport.currentBitmap = e.bitmap; viewport.dirty = true; }
-    return;
+    // Klaar: cache de volledige bitmap (zoom/pan/re-visit = cache-hit). De
+    // surface sluit de laatste tussenstand en geeft de accumulator terug; de
+    // finalBmp blijft leven in de cache/viewport.
+    finalBmp = await surface.finalize();
+    if (!finalBmp) return; // snapshot failed: nothing to show or cache
+    if (!actueel()) { closeBitmap(finalBmp); finalBmp = null; return; }
+  } finally {
+    dropSink();
+    surface.release();
+    if (_inflightKey === runKey && !finalBmp) _inflightKey = null;
   }
-
-  // Klaar: cache de volledige bitmap (zoom/pan/re-visit = cache-hit); sluit de
-  // laatste tussenstand. De finalBmp blijft leven in de cache/viewport.
-  const _f0 = performance.now();
-  const finalBmp = await createImageBitmap(acc);
-  perfMark(`finale createImageBitmap ${fullW}x${fullH} ${Math.round(performance.now() - _f0)}ms`);
-  if (!actueel()) { closeBitmap(finalBmp); if (_inflightKey === runKey) _inflightKey = null; return; }
-  if (lastIntermediate) { closeBitmap(lastIntermediate); }
   const _c0 = performance.now();
   // Het eindbeeld is compleet en klopt voor zíjn pagina: altijd cachen (een
   // terugkeer naar die pagina is dan een cache-hit). Alleen tonen als de
   // viewport hem nog toont.
-  if (!setCachedBitmapEntry(filePath, pageNum, rotation, cacheBucket, finalBmp, fullW, fullH, renderScale, sourceRevision)) return;
+  if (!setCachedBitmapEntry(filePath, pageNum, rotation, cacheBucket, finalBmp, fullW, fullH, renderScale, sourceRevision)) {
+    if (_inflightKey === runKey) _inflightKey = null;
+    return;
+  }
   if (actueel()) {
     viewport.currentBitmap = finalBmp;
     viewport.dirty = true;

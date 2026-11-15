@@ -5,7 +5,7 @@
 // scale 1, y down; pdf-snap-extractor.js already applies the CropBox, /Rotate
 // and the app page rotation), plus the seed point in the same space.
 //
-// Method (docs/DYNAMIC-FILL.md has the reasoning):
+// Method (docs/reference/editor/measuring.md has the reasoning):
 //   1. Gap bridges: every segment endpoint is joined to the endpoints of
 //      OTHER linework within the gap tolerance, and a free line end is
 //      extended onto the segment it points at, so a door opening or a sloppy

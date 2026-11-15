@@ -1,4 +1,4 @@
-// Edit > Undo History (docs/EDIT-TOOLS.md): the action name of an undo
+// Edit > Undo History (docs/reference/editor/markup-tools.md): the action name of an undo
 // entry. Pure: no app imports. The entry's own `label` (an i18n key under
 // common:editTools.history, set by the tool that recorded it) wins; otherwise
 // the name follows from the command type.

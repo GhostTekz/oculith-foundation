@@ -114,7 +114,7 @@ export function registerAllTools() {
   // Dynamic Fill (J): paint-bucket fill of a region bounded by the page's
   // vector linework → Area/Perimeter/Polylength measurement or Polygon.
   registerTool('dynamicFill', dynamicFillTool);
-  // Conduit and cable tray runs (raceway-tool.js, docs/RACEWAYS.md).
+  // Conduit and cable tray runs (raceway-tool.js, docs/reference/editor/raceways.md).
   registerTool('raceway', racewayTool);
 
   // Systeemraster: klik-voor-klik contour, automatisch gevuld met een
@@ -174,9 +174,9 @@ export function registerAllTools() {
   registerTool('snapshot', snapshotTool);
   // Format Painter (Ctrl+Shift+C): paint one markup's appearance on others.
   registerTool('formatPainter', formatPainterTool);
-  // File Attachment (F): a push pin with an embedded file (docs/CAPTURE.md).
+  // File Attachment (F): a push pin with an embedded file (docs/reference/editor/markup-tools.md).
   registerTool('fileAttachment', fileAttachmentTool);
-  // Tool Chest group tools: place a saved group (docs/TOOL-SET-SHARING.md).
+  // Tool Chest group tools: place a saved group (docs/reference/editor/tool-chest.md).
   registerTool('toolChestGroup', toolChestGroupTool);
   // Lasso (Shift+O) and Offset (O), Edit menu (edit-tools.js).
   registerTool('lasso', lassoTool);

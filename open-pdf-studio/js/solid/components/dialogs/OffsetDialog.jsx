@@ -7,7 +7,7 @@ import { confirmOffsetDistance, cancelOffsetDistance } from '../../../tools/tool
 const num = (v) => Number(String(v ?? '').trim().replace(',', '.'));
 
 /**
- * Offset (the external editor O, docs/EDIT-TOOLS.md): the distance of the parallel copy, in
+ * Offset (the external editor O, docs/reference/editor/markup-tools.md): the distance of the parallel copy, in
  * the page's calibrated unit, or in page points (labelled uncalibrated) on a
  * page without a scale. The side is picked on the sheet after OK.
  */

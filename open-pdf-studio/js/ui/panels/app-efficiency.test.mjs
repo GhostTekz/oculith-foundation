@@ -45,7 +45,8 @@ test('a list build looks up each layer name once, not per markup', () => {
 test('a page\'s markups load next to its render; a second caller waits for the same load', () => {
   const loader = bron('../../pdf/loader.js');
   const ensure = loader.slice(loader.indexOf('export async function ensureAnnotationsForPage'));
-  assert.match(ensure, /const lopend = annotationPageLoads\.get\(doc\)\?\.get\(pageNum\);\n\s*if \(lopend\) return lopend;/);
+  // The same load, while the pages did not change (page-loads-after-change.test.mjs).
+  assert.match(ensure, /const lopend = annotationPageLoads\.get\(doc\)\?\.get\(pageNum\);\n\s*if \(lopend\?\.epoch === epoch\) return lopend\.wait;/);
   const renderer = bron('../../pdf/renderer.js');
   const impl = renderer.slice(renderer.indexOf('async function _renderPageImpl'));
   assert.ok(impl.indexOf('ensureAnnotationsForPage(pageNum).catch(') < impl.indexOf('tekenPaginaMetPdfJs('),

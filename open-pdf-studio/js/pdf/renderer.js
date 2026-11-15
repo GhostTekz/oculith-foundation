@@ -40,6 +40,7 @@ import { pageCanvasContext } from './page-canvas-context.js';
 import { clipDektZicht, clipUitDataset, zichtbaarPaginaDeel } from './continuous-clip.js';
 import { continuousPagesToRelease } from './continuous-residency.js';
 import { registerBitmapCache, enforceBitmapBudget } from './bitmap-budget.js';
+import { createLowResPreviewCache } from './low-res-preview-cache.js';
 // Hi-DPI support: render canvases at device pixel ratio for sharp text
 export function getCanvasDPR() { return window.devicePixelRatio || 1; }
 
@@ -1390,8 +1391,15 @@ const _contPageRenderGen = new Map();
 // Track active continuous page renders for cancellation
 const _continuousRenderTasks = new Map(); // pageNum -> RenderTask
 
-// Low-res preview cache for fast initial display
-const _lowResCache = new Map(); // `${filePath}|${pageNum}` -> { canvas, scale }
+// Low-res preview cache for fast initial display. Bounded by bytes (an A0
+// preview is ~8 MB) and counted in the shared bitmap budget; an evicted
+// preview canvas gives its pixels back at once.
+const LOW_RES_MAX_BYTES = 64 * 1024 * 1024;
+const _lowResCache = createLowResPreviewCache({ maxBytes: LOW_RES_MAX_BYTES }); // `${filePath}|${pageNum}|…` -> { canvas, scale }
+registerBitmapCache('continuous-previews', {
+  bytes: () => _lowResCache.bytes(),
+  evictOldest: () => _lowResCache.evictOldest(),
+});
 const LOW_RES_SCALE = 0.5; // Render at 50% for fast preview
 
 // Cache-key MUST include the document — a bare pageNum key served page N of
@@ -1433,15 +1441,21 @@ export async function renderLowResPreview(pdfDoc, pageNum, targetWidth, targetHe
       annotationMode: 0,
       optionalContentConfigPromise: nativeOcgPdfJsConfig(doc),
     }).promise;
-  } catch (e) {
-    if (e.name === 'RenderingCancelledException') return null;
+  } catch {
+    canvas.width = 0;
+    canvas.height = 0;
     return null;
   }
 
   if (getActiveDocument() !== doc || !sourceRenderCurrent(doc.filePath, sourceRevision)
       || nativeOcgSelectionForDocument(doc).revision !== selectedRevision
-      || _lowResKey(pageNum) !== cacheKey) return null;
-  _lowResCache.set(cacheKey, { canvas, scale: LOW_RES_SCALE });
+      || _lowResKey(pageNum) !== cacheKey) {
+    canvas.width = 0;
+    canvas.height = 0;
+    return null;
+  }
+  if (!_lowResCache.set(cacheKey, canvas, LOW_RES_SCALE)) return null;
+  enforceBitmapBudget();
   return canvas;
 }
 
@@ -2293,11 +2307,16 @@ export async function renderContinuous(forceRebuild) {
       if (d > 0 && start - d >= 1) pages.push(start - d);
     }
     (async () => {
+      // Nearest pages come first; stop once this run filled the preview cap,
+      // otherwise the farther pages would evict the nearer ones again.
+      let added = 0;
       for (const p of pages.slice(0, PREVIEW_PAGES)) {
         if (getActiveDocument() !== doc || doc.pdfDoc !== pdfDoc || doc.viewMode !== 'continuous') return;
         if (_lowResCache.has(_lowResKey(p))) continue;
+        if (added >= LOW_RES_MAX_BYTES) return;
         try {
-          await renderLowResPreview(pdfDoc, p, 0, 0);
+          const preview = await renderLowResPreview(pdfDoc, p, 0, 0);
+          if (preview) added += preview.width * preview.height * 4;
         } catch {}
         await new Promise(r => setTimeout(r, 0));
       }

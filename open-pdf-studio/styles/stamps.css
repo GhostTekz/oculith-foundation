@@ -1,4 +1,4 @@
-/* Stamp picker and stamp editor (docs/STAMPS.md). Oculith tokens, small radii. */
+/* Stamp picker and stamp editor (docs/reference/editor/markup-tools.md). Oculith tokens, small radii. */
 .stamp-picker-dialog { width: 520px; max-width: calc(100vw - 32px); }
 .stamp-editor-overlay { z-index: 10002; }
 .stamp-editor-dialog { width: 560px; max-width: calc(100vw - 32px); }

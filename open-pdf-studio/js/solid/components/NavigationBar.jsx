@@ -2,6 +2,9 @@
 // Left: split view (MultiView: Unsplit / Split Vertical / Split Horizontal),
 // page layout, pan / select.
 // Centre: first / previous / page field / next / last, Previous / Next View.
+// The page field, zoom, page size and scale have fixed widths, so the page
+// buttons stay put while their text changes from page to page
+// (navigation-bar.css).
 // Right: zoom (our addition), page size, page scale (click: Set Scale),
 // document properties, dimmer, workspace profile (Oculith ▸ Profiles).
 // Visibility: workspaceLayout.toolbars.navigation (F4). The component stays
@@ -22,6 +25,7 @@ import { scaleChip, openScaleChip } from '../../ui/chrome/scale-chip.js';
 import {
   formatPageField, parsePageInput, formatPageSize, paperUnitFor, pageScaleOf, scaleLabel, DIMMER_MAX,
 } from '../../ui/chrome/navigation-format.js';
+import { pageStepTarget } from '../../pdf/page-step.js';
 import { canGoBackView, canGoForwardView, goBackView, goForwardView } from '../../core/view-history.js';
 import {
   applyContentFilter, isDimmerOn, toggleDimmer, dimmerLevel, setDimmerLevel, isDarkContentOn, toggleDarkContent,
@@ -100,8 +104,13 @@ export default function NavigationBar() {
   });
 
   const [labels] = createResource(() => doc()?.pdfDoc, readPageLabels);
-  const pageText = () => formatPageField(page(), numPages(), labels() || null,
-    (p, n) => t('navbar.pageOf', { page: localizeNumber(p), total: localizeNumber(n) }));
+  // The page field has a fixed width (the Previous / Next buttons never move
+  // with its text); a long page label is shortened to what fits, the full
+  // text is the tooltip.
+  const [fieldChars, setFieldChars] = createSignal(0);
+  const pageOf = (p, n) => t('navbar.pageOf', { page: localizeNumber(p), total: localizeNumber(n) });
+  const pageText = () => formatPageField(page(), numPages(), labels() || null, pageOf, fieldChars());
+  const pageFullText = () => formatPageField(page(), numPages(), labels() || null, pageOf);
 
   const [pageInfo] = createResource(
     () => (hasPdf() ? { pdfDoc: doc().pdfDoc, page: page() } : null),
@@ -131,8 +140,29 @@ export default function NavigationBar() {
     const target = Math.min(Math.max(n, 1), numPages());
     if (target !== page()) await (await renderer()).goToPage(target);
   };
+  // Previous / Next: quick clicks queue up to the latest target (page-step.js).
+  const step = async (delta) => {
+    if (!hasPdf()) return;
+    const target = pageStepTarget(doc(), delta);
+    if (target != null) await (await renderer()).goToPage(target);
+  };
   let pageInput;
   const resetPageInput = () => { if (pageInput) pageInput.value = pageText(); };
+  // Characters that fit the page field (monospaced digits): on mount and
+  // whenever the bar's width steps change the field width.
+  let measure;
+  const measureField = () => {
+    if (!pageInput || !pageInput.clientWidth) return;
+    const cs = getComputedStyle(pageInput);
+    measure ||= document.createElement('canvas').getContext('2d');
+    if (!measure) return;
+    measure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const glyph = measure.measureText('0').width || 7;
+    const inner = pageInput.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    setFieldChars(Math.max(4, Math.floor(inner / glyph)));
+  };
+  let fieldObserver;
+  onCleanup(() => fieldObserver?.disconnect());
   const commitPage = async () => {
     const target = parsePageInput(pageInput?.value, numPages(), labels() || null);
     if (target == null) {
@@ -241,9 +271,16 @@ export default function NavigationBar() {
 
         <div class="nav-bar-section nav-bar-center">
           <Btn id="nav-first" icon={ICON.first} title={t('firstPage')} disabled={page() <= 1} onClick={() => go(1)} />
-          <Btn id="nav-prev" icon={ICON.prev} title={t('previousPage')} disabled={page() <= 1} onClick={() => go(page() - 1)} />
-          <input ref={pageInput} type="text" class="nav-page-input" id="nav-page-input"
-            value={pageText()} title={t('navbar.pageField')} aria-label={t('navbar.pageField')}
+          <Btn id="nav-prev" icon={ICON.prev} title={`${t('previousPage')} (PageUp)`} disabled={page() <= 1} onClick={() => step(-1)} />
+          <input ref={(el) => {
+              pageInput = el;
+              if (typeof ResizeObserver === 'function') {
+                fieldObserver?.disconnect();
+                fieldObserver = new ResizeObserver(measureField);
+                fieldObserver.observe(el);
+              }
+            }} type="text" class="nav-page-input" id="nav-page-input"
+            value={pageText()} title={`${pageFullText()}\n${t('navbar.pageField')}`} aria-label={t('navbar.pageField')}
             spellcheck={false} autocomplete="off"
             onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => {
@@ -251,7 +288,7 @@ export default function NavigationBar() {
               else if (e.key === 'Escape') { e.preventDefault(); resetPageInput(); e.currentTarget.blur(); }
             }}
             onBlur={resetPageInput} />
-          <Btn id="nav-next" icon={ICON.next} title={t('nextPage')} disabled={page() >= numPages()} onClick={() => go(page() + 1)} />
+          <Btn id="nav-next" icon={ICON.next} title={`${t('nextPage')} (PageDown)`} disabled={page() >= numPages()} onClick={() => step(1)} />
           <Btn id="nav-last" icon={ICON.last} title={t('lastPage')} disabled={page() >= numPages()} onClick={() => go(numPages())} />
           <span class="nav-sep" />
           <Btn id="nav-previous-view" icon={ICON.prevView} title={`${t('navbar.previousView')} (Alt+Left)`} disabled={!canGoBackView()} onClick={() => goBackView()} />
@@ -269,7 +306,7 @@ export default function NavigationBar() {
             <Btn id="nav-zoom-in" icon={ICON.zoomIn} title={t('zoomIn')} onClick={() => renderer().then((m) => m.zoomIn())} />
           </div>
           <span class="nav-sep nav-sep-zoom" />
-          <span class="nav-readout" id="nav-page-size" title={t('pageSizeTitle')}>{pageSizeText()}</span>
+          <span class="nav-readout" id="nav-page-size" title={`${t('pageSizeTitle')}: ${pageSizeText()}`}>{pageSizeText()}</span>
           <button type="button" class="nav-scale" id="nav-scale" classList={{ 'nav-scale--unset': scaleUnset() }}
             data-scale-tone={chip()?.tone} title={chip()?.title} onClick={openSetScale}>{scaleText()}</button>
           <Btn id="nav-doc-properties" icon={ICON.info} title={t('navbar.documentProperties')} onClick={openDocProperties} />

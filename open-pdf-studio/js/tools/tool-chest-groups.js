@@ -1,5 +1,5 @@
 // Add to Tool Chest rules and group tools (the external editor "Create and save custom
-// markups in Tool Chest"; docs/TOOL-SET-SHARING.md).
+// markups in Tool Chest"; docs/reference/editor/tool-chest.md).
 //
 // the external editor does not add notes, hyperlinks, file attachments, text markups
 // (highlight, underline, squiggly, strikeout, review text) or symbols with a
@@ -28,7 +28,7 @@ const DROPPED_MEMBER_FIELDS = new Set(['id', 'page', 'groupId', 'groupPath', 'au
   'inReplyTo', 'replies', 'replyTo', 'selected', 'nm', 'NM', 'pdfRef', 'objectNumber', 'sourceRef',
   'reviewStatus', 'stateHistory', 'capturePhotos', 'attachedFile',
   // A markup layer id belongs to one document; the tool's own `layer` name
-  // decides where a placed group goes (docs/MARKUP-LAYERS.md).
+  // decides where a placed group goes (docs/reference/editor/layers.md).
   'layer']);
 
 /**

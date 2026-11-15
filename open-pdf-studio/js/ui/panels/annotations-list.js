@@ -670,7 +670,7 @@ function buildAnnotationsList(filterValue) {
   } else if (currentSort === 'lastStatusAuthor') {
     sortByKeys(filteredAnnotations, a => ({ k1: getLastStatusAuthor(a).toLowerCase() }), byTextKey);
   } else if (currentSort === 'layer') {
-    // Group by markup layer (docs/MARKUP-LAYERS.md): by layer name.
+    // Group by markup layer (docs/reference/editor/layers.md): by layer name.
     sortByKeys(filteredAnnotations, a => ({ k1: markupLayerName(doc, a).toLowerCase() }), byTextKey);
   } else if (currentSort === 'markupGroup') {
     sortByKeys(filteredAnnotations, a => ({ k1: groupNameKey(a) }), byNaturalKeyEmptyLast);
@@ -811,7 +811,7 @@ function buildAnnotationsList(filterValue) {
     groupKeys.reverse();
   }
 
-  // Markup groups (docs/MARKUP-GROUPS.md): a group is listed once, as a Group
+  // Markup groups (docs/reference/editor/markups-list.md): a group is listed once, as a Group
   // row with its members under it, in the section of its dominant markup
   // (else of its first listed member).
   const hiddenMemo = new Map();
@@ -1050,7 +1050,7 @@ function buildAnnotationsList(filterValue) {
     }
 
     // Group By Layer: the group header's eye switches that markup layer, the
-    // same switch as the Layers panel (docs/MARKUP-LAYERS.md).
+    // same switch as the Layers panel (docs/reference/editor/layers.md).
     const groupLayer = currentSort === 'layer' ? layerOf(doc, groups[key][0]) : null;
     const sectie = sectionMarkups.get(key) || [];
     eyeMembers.set(`section:${key}`, sectie.map(a => a.id));
@@ -1062,7 +1062,7 @@ function buildAnnotationsList(filterValue) {
       headerColor,
       count: sectie.length,
       sortMode: currentSort,
-      // Every section has an eye (docs/MARKUP-GROUPS.md): its markups' own
+      // Every section has an eye (docs/reference/editor/markups-list.md): its markups' own
       // Hidden flags; Group By Layer keeps the layer's switch.
       eye: categoryEyeState(sectie, layerHiddenOf),
       sectionSelected: sectie.length > 0 && sectie.every(ann => selectedIds.has(String(ann.id))),
@@ -1190,7 +1190,7 @@ function toonSelectieInLijst(doc, items) {
 let eyeMembers = new Map();
 
 /**
- * A section or Group row eye (docs/MARKUP-GROUPS.md): hide every markup of
+ * A section or Group row eye (docs/reference/editor/markups-list.md): hide every markup of
  * the category, or, when any is hidden, show them all, with their own Hidden
  * flags, as one undo step. Markups their layer hides keep their flag (the
  * layer decides). Both halves of a replacement (#508) switch together.
@@ -1212,7 +1212,7 @@ export function toggleCategoryEye(eyeKey) {
 }
 
 /**
- * The Markups List row eye (docs/MARKUP-LAYERS.md): hide or show one markup
+ * The Markups List row eye (docs/reference/editor/layers.md): hide or show one markup
  * with its own Hidden flag (`hidden`, saved as /F bit 2), as one undo step.
  * Both halves of a replacement (#508) share a row and switch together. A
  * markup on a hidden layer is hidden by its layer: the eye changes nothing
@@ -1443,7 +1443,7 @@ export async function selectMarkupRange(anchorKey, clickedKey, page) {
 }
 
 /**
- * Select a Group row (docs/MARKUP-GROUPS.md): every markup of the group, the
+ * Select a Group row (docs/reference/editor/markups-list.md): every markup of the group, the
  * dominant one as the main selection. Ctrl adds or removes the group.
  */
 export async function selectMarkupGroupItem(groupId, ctrlKey = false) {

@@ -1,5 +1,5 @@
 // Which controls the Properties toolbar shows for a selection (external plan-review files
-// "Properties toolbar", docs/WORKSPACE-SPEC.md §1.5 and WP4).
+// "Properties toolbar", docs/reference/editor/workspace.md and WP4).
 //
 // Pure: no Solid, no state. The toolbar passes the annotation types of the
 // selection (one type for a single markup or for the active tool's defaults,

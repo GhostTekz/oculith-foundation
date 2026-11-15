@@ -13,6 +13,9 @@ const ALLOWED_PHASES: &[&str] = &[
     "frontend-ready",
     "frontend-error",
     "frontend-rejection",
+    "webview-terminated",
+    "crash-recovery-offered",
+    "crash-recovery-restored",
 ];
 
 pub fn sanitize_phase(phase: &str) -> &str {
@@ -84,6 +87,13 @@ impl StartupDiagnostics {
         let phase = sanitize_phase(phase);
         let detail = match phase {
             "frontend-error" | "frontend-rejection" => detail.map(redact_detail),
+            // Why the web process ended: one of a fixed set of words.
+            "webview-terminated" => Some(
+                detail
+                    .filter(|reason| crate::webview_recovery::TERMINATION_REASONS.contains(reason))
+                    .unwrap_or("unknown")
+                    .to_string(),
+            ),
             _ => None,
         };
         let entry = json!({

@@ -213,6 +213,54 @@ impl WorkerPool {
         }
     }
 
+    /// Stop every worker when the app exits: ask each one to shut down, close
+    /// its pipe, and wait up to `grace` in total for the processes to end;
+    /// whatever is still running then (a long native render) is killed. A
+    /// worker that ends this way exits without PDFium's teardown (see the
+    /// worker's `exit_without_teardown`). Returns how many workers had to be
+    /// killed.
+    pub async fn shutdown(&self, grace: std::time::Duration) -> usize {
+        let deadline = tokio::time::Instant::now() + grace;
+        let mut children = Vec::new();
+        for worker in &self.workers {
+            worker.stopping.store(true, Ordering::Release);
+            worker.set_status(Status::DeadPermanent);
+            // Only the pipe lock: an exchange in flight keeps its request
+            // lock for the whole render, and the worker reads this request
+            // as soon as that render is done.
+            let stdin = tokio::time::timeout_at(deadline, worker.stdin.lock()).await
+                .ok()
+                .and_then(|mut guard| guard.take());
+            if let Some(mut stdin) = stdin {
+                let _ = tokio::time::timeout_at(deadline, async {
+                    let _ = stdin.write_all(b"{\"op\":\"shutdown\"}\n").await;
+                    let _ = stdin.flush().await;
+                }).await;
+                drop(stdin); // end of input: the worker stops after its current request
+            }
+            if let Ok(mut guard) = tokio::time::timeout_at(deadline, worker.child.lock()).await {
+                if let Some(child) = guard.take() {
+                    children.push((worker.slot, child));
+                }
+            }
+        }
+        let mut killed = 0;
+        for (slot, mut child) in children {
+            match tokio::time::timeout_at(deadline, child.wait()).await {
+                Ok(Ok(status)) if !status.success() => {
+                    eprintln!("[pool] worker {slot} ended with {status}");
+                }
+                Ok(_) => {}
+                Err(_) => {
+                    killed += 1;
+                    let _ = child.kill().await;
+                    eprintln!("[pool] worker {slot} did not stop in time; killed");
+                }
+            }
+        }
+        killed
+    }
+
     /// Returns true if at least one worker is Ready.
     pub fn is_ready(&self) -> bool {
         self.workers.iter().any(|w| w.status() == Status::Ready)

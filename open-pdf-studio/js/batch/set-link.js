@@ -1,4 +1,4 @@
-// Set Batch Link (docs/SET-BATCH-LINK.md): Batch Link over the PDFs of a Set
+// Set Batch Link (docs/reference/editor/sets-and-batch.md): Batch Link over the PDFs of a Set
 // or a picked file list. The page labels of every file are the targets; a
 // reference to a sheet in the same file becomes a /Link with a /Dest, one to
 // a sheet in another file a /GoToR with the relative path from the referring

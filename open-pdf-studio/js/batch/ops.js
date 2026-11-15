@@ -1,4 +1,4 @@
-// Batch operations (docs/BATCH-OPS.md): the single-document operations of
+// Batch operations (docs/reference/editor/sets-and-batch.md): the single-document operations of
 // the Document and File menus, applied to a PDF on disk. Each op takes the
 // file's bytes and returns new bytes (or `bytes: null` for "nothing to
 // change"); batch-ops-job.js runs them through the runner and writes the
@@ -145,7 +145,7 @@ const saveBytes = async (lib, options) => new Uint8Array(await lib.save(options)
 
 // --- the ops -----------------------------------------------------------------
 
-/** Flatten (docs/FLATTEN.md): every markup on the chosen pages. */
+/** Flatten (docs/reference/editor/markup-tools.md): every markup on the chosen pages. */
 async function flatten(file, ctx) {
   const lib = await loadPdf(file.bytes, { updateMetadata: false });
   const pages = resolvePages(ctx.options.pages, lib.getPageCount());
@@ -197,7 +197,7 @@ async function headersFooters(file, ctx) {
   return { bytes: await saveBytes(lib), detail: { code: 'headersAdded', count: pages.length } };
 }
 
-/** Apply Stamp (docs/STAMPS.md): a stamp template on the chosen pages, fields per file and page. */
+/** Apply Stamp (docs/reference/editor/markup-tools.md): a stamp template on the chosen pages, fields per file and page. */
 async function applyStamp(file, ctx) {
   const template = ctx.options.template;
   if (!template) throw new BatchOpError('noStamp');

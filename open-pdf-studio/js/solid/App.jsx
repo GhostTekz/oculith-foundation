@@ -138,7 +138,7 @@ function DesktopApp() {
 
           <HandtekeningBar />
 
-          {/* MultiView (docs/MULTIVIEW.md): display: contents while unsplit,
+          {/* MultiView (docs/reference/editor/workspace.md): display: contents while unsplit,
               a grid of split tab rows + views when split. #pdf-container is
               the live view and never moves in the DOM. */}
           <div class="mv-panes" data-split={splitOrientation() || 'none'} data-live={activePaneIndex()}>

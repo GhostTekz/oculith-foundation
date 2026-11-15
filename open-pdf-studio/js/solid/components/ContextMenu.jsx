@@ -39,6 +39,7 @@ import { showProperties, hideProperties } from '../../ui/panels/properties-panel
 import { selecteerRuimteVanTag } from '../../plattegrond/ruimte-selectie.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { copyAnnotation, copyAnnotations, pasteFromClipboard, pasteAnnotationsInPlace, duplicateAnnotation } from '../../annotations/clipboard.js';
+import { copyRegionSelection } from '../../annotations/region-clipboard.js';
 import { cloneAnnotation } from '../../annotations/factory.js';
 import { commitAnnotationMutation, deleteAnnotationsWithUndo } from '../../annotations/mutations.js';
 import { expandCorrectionGroups } from '../../annotations/corrections/model.js';
@@ -201,7 +202,7 @@ function LayerSubmenu(props) {
   );
 }
 
-// "Subject…" (docs/MARKUP-GROUPS.md): put the markups in a subject, the external editor's
+// "Subject…" (docs/reference/editor/markups-list.md): put the markups in a subject, the external editor's
 // main category. Opens the name dialog with their shared subject.
 function SubjectMenuItem(props) {
   const { t } = useTranslation('context');
@@ -278,7 +279,7 @@ function ArrangeSubmenu(props) {
 // A grouped markup saves its whole group as one tool. A loose multi-selection
 // (props.selection) saves those markups as one tool too. Notes, links,
 // attachments, text markups and sequenced symbols are refused (the external editor rules,
-// docs/TOOL-SET-SHARING.md). "Several sets…" picks more than one set.
+// docs/reference/editor/tool-chest.md). "Several sets…" picks more than one set.
 function AddToToolChestSubmenu(props) {
   const { t } = useTranslation('context');
   const { t: tCommon } = useTranslation('common');
@@ -331,7 +332,7 @@ function AddToToolChestSubmenu(props) {
   );
 }
 
-// Capture (docs/CAPTURE.md): Attach Photo…, View Photos and, on a File
+// Capture (docs/reference/editor/markup-tools.md): Attach Photo…, View Photos and, on a File
 // Attachment, open or save its file.
 const cameraIcon = lucide('camera');
 const photosIcon = lucide('image');
@@ -815,7 +816,7 @@ function AnnotationMenuContent() {
         const a = ann();
         if (a) commitAnnotationMutation(a, annotation => { annotation.printable = annotation.printable === false; });
       }} />
-      {/* Document ▸ Flatten… on the selected markup (docs/FLATTEN.md). */}
+      {/* Document ▸ Flatten… on the selected markup (docs/reference/editor/markup-tools.md). */}
       <MenuItem icon={flattenIcon} label={tCommon('flatten')} disabled={isPaarVergrendeld()}
         onClick={() => runCommand('document.flatten', { selection: true })} />
       <AddToToolChestSubmenu annotation={ann} />
@@ -1126,14 +1127,19 @@ function PageMenuContent() {
   const { t: tCommon } = useTranslation('common');
   const isCurrentTool = (tool) => state.currentTool === tool;
   const revealInFolderIcon = lucide('folder-open');
+  const regionSelected = () => !!state.regionSelection && state.regionSelection.docId === getActiveDocument()?.id;
 
   // Canvas menu (the external editor's is not documented; same spine as the markup menu):
   // clipboard, selection and view tools, add, navigate, find/print, and
   // Properties last.
   return (
     <>
-      <MenuItem icon={pageCutIcon} label={tCommon('cut')} shortcut="Ctrl+X" disabled={true} />
-      <MenuItem icon={pageCopyIcon} label={tCommon('copy')} shortcut="Ctrl+C" disabled={true} />
+      {/* A region selected with the select tool: Cut and Copy take that part
+          of the drawing (the page itself does not change). */}
+      <MenuItem icon={pageCutIcon} label={tCommon('cut')} shortcut="Ctrl+X" disabled={!regionSelected()}
+        onClick={() => { void copyRegionSelection(); }} />
+      <MenuItem icon={pageCopyIcon} label={tCommon('copy')} shortcut="Ctrl+C" disabled={!regionSelected()}
+        onClick={() => { void copyRegionSelection(); }} />
       <MenuItem icon={pagePasteIcon} label={tCommon('paste')} shortcut="Ctrl+V" onClick={() => pasteFromClipboard()} />
       <MenuItem icon={pagePasteIcon} label={tCommon('pasteInPlace')} shortcut="Ctrl+Shift+V" onClick={() => pasteAnnotationsInPlace()} />
       <MenuItem icon={pageDeleteIcon} label={tCommon('delete')} shortcut="Delete" disabled={true} />

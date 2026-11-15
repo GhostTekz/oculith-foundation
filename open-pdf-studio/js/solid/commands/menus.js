@@ -1,4 +1,4 @@
-// The menu bar (external plan-review files menus, docs/WORKSPACE-SPEC.md §1.9 and §4.2):
+// The menu bar (external plan-review files menus, docs/reference/editor/workspace.md):
 // Data selected by edition, so tests load it without the app. Every entry names
 // a command id from the registry; labels, icons, shortcuts, enabled and
 // checked state come from the command.
@@ -46,7 +46,7 @@ const BATCH_PENDING_AFTER_LINK = [
 ];
 
 // Batch entries that have a command now, in their the external editor position. The
-// operations run on js/batch/runner.js (docs/BATCH-OPS.md); Slip Sheet is the
+// operations run on js/batch/runner.js (docs/reference/editor/sets-and-batch.md); Slip Sheet is the
 // Sets panel flow; Compare and Overlay are Document ▸ Compare, whose compare
 // view runs set pairs in batch. Link is its own submenu (Batch Link, WP8).
 const BATCH_LIVE = {
@@ -154,7 +154,7 @@ export const MENUS = [
       sub('goTo', ['view.goToSheet', SEP, 'view.firstPage', 'view.previousPage', 'view.nextPage', 'view.lastPage']),
       'view.previousView', 'view.nextView',
       SEP,
-      // MultiView (WP5, docs/MULTIVIEW.md); the external editor order.
+      // MultiView (WP5, docs/reference/editor/workspace.md); the external editor order.
       'view.splitVertical', 'view.splitHorizontal', 'view.toggleSplit', 'view.switchPane', 'view.unsplit',
       'view.syncDocument', 'view.syncPage',
       SEP,
@@ -262,7 +262,7 @@ export const MENUS = [
       SEP,
       'oculith.keyboardShortcuts',
       SEP,
-      'help.extensions', 'help.fileAssociations', 'help.startupDiagnostics',
+      'help.extensions', 'help.aiConnections', 'help.fileAssociations', 'help.startupDiagnostics',
       SEP,
       'oculith.about',
     ],

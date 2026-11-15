@@ -1,4 +1,4 @@
-// Panel registry for the plan-review panel hosts (docs/WORKSPACE-SPEC.md
+// Panel registry for the plan-review panel hosts (docs/reference/editor/workspace.md
 // §1.4, §5, WP2). One entry per workspaceLayout PANEL_IDS id:
 //
 //   { id,

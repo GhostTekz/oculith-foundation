@@ -1,4 +1,4 @@
-// PDF appearance of a dynamic stamp (docs/STAMPS.md): vector borders, text in
+// PDF appearance of a dynamic stamp (docs/reference/editor/markup-tools.md): vector borders, text in
 // the standard Helvetica fonts and an optional embedded image, drawn from the
 // same layout as the canvas (annotations/stamp-layout.js), so another viewer
 // shows what OcuDraw shows. The design itself goes in /OPS_StampDesign, so

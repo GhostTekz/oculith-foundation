@@ -207,3 +207,23 @@ test('the Shortcuts dialog shows the slot range once and keyboard-handlers passe
   assert.match(src, /runTableShortcut\(tableEntry, eventKeys\(e\)\)/u);
   for (const taal of ['en', 'nl']) assert.match(locale(taal).shortcuts.actions.myToolsSlot, /1-9, 0/u);
 });
+
+test('PageUp / PageDown turn the page in the document view, also held down', async () => {
+  const { resolveRegistryShortcut, inDocumentView } = await import('./shortcut-table.js');
+  const inView = { tagName: 'BUTTON', closest: (sel) => (sel === '.main-view' ? {} : null) };
+  const inPanel = { tagName: 'DIV', closest: () => null };
+  const inDialog = { tagName: 'DIV', closest: (sel) => ({}) };
+  const body = { tagName: 'BODY' };
+  for (const [k, run] of [['PageDown', 'view.nextPage'], ['PageUp', 'view.previousPage']]) {
+    assert.equal(resolveRegistryShortcut({ key: k, code: k, target: body })?.run, run);
+    assert.equal(resolveRegistryShortcut({ key: k, code: k, target: inView })?.run, run);
+    assert.equal(resolveRegistryShortcut({ key: k, code: k, target: body, repeat: true })?.run, run, `${k} held repeats`);
+    assert.equal(resolveRegistryShortcut({ key: k, code: k, target: inPanel }), null, 'a panel or list keeps its own key');
+    assert.equal(resolveRegistryShortcut({ key: k, code: k, target: inDialog }), null, 'a dialog keeps its own key');
+    assert.equal(resolveRegistryShortcut({ key: k, code: k, target: { tagName: 'INPUT' } }), null);
+  }
+  assert.equal(inDocumentView(null), true);
+  // Other registry keys still do not repeat.
+  assert.equal(resolveRegistryShortcut({ key: 'j', code: 'KeyJ', ctrlKey: true, target: body })?.run, 'view.goToSheet');
+  assert.equal(resolveRegistryShortcut({ key: 'j', code: 'KeyJ', ctrlKey: true, target: body, repeat: true }), null);
+});

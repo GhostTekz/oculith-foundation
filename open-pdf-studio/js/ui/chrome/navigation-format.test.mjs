@@ -109,3 +109,15 @@ test('dimmer maps the page linearly onto [level, 1]; dark mode inverts after it'
   assert.equal(clampDimmer('x'), 0.5);
   assert.equal(contentFilterCss({ dimmer: true, level: 0 }), 'none');
 });
+
+test('a long page label is shortened so the counter stays visible', () => {
+  const long = ['E-501.1 ELECTRICAL LIGHTING AND POWER PLAN LEVEL 1 NORTH WING', 'E-2'];
+  assert.equal(formatPageField(1, 565, long), `${long[0]} (1 of 565)`, 'no limit: the full text');
+  const cut = formatPageField(1, 565, long, undefined, 26);
+  assert.equal(cut, 'E-501.1 ELECTR\u2026 (1 of 565)');
+  assert.equal(cut.length, 26);
+  assert.equal(formatPageField(2, 565, long, undefined, 26), 'E-2 (2 of 565)', 'a short label is kept');
+  assert.equal(formatPageField(1, 565, long, undefined, 14), '1 of 565', 'no room: the counter alone');
+  assert.equal(parsePageInput(cut, 565, long), 1, 'the shortened field text still reads back');
+  assert.equal(parsePageInput('E-2 (2 of 565)', 565, long), 2);
+});

@@ -283,13 +283,20 @@ export function clearPdfVectorCache() {
  * Extract vector geometry from a PDF page's operator list.
  * Transforms all coordinates to annotation-space (CSS pixels at scale=1).
  * `options.edgesOnly` returns the edges alone (no snap points, no index).
+ * `options.document` reads that document's page; the read stops when another
+ * document becomes the active one, unless `options.isCurrent()` says
+ * whether to go on (a document that is not shown, read for another).
+ * `options.reader` reads the page through another PDF.js document of the
+ * same file (one that is never drawn, see openPageReaders), its page
+ * cleaned up after; the document still gives the layers and rotation.
  */
 export async function extractPageGeometry(pageNum, options = {}) {
   const doc = options.document || getActiveDocument();
-  const pdfDoc = doc?.pdfDoc;
+  const pdfDoc = options.reader || doc?.pdfDoc;
   if (!pdfDoc) return { points: [], edges: [] };
   const checkActive = () => {
-    if (options.signal?.aborted || (options.document && getActiveDocument() !== doc)) {
+    const current = options.isCurrent ? options.isCurrent() : !options.document || getActiveDocument() === doc;
+    if (options.signal?.aborted || !current) {
       throw new DOMException('Vector extraction aborted', 'AbortError');
     }
   };
@@ -324,7 +331,7 @@ export async function extractPageGeometry(pageNum, options = {}) {
   checkActive();
 
   // Get viewport at scale 1 (annotation coordinate system)
-  const extraRotation = getPageRotation(pageNum);
+  const extraRotation = options.document ? options.document.pageRotations?.[pageNum] || 0 : getPageRotation(pageNum);
   const vpOpts = { scale: 1 };
   if (extraRotation) {
     vpOpts.rotation = (page.rotate + extraRotation) % 360;
@@ -333,6 +340,8 @@ export async function extractPageGeometry(pageNum, options = {}) {
   const viewportTransform = viewport.transform;
 
   const opList = await page.getOperatorList();
+  // A reader's page is not drawn: its operator list and fonts are freed (the list in hand stays).
+  if (options.reader) page.cleanup();
   checkActive();
   // Hidden PDF layers give no snap points or edges (docs/foundation/PDF-LAYERS.md).
   // `options.allLayers` reads every layer regardless of the view.
@@ -340,11 +349,14 @@ export async function extractPageGeometry(pageNum, options = {}) {
   checkActive();
   const layers = optionalContentTracker(ocConfig);
 
-  // PDF transform matrix stack (with the line width, which save/restore
-  // also scope)
+  // PDF transform matrix stack (with the line width, the colours and the
+  // dash pattern, which save/restore also scope)
   const matrixStack = [];
   let ctm = [1, 0, 0, 1, 0, 0];
   let lineWidth = 1;
+  let strokeColor = '#000000';
+  let fillColor = '#000000';
+  let dash = null;
 
   // Final results
   const points = [];
@@ -371,12 +383,12 @@ export async function extractPageGeometry(pageNum, options = {}) {
 
     switch (op) {
       case OPS.save:
-        matrixStack.push([ctm.slice(), lineWidth]);
+        matrixStack.push([ctm.slice(), lineWidth, strokeColor, fillColor, dash]);
         break;
 
       case OPS.restore:
         if (matrixStack.length > 0) {
-          [ctm, lineWidth] = matrixStack.pop();
+          [ctm, lineWidth, strokeColor, fillColor, dash] = matrixStack.pop();
         }
         break;
 
@@ -385,7 +397,33 @@ export async function extractPageGeometry(pageNum, options = {}) {
         break;
 
       case OPS.setGState:
-        for (const [k, v] of a?.[0] || []) if (k === 'LW' && Number.isFinite(v)) lineWidth = v;
+        for (const [k, v] of a?.[0] || []) {
+          if (k === 'LW' && Number.isFinite(v)) lineWidth = v;
+          if (k === 'D') dash = Array.isArray(v) ? v : null;
+        }
+        break;
+
+      case OPS.setDash:
+        dash = a || null;
+        break;
+
+      // pdf.js hands every colour space over as RGB hex; a pattern has none.
+      case OPS.setStrokeRGBColor:
+        strokeColor = typeof a?.[0] === 'string' ? a[0] : null;
+        break;
+
+      case OPS.setFillRGBColor:
+        fillColor = typeof a?.[0] === 'string' ? a[0] : null;
+        break;
+
+      case OPS.setStrokeColorN:
+      case OPS.setStrokeTransparent:
+        strokeColor = null;
+        break;
+
+      case OPS.setFillColorN:
+      case OPS.setFillTransparent:
+        fillColor = null;
         break;
 
       case OPS.transform: {
@@ -407,9 +445,13 @@ export async function extractPageGeometry(pageNum, options = {}) {
 
         // Commit all segments (even endPath — for snap purposes all geometry is useful).
         // Each edge carries how it was painted and its stroke width in page
-        // points, so Dynamic Fill can ignore thin lines and unpainted clip paths.
+        // points, so Dynamic Fill can ignore thin lines and unpainted clip
+        // paths, and its pen: the colour it was painted in (null for a
+        // pattern) and its dash pattern in page points ('' for a solid line).
         if (segments.length > 0) {
-          const meta = { paint: paintKind(a[0]), w: strokeWidthOnPage(lineWidth, ctm, viewportTransform) };
+          const paint = paintKind(a[0]);
+          const meta = { paint, w: strokeWidthOnPage(lineWidth, ctm, viewportTransform),
+            c: paint === 'f' ? fillColor : strokeColor, d: dashKey(dash, ctm, viewportTransform) };
           await commitSegments(segments, ctm, viewportTransform, edgesOnly ? null : points, edges, pointSet, pause, meta);
         }
         break;
@@ -586,7 +628,7 @@ async function commitSegments(segments, ctm, viewportTransform, points, edges, p
         const dy = q.y - p.y;
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len > 0.5) {
-          edges.push(meta ? { x1: p.x, y1: p.y, x2: q.x, y2: q.y, paint: meta.paint, w: meta.w }
+          edges.push(meta ? { x1: p.x, y1: p.y, x2: q.x, y2: q.y, paint: meta.paint, w: meta.w, c: meta.c, d: meta.d }
             : { x1: p.x, y1: p.y, x2: q.x, y2: q.y });
 
           if (!points) continue;
@@ -626,6 +668,18 @@ export function strokeWidthOnPage(lw, ctm, vt) {
   if (!(lw > 0)) return 0;
   const det = Math.abs((ctm[0] * ctm[3] - ctm[1] * ctm[2]) * (vt[0] * vt[3] - vt[1] * vt[2]));
   return lw * Math.sqrt(det);
+}
+
+/**
+ * A dash pattern (`[dashArray, phase]`, as setDash gives it) as a key in
+ * page points: the dash and gap lengths, to a tenth of a point, joined by
+ * commas; '' for a solid line.
+ */
+export function dashKey(dash, ctm, vt) {
+  const list = Array.isArray(dash?.[0]) || ArrayBuffer.isView(dash?.[0]) ? [...dash[0]] : [];
+  if (!list.length || !list.some((v) => v > 0)) return '';
+  const k = strokeWidthOnPage(1, ctm, vt);
+  return list.map((v) => Math.round(v * k * 10) / 10).join(',');
 }
 
 /**

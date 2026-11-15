@@ -1,4 +1,4 @@
-// Shared tool sets (docs/TOOL-SET-SHARING.md): two simulated users, each
+// Shared tool sets (docs/reference/editor/tool-chest.md): two simulated users, each
 // with their own Tool Chest and link storage, against one temporary
 // "network" folder.
 import assert from 'node:assert/strict';

@@ -2,7 +2,7 @@
 //
 // Deze config raakt `vite.config.js` en `npm run build` niet aan: eigen root,
 // eigen entry, eigen uitvoermap (`dist-web-unit`). De Tauri-app blijft dus bit
-// voor bit dezelfde. Zie docs/superpowers/specs/2026-09-23-web-unit-design.md.
+// voor bit dezelfde. Zie docs/reference/editor/drafting-and-signatures.md.
 
 import { defineConfig } from 'vite';
 import { resolve } from 'path';

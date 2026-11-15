@@ -9,7 +9,7 @@ import { historyRows, undoEntryInfo } from '../../../core/undo-history.js';
 import { typeName } from '../../../quantities/categories.js';
 
 /**
- * Edit > Undo History (docs/EDIT-TOOLS.md): the undo steps of the active
+ * Edit > Undo History (docs/reference/editor/markup-tools.md): the undo steps of the active
  * document with their action names, oldest first. Clicking a step undoes
  * back to just after it (the same as that many Ctrl+Z); the greyed steps
  * below the current one were undone and a click redoes up to them.

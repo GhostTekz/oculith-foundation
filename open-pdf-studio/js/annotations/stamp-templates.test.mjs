@@ -1,4 +1,4 @@
-// Dynamic stamp templates (docs/STAMPS.md): field evaluation, validation,
+// Dynamic stamp templates (docs/reference/editor/markup-tools.md): field evaluation, validation,
 // JSON export/import, the shared layout and the Tool Chest stamp tool.
 import assert from 'node:assert/strict';
 import test from 'node:test';

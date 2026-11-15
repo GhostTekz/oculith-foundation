@@ -1,4 +1,4 @@
-// Set Batch Link (docs/SET-BATCH-LINK.md): Batch Link over a Set or picked
+// Set Batch Link (docs/reference/editor/sets-and-batch.md): Batch Link over a Set or picked
 // PDFs, with /GoToR links between the files, and Generate Bookmarks from Page
 // Labels for the open document.
 

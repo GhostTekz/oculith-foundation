@@ -1,4 +1,4 @@
-// WP13 Edit-menu tools, pure geometry (docs/EDIT-TOOLS.md): Lasso enclosure
+// WP13 Edit-menu tools, pure geometry (docs/reference/editor/markup-tools.md): Lasso enclosure
 // and touching, Offset with mitred joins and calibrated distances, and the
 // Markup Selection Cycle step.
 

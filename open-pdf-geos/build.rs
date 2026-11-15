@@ -22,13 +22,13 @@ fn find_libdir() -> PathBuf {
                 return dir;
             }
         }
-        panic!("GEOS_PREFIX={prefix} has no libgeos_c shared library. See docs/GEOS.md.");
+        panic!("GEOS_PREFIX={prefix} has no libgeos_c shared library. See docs/developer/geos.md.");
     }
     if let Some(dir) = pkg_config_libdir() {
         return dir;
     }
     panic!(
-        "libgeos_c was not found. Install GEOS 3.14.1 or set GEOS_PREFIX to the directory that contains lib/libgeos_c.so. See docs/GEOS.md."
+        "libgeos_c was not found. Install GEOS 3.14.1 or set GEOS_PREFIX to the directory that contains lib/libgeos_c.so. See docs/developer/geos.md."
     );
 }
 

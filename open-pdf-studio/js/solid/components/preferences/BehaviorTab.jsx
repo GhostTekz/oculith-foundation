@@ -1,4 +1,5 @@
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import PrefSelect from './PrefSelect.jsx';
 
 export default function BehaviorTab(props) {
   const { t } = useTranslation('preferences');
@@ -168,6 +169,16 @@ export default function BehaviorTab(props) {
             <input type="checkbox" checked={p.wheelZoomWithoutCtrl[0]()} onChange={e => p.wheelZoomWithoutCtrl[1](e.target.checked)} />
             <span>{t('behavior.wheelZoomWithoutCtrl') || 'Zoomen met muiswiel (zonder Ctrl)'}</span>
           </label>
+        </div>
+        {/* Single-page view: the wheel stays on the page ('never') or turns
+            it at the page edge (js/pdf/wheel-page-turn.js). */}
+        <div class="pref-row" id="pref-wheel-changes-page" title={t('behavior.wheelChangesPageHint')}>
+          <label>{t('behavior.wheelChangesPage')}</label>
+          <PrefSelect value={p.wheelChangesPage[0]} setValue={p.wheelChangesPage[1]} style={{ width: '140px' }}
+            options={[
+              { value: 'never', label: t('behavior.wheelChangesPageNever') },
+              { value: 'edge', label: t('behavior.wheelChangesPageAtEdge') },
+            ]} />
         </div>
       </fieldset>
 

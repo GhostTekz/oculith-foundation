@@ -1,5 +1,5 @@
 // Tools ▸ Line Styles…: the line-style manager (custom line styles and
-// imported .PAT hatch patterns, docs/LINE-STYLES.md).
+// imported .PAT hatch patterns, docs/reference/editor/markup-tools.md).
 
 import { registerCommand } from './registry.js';
 import { lucide } from '../data/lucideIcons.js';

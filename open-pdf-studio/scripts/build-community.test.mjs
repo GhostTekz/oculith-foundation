@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { communityBuildCommand, foundationSourceRoute, verifyBuiltFoundationSourceRoute, writeFoundationSourceRoute } from './build-community.mjs';
+import { communityBuildCommand, releaseBuildOptions, foundationSourceRoute, verifyBuiltFoundationSourceRoute, writeFoundationSourceRoute } from './build-community.mjs';
 import { parseFoundationSourceRoute, readBundledFoundationSource } from '../js/core/foundation-source.js';
 
 test('Foundation Tauri build selects the public config', () => {
@@ -19,6 +19,21 @@ test('Foundation Tauri build selects the public config', () => {
   assert.throws(() => communityBuildCommand(['--runner', 'other']));
   assert.deepEqual(communityBuildCommand(['--bundles', 'appimage']).args.slice(1, 5),
     ['build', '--config', 'src-tauri/tauri.community.conf.json', '--bundles']);
+});
+
+test('a Foundation release build stamps its version and signs updater artefacts', () => {
+  assert.deepEqual(releaseBuildOptions({}), { args: [], env: {} });
+  const build = communityBuildCommand(['--bundles', 'nsis'],
+    { OCUDRAW_RELEASE_VERSION: '2026.68.12', TAURI_SIGNING_PRIVATE_KEY: 'key' });
+  assert.deepEqual(build.args.slice(1), [
+    'build', '--config', 'src-tauri/tauri.community.conf.json',
+    '--config', '{"version":"2026.68.12"}',
+    '--config', '{"bundle":{"createUpdaterArtifacts":true}}',
+    '--bundles', 'nsis',
+  ]);
+  assert.equal(build.env.VITE_OCULITH_UPDATER_ENABLED, 'true');
+  assert.throws(() => releaseBuildOptions({ OCUDRAW_RELEASE_VERSION: '2026.68' }));
+  assert.throws(() => releaseBuildOptions({ OCUDRAW_RELEASE_VERSION: '1.0.0 --debug' }));
 });
 
 test('Community frontend build selects the existing prepared build path', () => {

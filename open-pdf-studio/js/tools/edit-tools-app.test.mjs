@@ -1,5 +1,5 @@
 // WP13 Edit-menu tools against the real state store, hit testing, measure
-// scale and undo manager (docs/EDIT-TOOLS.md): the Undo History jump equals
+// scale and undo manager (docs/reference/editor/markup-tools.md): the Undo History jump equals
 // N single undos and redo works afterwards; Offset copies measure the typed
 // distance on a calibrated sheet and are one undo step named "offset"; the
 // selection cycle walks three stacked markups; the lasso picks enclosed (or,

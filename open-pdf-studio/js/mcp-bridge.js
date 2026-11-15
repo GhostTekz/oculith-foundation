@@ -2198,36 +2198,6 @@ async function handleFacadeElement(params) {
   return uit;
 }
 
-
-/** Assistant relay — submit a user message programmatically (app_assistant_ask). */
-async function handleAssistantAsk(params) {
-  const text = params?.text;
-  if (typeof text !== 'string' || !text) return { ok: false, error: 'missing params.text' };
-  const relay = await import('./assistant-mcp-relay.js');
-  return relay.submitAssistantMessage(text);
-}
-
-/** Assistant relay — take the oldest question awaiting an MCP answer. */
-async function handleAssistantPending() {
-  const relay = await import('./assistant-mcp-relay.js');
-  return relay.takePendingQuestion();
-}
-
-/** Assistant relay — answer a pending question; it appears in the chat window. */
-async function handleAssistantAnswer(params) {
-  const id = params?.id;
-  const text = params?.text;
-  if (!id || typeof text !== 'string') return { ok: false, error: 'need params.id and params.text' };
-  const relay = await import('./assistant-mcp-relay.js');
-  return relay.answerAssistantQuestion(id, text);
-}
-
-/** Assistant relay — read the current conversation (verify delivery). */
-async function handleAssistantHistory() {
-  const relay = await import('./assistant-mcp-relay.js');
-  return relay.getAssistantMessages();
-}
-
 /** Return take-off totals for a named schedule (or all schedules). Numeric
  *  columns are summed into grand totals and per-group subtotals; image
  *  columns are reported as counts, never as data-URLs. */
@@ -3146,7 +3116,19 @@ async function handleListPrinters(params) {
  *  log all happen there. */
 async function handleAddonCall(params) {
   const { callAddonTool } = await import('./mcp/addon-tools.js');
-  return callAddonTool(String(params?.name ?? ''), params?.arguments ?? {});
+  const owner = typeof params?.owner === 'string' ? params.owner : null;
+  return callAddonTool(String(params?.name ?? ''), params?.arguments ?? {}, { owner });
+}
+
+/** On an asking server (`/mcp/ask`, or an in-app assistant): the user
+ *  approves one of the editor's own tools that changes something before it
+ *  runs. Same card, session approvals and log as the add-on tools. */
+async function handleApprove(params) {
+  const { requestToolApproval } = await import('./mcp/addon-tools.js');
+  return requestToolApproval({
+    tool: params?.tool, title: params?.title, args: params?.arguments ?? {},
+    owner: typeof params?.owner === 'string' ? params.owner : null,
+  });
 }
 
 async function handleListLayers(params) {
@@ -3265,11 +3247,8 @@ const HANDLERS = {
   'mcp:set-layer':          handleSetLayer,
   // Tools registered by installed add-ons
   'mcp:addon-call':         handleAddonCall,
-  // Assistant relay — external MCP client as the AI brain
-  'mcp:assistant-ask':      handleAssistantAsk,
-  'mcp:assistant-pending':  handleAssistantPending,
-  'mcp:assistant-answer':   handleAssistantAnswer,
-  'mcp:assistant-history':  handleAssistantHistory,
+  // The user's approval before a tool that changes something (asking server)
+  'mcp:approve':            handleApprove,
 };
 
 /** Wire up all `mcp:*` listeners. Safe to call once at startup. Becomes

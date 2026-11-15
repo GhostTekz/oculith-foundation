@@ -1,3 +1,7 @@
+# Text with LF line endings on every platform: tests read the sources and
+# match their lines, and a Windows checkout would turn them into CRLF.
+* text=auto eol=lf
+
 # Binaire bestanden nooit door de regeleinde-normalisatie halen: git zou
 # CRLF injecteren en het bestand daarmee stukmaken. Speelt onder meer bij de
 # tekenkaders en onderhoeken (resources/kaders, resources/onderhoeken) en bij
@@ -43,3 +47,4 @@ open-pdf-studio/package-lock.json text eol=lf
 # platform may change their line endings.
 open-pdf-studio/src-tauri/package-notices/** -text
 scripts/rust-upstream-notices/** -text
+open-pdf-studio/src-tauri/binaries/** -text

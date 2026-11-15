@@ -6,8 +6,8 @@
 // (/AP /N Form-XObject in de saver) gebruiken allemaal deze functies.
 // Zo kunnen scherm en PDF per definitie niet uit elkaar lopen.
 //
-// Rotatie-veiligheid (hard vereist, zie docs/superpowers/
-// research-pdf-rotatie-mechanica.md §12.5.5): ALLE geometrie wordt afgeleid uit
+// Rotatie-veiligheid (hard vereist, zie docs/reference/editor/
+// drafting-and-signatures.md, Appearance streams and rotation): ALLE geometrie wordt afgeleid uit
 // de vier coördinaten startX/startY/endX/endY. Er is GEEN `rotation`-veld en
 // GEEN losse rotatie-transform. Een schuine reeks ontstaat doordat de punten
 // zelf schuin liggen — niet doordat er een matrix overheen gaat. Daardoor kan

@@ -196,6 +196,10 @@
     "confirmBeforeDeleting": "Confirm before deleting annotations",
     "navigation": "Navigation",
     "wheelZoomWithoutCtrl": "Zoom with mouse wheel (without holding Ctrl)",
+    "wheelChangesPage": "Mouse wheel changes page",
+    "wheelChangesPageNever": "Never",
+    "wheelChangesPageAtEdge": "At page edge",
+    "wheelChangesPageHint": "Single-page view. Never: the wheel scrolls within the page and stops at its edges; change pages with the Previous / Next buttons, the page field, PageUp / PageDown or the thumbnails. At page edge: a new wheel turn at the top or bottom of the page goes to the previous or next page.",
     "dynamicScaling": "Auto-scale markups",
     "saving": "Saving",
     "incrementalSave": "Fast save: append changes to the end of the file instead of rewriting it"

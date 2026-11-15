@@ -276,6 +276,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autoSelectAfterCreate: true,
   confirmBeforeDelete: true,
   wheelZoomWithoutCtrl: false,
+  // Single-page view: does the mouse wheel turn the page at the page edge?
+  // 'never' keeps the wheel on the current page; pages change through the
+  // Previous / Next buttons, the page field, PageUp / PageDown, thumbnails
+  // and links (js/pdf/wheel-page-turn.js). 'edge' turns at the edge.
+  wheelChangesPage: 'never',
 
   // Startup
   restoreLastSession: false,

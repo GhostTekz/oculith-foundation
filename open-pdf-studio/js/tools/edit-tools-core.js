@@ -1,4 +1,4 @@
-// Lasso and Offset (WP13, docs/EDIT-TOOLS.md): the document side of the
+// Lasso and Offset (WP13, docs/reference/editor/markup-tools.md): the document side of the
 // tools, without the pointer flow and without UI imports, so the node tests
 // run it on the real state store, measure scale and undo manager. The
 // pointer flow is tools/edit-tools.js.

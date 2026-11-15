@@ -63,7 +63,26 @@ export function verifyBuiltFoundationSourceRoute(route, root = path.resolve(proj
 const editionTargetDir = (env = process.env) => path.join(path.resolve(project,
   env.OCUDRAW_TARGET_BASE || env.CARGO_TARGET_DIR || path.resolve(project, '..', 'target')), 'community');
 
-export function communityBuildCommand(args = []) {
+// A published Foundation release (the public repository's release workflow)
+// sets OCUDRAW_RELEASE_VERSION to its build version and provides the update
+// signing key. Then the build stamps that version, signs the updater
+// artefacts and enables the update check. Other builds are unchanged.
+export function releaseBuildOptions(env = process.env) {
+  const config = [];
+  const extraEnv = {};
+  const version = env.OCUDRAW_RELEASE_VERSION;
+  if (version) {
+    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Invalid Foundation release version.');
+    config.push({ version });
+  }
+  if (env.TAURI_SIGNING_PRIVATE_KEY) {
+    config.push({ bundle: { createUpdaterArtifacts: true } });
+    extraEnv.VITE_OCULITH_UPDATER_ENABLED = 'true';
+  }
+  return { args: config.flatMap((c) => ['--config', JSON.stringify(c)]), env: extraEnv };
+}
+
+export function communityBuildCommand(args = [], env = process.env) {
   const frontendOnly = args.includes('--frontend-only');
   const forwarded = args.filter((arg) => arg !== '--frontend-only');
   if (frontendOnly && forwarded.length) throw new Error('Frontend-only build takes no Tauri arguments.');
@@ -89,8 +108,10 @@ export function communityBuildCommand(args = []) {
     : {
       command: process.execPath,
       args: [path.join(project, 'node_modules', '@tauri-apps', 'cli', 'tauri.js'),
-        'build', '--config', 'src-tauri/tauri.community.conf.json', ...forwarded],
-      env: { OCUDRAW_EDITION: 'community', CARGO_TARGET_DIR: editionTargetDir() },
+        'build', '--config', 'src-tauri/tauri.community.conf.json',
+        ...releaseBuildOptions(env).args, ...forwarded],
+      env: { OCUDRAW_EDITION: 'community', CARGO_TARGET_DIR: editionTargetDir(env),
+        ...releaseBuildOptions(env).env },
     };
 }
 

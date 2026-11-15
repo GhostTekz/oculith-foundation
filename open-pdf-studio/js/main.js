@@ -97,6 +97,7 @@ import { addRecentFile } from './mobile/recent-files.js';
 // Tauri API
 import { setWindowTitle, isTauri, isMobile, isDevMode, getOpenedFiles, loadSession, saveSession, fileExists, isDefaultPdfApp, openDefaultAppsSettings, extractFileName } from './core/platform.js';
 import { sessieHerstelBeleid } from './core/sessie-herstel.js';
+import { clearCrashRecovery, offerCrashRecovery, startCrashRecoveryAutosave, takeWebviewTermination } from './core/crash-recovery-runtime.js';
 import { setupAddonFileOpen } from './core/addon-file-install.js';
 
 assertEditionContract(edition);
@@ -380,14 +381,13 @@ async function init() {
   // the normal command-line path (`checkCommandLineArgs` above) — no special
   // handling needed. We only skip session-restore so the detached window
   // shows JUST its one document, not the whole previous session.
-  if (!hasCommandLineFile) {
-    // Not awaited: the window is already rendered and interactive at this
-    // point (render() ran long before this line) — waiting here just made
-    // the whole app FEEL frozen until every previously-open tab finished
-    // reloading. Tabs still appear and load the same way, just without
-    // blocking "ready" on it. restoreLastSession() has its own try/catch.
-    restoreLastSession();
-  }
+  //
+  // Not awaited: the window is already rendered and interactive at this
+  // point (render() ran long before this line) — waiting here just made
+  // the whole app FEEL frozen until every previously-open tab finished
+  // reloading. Tabs still appear and load the same way, just without
+  // blocking "ready" on it. restoreLastSession() has its own try/catch.
+  void restoreAfterStart({ session: !hasCommandLineFile });
 
   // Dev convenience: ALWAYS have Desktop\test.pdf open on boot — the standing
   // test document, so every reload/restart drops you straight back into it.
@@ -425,10 +425,15 @@ async function init() {
     if (import.meta.env.VITE_OCULITH_FILE_ASSOC_ENABLED === 'true') {
       setTimeout(() => checkDefaultPdfApp(), 3000);
     }
-    // Geen automatische update-check meer bij het opstarten: het update-venster
-    // verscheen ongevraagd. Updaten kan nog handmatig via Help → Controleren op
-    // updates (checkForUpdates(false)).
-    // Fork release notes are not configured yet; keep startup fully local.
+    // A signed Foundation release checks its public release channel once,
+    // quietly: the update window opens only when a newer build exists.
+    if (import.meta.env.VITE_OCULITH_UPDATER_ENABLED === 'true') {
+      setTimeout(() => {
+        import('./ui/chrome/updater.js')
+          .then(({ checkForUpdates }) => checkForUpdates(true))
+          .catch((e) => console.warn('update check unavailable:', e));
+      }, 8000);
+    }
   }
 
   recordStartupDiagnostic('frontend-ready');
@@ -468,6 +473,8 @@ function setupSessionSaveOnClose() {
             }
           }
           await saveSessionData();
+          // Every drawing was closed (saved or discarded on purpose).
+          await clearCrashRecovery();
         });
       }
     } catch (e) {
@@ -516,15 +523,34 @@ function scheduleSessionSave() {
 }
 window.__OPDS_SESSION_SAVE__ = scheduleSessionSave;
 
+// After start: the last session (always when the page was reloaded because
+// its web process ended), then the unsaved markups the crash-recovery file
+// kept, then keep that file current (core/crash-recovery-runtime.js). The
+// autosave starts only after the offer: before it, the file still holds what
+// the previous run left.
+async function restoreAfterStart({ session }) {
+  const notice = await takeWebviewTermination();
+  if (session) await restoreLastSession({ afterCrash: !!notice });
+  let offerFailed = false;
+  try {
+    await offerCrashRecovery({ openFiles, notice });
+  } catch (e) {
+    offerFailed = true;
+    console.warn('Crash recovery failed:', e);
+  }
+  startCrashRecoveryAutosave({ keepExisting: offerFailed });
+}
+
 // Restore last session if preference is enabled.
 // In dev (Vite) ALWAYS restore, regardless of the preference: full-page
 // reloads happen on every plain-.js edit and the open test document must
 // survive them.
-async function restoreLastSession() {
+async function restoreLastSession({ afterCrash = false } = {}) {
   const beleid = sessieHerstelBeleid({
     inTauri: isTauri(),
     voorkeurAan: !!state.preferences.restoreLastSession,
     inDev: !!import.meta.env.DEV,
+    afterCrash,
   });
   if (!beleid.herstellen) {
     // In de browser blijft het niet bij zwijgen: de lege weergave en de

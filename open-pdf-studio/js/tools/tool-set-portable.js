@@ -2,7 +2,7 @@
 // and explicitly captured relative box/leader geometry. Version 3 holds
 // everything 1 and 2 hold plus a sequence label pattern per tool and an
 // optional set reference scale (scale-aware sets), and an optional markup
-// layer name per tool (docs/MARKUP-LAYERS.md). Source
+// layer name per tool (docs/reference/editor/layers.md). Source
 // identity, absolute coordinates, comments, scripts, paths, and document
 // sequence counters are never exported.
 import { cleanToolGeometry } from './tool-preset-geometry.js';

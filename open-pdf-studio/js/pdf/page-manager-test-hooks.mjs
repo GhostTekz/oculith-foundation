@@ -13,7 +13,9 @@ const STUBS = {
   'js/core/state.js': ['getActiveDocument', 'getNextUntitledName'],
   'js/core/platform.js': ['saveFileDialog', 'writeBinaryFile', 'readBinaryFile', 'isTauri', 'invoke', 'openFileDialog', 'openFolderDialog', 'lockFile', 'unlockFile'],
   'js/core/undo-manager.js': ['recordPageStructure'],
-  'js/pdf/loader.js': ['getCachedPdfBytes', 'getPdfBytes', 'forgetPdfRangeSource', 'setCachedPdfBytes', 'clearCachedPdfBytes', 'cancelAnnotationLoading', 'markAllAnnotationPagesLoaded', 'loadPDF'],
+  'js/pdf/loader.js': ['getCachedPdfBytes', 'getPdfBytes', 'forgetPdfRangeSource', 'setCachedPdfBytes', 'clearCachedPdfBytes', 'cancelAnnotationLoading', 'markAnnotationPagesLoaded', 'loadPDF',
+    // What a listener of page changes may read the document's catalog with.
+    'getSharedPdfLibDoc', 'pdfLibCatalog'],
   // Wat document-release.js per pad vrijgeeft voordat een werkbestand weg mag.
   'js/pdf/vector-renderer.js': ['invalidateDocumentCache'],
   'js/pdf/page-bitmap-cache.js': ['invalidateDocumentBitmaps'],

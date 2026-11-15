@@ -1,4 +1,4 @@
-// OcuDraw <-> the external editor round trip (docs/MARKUP-INTEROP.md, "Markups made in
+// OcuDraw <-> the external editor round trip (docs/reference/editor/markup-interop.md, "Markups made in
 // OcuDraw" and "the external editor markups edited in OcuDraw"), through real PDF bytes with
 // the real saver and load pipeline. Synthetic sheets only: a blank page and
 // the synthetic the external editor sheets of saver/test-fixtures.

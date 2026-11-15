@@ -1,4 +1,4 @@
-// A Tool Chest preset keeps its custom line style (docs/LINE-STYLES.md):
+// A Tool Chest preset keeps its custom line style (docs/reference/editor/markup-tools.md):
 // the style id plus a clean copy of a user style, through local storage,
 // placement and portable export (version 3).
 import assert from 'node:assert/strict';

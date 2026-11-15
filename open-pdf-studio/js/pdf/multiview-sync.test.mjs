@@ -1,4 +1,4 @@
-// MultiView Sync math (docs/MULTIVIEW.md): Synchronize Document matches the
+// MultiView Sync math (docs/reference/editor/workspace.md): Synchronize Document matches the
 // page number, Synchronize Page keeps the page offset; zoom follows and pan
 // maps the viewport centre onto the other split's content.
 import { test } from 'node:test';

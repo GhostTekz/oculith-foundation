@@ -1,6 +1,6 @@
 // Unit-test voor de stavenreeks-geometrie en de hoeveelheden-afleiding.
 //
-// Dekt de harde eisen uit docs/superpowers/specs/2026-07-22-stavenreeks-design.md:
+// Dekt de harde eisen uit docs/reference/editor/drafting-and-signatures.md:
 //  * staafposities gelijkmatig verdeeld (count=1 → midden, count>=2 → incl. uiteinden)
 //  * puntstraal per diameter, begrensd op [2, 9]
 //  * labeltekst "N ⌀ D" met de doorstreepte-⌀ glyph

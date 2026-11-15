@@ -1,4 +1,4 @@
-// Batch ▸ Summary (docs/BATCH-SUMMARY.md): one Markups Summary over many
+// Batch ▸ Summary (docs/reference/editor/sets-and-batch.md): one Markups Summary over many
 // PDFs. The dialog picks the files and runs js/batch/runner.js; no PDF needs
 // to be open.
 

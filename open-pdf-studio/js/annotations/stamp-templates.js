@@ -1,4 +1,4 @@
-// Dynamic stamp templates (plan-review stamps, docs/STAMPS.md).
+// Dynamic stamp templates (plan-review stamps, docs/reference/editor/markup-tools.md).
 //
 // A template describes a stamp: text lines (size, bold), a border, a colour,
 // an optional image and dynamic fields in the text ({date}, {time}, {user},

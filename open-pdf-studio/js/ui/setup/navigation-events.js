@@ -4,15 +4,19 @@ import { goToPage } from '../../pdf/renderer.js';
 import { viewport, zoomStepAtPoint, suppressNextFit, wielPanViewport, stopPanMomentum, schermPaginaMaat } from '../../pdf/pdf-viewport.js';
 import { leesWielDelta, maakWielHerkenning, maakWielScroller, maakElementVerschuiver } from '../../pdf/wiel-scroll.js';
 import { getTool } from '../../tools/tool-registry.js';
+import { makeWheelPageTurn, wheelPageMode } from '../../pdf/wheel-page-turn.js';
 import { makeWheelZoom } from './wiel-zoom-zonder-viewport.js';
 
 // ─── Wheel Zoom + Pan + Page Navigation ───────────────────────────────────
 // Single source of truth for the wheel event on the main view.
 // In vector viewport mode:
 //   Ctrl+wheel  → zoom at cursor (snaps to discrete preset levels)
-//   plain wheel → pan inside the current page; at the page edge in the wheel
-//                 direction, navigate to next/previous page.
-// In legacy mode it falls back to scroll-position-based page nav.
+//   plain wheel → pan inside the current page, stopping at its edges.
+// Whether the wheel turns the page at the page edge in the single-page view
+// is the wheelChangesPage preference (js/pdf/wheel-page-turn.js): 'never'
+// (default) keeps the wheel on the page, 'edge' turns one page per wheel
+// gesture that starts at the edge. Same rule without the vector viewport
+// (browser build), where #pdf-container scrolls.
 // Scrollende weergaven (doorlopend, boek, naast elkaar, lege documenten):
 //   plain wheel → scrollt #pdf-container (lege documenten bladeren op de rand).
 // Gewoon wielen loopt in ALLE weergaven via dezelfde helper (wiel-scroll.js,
@@ -35,7 +39,9 @@ const _containerWiel = maakWielScroller({
   ruimte: _containerVerschuiver.ruimte,
 });
 
-let _pageNavCooldown = false;
+// Page turns by the wheel (single-page view): one per gesture, and only
+// when the preference allows it.
+const _pageTurn = makeWheelPageTurn();
 // Pixels of slack at the page edge before we treat the page as "at the edge"
 // and trigger a page change. Without this, sub-pixel float offsets prevent nav.
 const EDGE_SLACK = 1;
@@ -251,33 +257,25 @@ export function setupWheelZoom() {
       const atTop = pageTop >= -EDGE_SLACK;                       // can't pan up further
       const atBottom = pageBottom <= canvasH + EDGE_SLACK;        // can't pan down further
 
-      // Page nav: only if scroll direction matches an exhausted edge AND we're
-      // single-page mode AND not already cooling down from a previous nav.
-      if (activeDoc.viewMode === 'single' && !_pageNavCooldown && Math.abs(dy) > Math.abs(dx)) {
-        if (dy > 0 && atBottom && activeDoc.currentPage < activeDoc.pdfDoc.numPages) {
-          _pageNavCooldown = true;
-          // Kill any in-flight pan momentum so the new page doesn't inherit
-          // the previous page's residual scroll velocity (would slingshot
-          // past the top into the centered fit position).
-          stopPanMomentum();
-          // Tell the next setPage() to keep the current zoom instead of
-          // running fitToViewport(), so the user's zoom level survives the
-          // page change with no flash to fit-zoom in between.
-          suppressNextFit();
-          await goToPage(activeDoc.currentPage + 1);
-          alignPageToTop();
-          setTimeout(() => { _pageNavCooldown = false; }, 250);
-          return;
-        }
-        if (dy < 0 && atTop && activeDoc.currentPage > 1) {
-          _pageNavCooldown = true;
-          stopPanMomentum();
-          suppressNextFit();
-          await goToPage(activeDoc.currentPage - 1);
-          alignPageToBottom();
-          setTimeout(() => { _pageNavCooldown = false; }, 250);
-          return;
-        }
+      // Page turn: only with wheelChangesPage 'edge', in the single-page
+      // view, for a gesture that started at the edge in its direction.
+      const turn = _pageTurn.decide({
+        mode: wheelPageMode(state.preferences), single: activeDoc.viewMode === 'single',
+        dx, dy, atTop, atBottom, page: activeDoc.currentPage, numPages: activeDoc.pdfDoc.numPages,
+        now: e.timeStamp || performance.now(),
+      });
+      if (turn) {
+        // Kill any in-flight pan momentum so the new page doesn't inherit
+        // the previous page's residual scroll velocity.
+        stopPanMomentum();
+        // Tell the next setPage() to keep the current zoom instead of
+        // running fitToViewport(), so the user's zoom level survives the
+        // page change with no flash to fit-zoom in between.
+        suppressNextFit();
+        await goToPage(activeDoc.currentPage + turn);
+        if (turn > 0) alignPageToTop(); else alignPageToBottom();
+        _pageTurn.turnDone(performance.now());
+        return;
       }
 
       // Pan via de gedeelde wielhelper: een muiswielklik schuift precies zijn
@@ -296,25 +294,24 @@ export function setupWheelZoom() {
     const pdfContainer = document.getElementById('pdf-container');
     if (!pdfContainer) return;
 
-    // ─── Legacy mode: scroll-position-based page nav ──────────────────────
-    if (activeDoc.viewMode === 'single' && !_pageNavCooldown) {
+    // ─── Without the viewport: #pdf-container scrolls the page ─────────────
+    // The page turns at the scroll edge only with wheelChangesPage 'edge'
+    // (one page per gesture); otherwise the container scroll stops there.
+    if (activeDoc.viewMode === 'single') {
       const canScroll = pdfContainer.scrollHeight > pdfContainer.clientHeight + 1;
       const atBottomLegacy = !canScroll || pdfContainer.scrollTop + pdfContainer.clientHeight >= pdfContainer.scrollHeight - 5;
       const atTopLegacy = !canScroll || pdfContainer.scrollTop <= 5;
-
-      if (e.deltaY > 0 && atBottomLegacy && activeDoc.currentPage < activeDoc.pdfDoc.numPages) {
+      const { dx: ldx, dy: ldy } = leesWielDelta(e, pdfContainer.clientHeight);
+      const turn = _pageTurn.decide({
+        mode: wheelPageMode(state.preferences), single: true, dx: ldx, dy: ldy,
+        atTop: atTopLegacy, atBottom: atBottomLegacy,
+        page: activeDoc.currentPage, numPages: activeDoc.pdfDoc.numPages, now: e.timeStamp || performance.now(),
+      });
+      if (turn) {
         e.preventDefault();
         _containerWiel.stop();
-        _pageNavCooldown = true;
-        await goToPage(activeDoc.currentPage + 1);
-        setTimeout(() => { _pageNavCooldown = false; }, 300);
-        return;
-      } else if (e.deltaY < 0 && atTopLegacy && activeDoc.currentPage > 1) {
-        e.preventDefault();
-        _containerWiel.stop();
-        _pageNavCooldown = true;
-        await goToPage(activeDoc.currentPage - 1);
-        setTimeout(() => { _pageNavCooldown = false; }, 300);
+        await goToPage(activeDoc.currentPage + turn);
+        _pageTurn.turnDone(performance.now());
         return;
       }
     }

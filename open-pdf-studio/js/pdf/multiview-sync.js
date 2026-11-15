@@ -1,4 +1,4 @@
-// MultiView Sync math (docs/MULTIVIEW.md). Pure: no DOM, no app state.
+// MultiView Sync math (docs/reference/editor/workspace.md). Pure: no DOM, no app state.
 //
 // the external editor: Synchronize Document matches views by page index; Synchronize Page
 // ignores the page index (it keeps the page offset the panes had when Sync

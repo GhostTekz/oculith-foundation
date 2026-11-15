@@ -1,4 +1,4 @@
-// Markup groups through real PDF bytes (docs/MARKUP-GROUPS.md). The
+// Markup groups through real PDF bytes (docs/reference/editor/markups-list.md). The
 // synthetic the external editor sheet (saver/test-fixtures/ext-fixture.mjs) has one the external editor
 // group: a rectangle (dominant, /GroupNesting) and a text box (/IRT + /RT
 // /Group). It is opened with the real load pipeline and saved with the real

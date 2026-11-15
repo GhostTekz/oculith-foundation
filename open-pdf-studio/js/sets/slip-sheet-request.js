@@ -1,5 +1,5 @@
 // Batch ▸ Slip Sheet runs the Sets panel's "Slip sheet…" flow
-// (docs/SLIP-SHEET.md). The command opens the panel and asks; the panel
+// (docs/reference/editor/sets-and-batch.md). The command opens the panel and asks; the panel
 // answers once it is mounted (at once when it already is).
 let pending = false;
 const listeners = new Set();

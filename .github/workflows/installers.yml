@@ -1,11 +1,14 @@
 name: Foundation installers
 
 # Run the expensive package matrix only for a reviewed candidate, on demand,
-# or weekly against main. Label events do not repeat on each PR push.
+# or for a merge to main. Label events do not repeat on each PR push.
+# A merge to main also publishes a release: the installers are stamped with
+# version <major>.<minor>.<run number>, the updater artefacts are signed, and
+# latest.json is attached, which installed copies check for updates.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '23 8 * * 1'
+  push:
+    branches: [main]
   pull_request:
     types: [labeled, ready_for_review]
 
@@ -34,6 +37,9 @@ jobs:
       # tesseract-rs hardcodes /MD. MSVC appends _CL_ after those flags, so
       # Windows C/C++ objects match the workspace's static Rust CRT.
       _CL_: ${{ matrix.bundle == 'nsis' && '/MT' || '' }}
+      # Release builds only (a push to main): sign the updater artefacts.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name == 'push' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ github.event_name == 'push' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
       # Keep the host display stack outside the Linux AppImage.
       LINUXDEPLOY_EXCLUDED_LIBRARIES: 'libwayland-client.so*;libwayland-cursor.so*;libwayland-egl.so*;libwayland-server.so*;libxkbcommon.so*;libxcb-randr.so*;libxcb-render.so*;libxcb-shm.so*;libXau.so*;libXdmcp.so*'
     steps:
@@ -48,6 +54,12 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 26
+      - name: Release version (push to main)
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          base=$(node -p "require('./open-pdf-studio/package.json').version.split('.').slice(0, 2).join('.')")
+          echo "OCUDRAW_RELEASE_VERSION=$base.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Verify public source boundary
         working-directory: open-pdf-studio
         run: node scripts/community-export-verify.mjs --published
@@ -244,3 +256,59 @@ jobs:
           path: target/community/release/bundle/
           if-no-files-found: error
           retention-days: 7
+
+  # A merge to main publishes the tested installers as the latest release.
+  publish:
+    needs: installers
+    if: github.event_name == 'push' && github.repository == 'GhostTekz/oculith-foundation'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: open-pdf-studio/package.json
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: foundation-*
+          path: dist
+      - name: Create the release with latest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base=$(node -p "require('./open-pdf-studio/package.json').version.split('.').slice(0, 2).join('.')")
+          version="$base.$GITHUB_RUN_NUMBER"
+          tag="v$version"
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$tag"
+          one() { find dist -type f -name "$1" -print -quit; }
+          # Release asset names have no spaces, so latest.json names them exactly.
+          mkdir out
+          put() { local name; name=$(basename "$1" | tr ' ' '.'); cp "$1" "out/$name"; echo "$name"; }
+          platforms='{}'
+          add() { # platform, updater file
+            local file="$2" name
+            test -n "$file" && test -s "$file.sig" || return 0
+            name=$(put "$file"); put "$file.sig" >/dev/null
+            platforms=$(jq --arg p "$1" --arg u "$url/$name" --arg s "$(cat "$file.sig")" \
+              '. + {($p): {url: $u, signature: $s}}' <<<"$platforms")
+          }
+          add windows-x86_64 "$(one '*-setup.exe')"
+          add linux-x86_64 "$(one '*.AppImage')"
+          add darwin-aarch64 "$(one '*.app.tar.gz')"
+          test "$(jq 'length' <<<"$platforms")" -ge 1
+          for extra in '*.deb' '*.zip'; do f=$(one "$extra"); [ -z "$f" ] || put "$f" >/dev/null; done
+          # Fixed names for download links: .../releases/latest/download/<name>
+          alias() { local f; f=$(one "$1"); [ -z "$f" ] || cp "$f" "out/$2"; }
+          alias '*-setup.exe' Oculith-Draw-Foundation-windows-x64-setup.exe
+          alias '*.deb' Oculith-Draw-Foundation-linux-amd64.deb
+          alias '*.AppImage' Oculith-Draw-Foundation-linux-x86_64.AppImage
+          alias '*.zip' Oculith-Draw-Foundation-macos-arm64.zip
+          jq -n --arg v "$version" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson p "$platforms" \
+            --arg n "Oculith Draw Foundation $version from $GITHUB_SHA." \
+            '{version: $v, notes: $n, pub_date: $d, platforms: $p}' > out/latest.json
+          gh release create "$tag" --target "$GITHUB_SHA" --latest --title "Oculith Draw Foundation $version" \
+            --notes "Built from $GITHUB_SHA by run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Installed copies update to this release." \
+            out/*

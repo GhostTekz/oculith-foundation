@@ -78,6 +78,7 @@ const PrintDialog = lazy(() => import('./dialogs/PrintDialog.jsx'));
 const CadExportDialog = lazy(() => import('./dialogs/CadExportDialog.jsx'));
 const CadImportDialog = lazy(() => import('./dialogs/CadImportDialog.jsx'));
 const BatchOpsDialog = lazy(() => import('./dialogs/BatchOpsDialog.jsx'));
+const AiConnectionsDialog = lazy(() => import('./dialogs/AiConnectionsDialog.jsx'));
 
 const DIALOG_MAP = {
   'doc-properties': DocPropertiesDialog,
@@ -147,6 +148,7 @@ const DIALOG_MAP = {
   'copy-to-pages': CopyToPagesDialog,
   'markup-name': MarkupNameDialog,
   'addon-tool-log': AddonToolLogDialog,
+  'ai-connections': AiConnectionsDialog,
   ...edition.dialogs,
 };
 

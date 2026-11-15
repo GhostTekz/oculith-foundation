@@ -1,4 +1,4 @@
-/* Manage Tool Sets and Add to Tool Chest (docs/TOOL-SET-SHARING.md). */
+/* Manage Tool Sets and Add to Tool Chest (docs/reference/editor/tool-chest.md). */
 .manage-tool-sets-dialog { min-width: min(640px, 94vw); }
 .add-to-tool-chest-dialog { min-width: min(360px, 94vw); }
 .mts-body { display: flex; flex-direction: column; gap: 8px; min-width: min(600px, 90vw); font-size: var(--ox-fs-xs, 12px); }

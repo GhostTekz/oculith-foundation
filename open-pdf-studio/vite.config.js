@@ -57,6 +57,10 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     chunkSizeWarningLimit: 6000,
+    // The PDF.js worker shim (js/pdf/pdfjs-worker-shim.js) reads the worker
+    // to load from its own URL's query; a data: URL has none, so it stays a
+    // file however small it is.
+    assetsInlineLimit: (filePath) => (/pdfjs-worker-shim\.js$/.test(filePath) ? false : undefined),
     rollupOptions: {
       output: {
         // Force .js extensions on entry chunks and dynamic-import chunks

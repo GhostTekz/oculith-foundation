@@ -23,6 +23,10 @@
 //             (a key range such as '1-0').
 //   sequence  a CAD command chord typed as separate letters ('T R'); not a
 //             simultaneous key combination, so it never clashes with 'T'.
+//   repeat    with run: a held key repeats the command (page turning).
+//   scope     with run: 'view' runs only while focus is in the document view
+//             (the canvas column, its Navigation bar) or nowhere in
+//             particular, so a focused list or panel keeps its own key.
 //
 // the external editor (an external publisher) bindings that this app cannot take, and why:
 //   H         the external editor: Highlight. Taken: H now selects Highlight (was Pan);
@@ -54,7 +58,7 @@
 //             L, R, E). Ctrl+0/1/2/5 stay view keys. While a length is typed
 //             (type-length input) digits still go to that input first.
 //
-// the external editor workspace shell keys (docs/WORKSPACE-SPEC.md §1.11), and the
+// the external editor workspace shell keys (docs/reference/editor/workspace.md), and the
 // clashes resolved for them:
 //   F9        the external editor: Menu Bar. Was snap to grid (AutoCAD); snap to grid stays
 //             on Ctrl+Shift+F9 (the external editor), Show Grid on Shift+F9 and F7.
@@ -84,7 +88,7 @@
 //   Ctrl+Tab, Ctrl+Shift+Tab  the external editor: next / previous document tab
 //             (DocumentTabs.jsx).
 //   Ctrl+1, Ctrl+2  the external editor: Switch split / Split Vertical; here still Fit
-//             Width / Fit Page. MultiView (docs/MULTIVIEW.md) takes the external editor's
+//             Width / Fit Page. MultiView (docs/reference/editor/workspace.md) takes the external editor's
 //             Ctrl+H (Split Horizontal) and Ctrl+Shift+2 (Unsplit); Split
 //             Vertical is Ctrl+Alt+2 (the external editor "2" plus Alt).
 //   Ctrl+Shift+P  Find Tools + Commands too (our addition, beside Ctrl+K).
@@ -169,7 +173,7 @@ export const SHORTCUTS = [
   { id: 'ungroup', keys: 'Ctrl+Shift+G', category: 'markup', command: 'ungroup' },
   { id: 'lock', keys: 'Ctrl+Shift+L', category: 'markup', command: 'toggleLock' },
   { id: 'formatPainter', keys: 'Ctrl+Shift+C', category: 'markup', command: 'formatPainter' },
-  // Edit menu completeness (docs/EDIT-TOOLS.md).
+  // Edit menu completeness (docs/reference/editor/markup-tools.md).
   { id: 'lasso', keys: 'Shift+O', category: 'tools', tool: 'lasso' },
   { id: 'offset', keys: 'O', category: 'tools', tool: 'offset' },
 
@@ -236,6 +240,12 @@ export const SHORTCUTS = [
   // Go to Sheet: main.js still blocks the webview's own Ctrl+J (its
   // downloads/console key); that only prevents the default, so this runs.
   { id: 'goToSheet', keys: 'Ctrl+J', category: 'view', builtin: true, run: 'view.goToSheet' },
+  // Page turning; the mouse wheel stays on the page by default
+  // (wheelChangesPage, js/pdf/wheel-page-turn.js).
+  { id: 'previousPage', label: 'common:commands.previousPage', keys: 'PageUp', category: 'view', builtin: true,
+    run: 'view.previousPage', repeat: true, scope: 'view' },
+  { id: 'nextPage', label: 'common:commands.nextPage', keys: 'PageDown', category: 'view', builtin: true,
+    run: 'view.nextPage', repeat: true, scope: 'view' },
   { id: 'nextDocument', keys: ['Ctrl+Tab', 'Ctrl+Shift+Tab'], display: 'Ctrl+(Shift+)Tab', category: 'view', builtin: true },
 
   // Workspace: panels (the external editor keys) and the menu bar mnemonics.
@@ -337,10 +347,24 @@ for (const entry of SHORTCUTS) {
  * as resolveShortcut: not while typing, not for a held key).
  */
 export function resolveRegistryShortcut(e) {
-  if (!e || e.repeat) return null;
+  if (!e) return null;
   if (isTextEntryTarget(e.target)) return null;
   const keys = eventKeys(e);
-  return keys ? _registryIndex.get(keys) || null : null;
+  const entry = keys ? _registryIndex.get(keys) || null : null;
+  if (!entry || (e.repeat && !entry.repeat)) return null;
+  if (entry.scope === 'view' && !inDocumentView(e.target)) return null;
+  return entry;
+}
+
+/**
+ * Focus in the document view: on the page, in the canvas column (with its
+ * Navigation bar), or nowhere in particular (body). A panel, list or dialog
+ * keeps its own PageUp / PageDown.
+ */
+export function inDocumentView(t) {
+  if (!t || t.tagName === 'BODY' || t.tagName === 'HTML') return true;
+  if (typeof t.closest !== 'function') return false;
+  return !!t.closest('.main-view') && !t.closest('[role="dialog"], .compare-view');
 }
 
 /** The plain single-letter entry for a letter ('c' → Cloud), or null. */

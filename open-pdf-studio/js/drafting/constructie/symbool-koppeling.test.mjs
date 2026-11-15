@@ -6,7 +6,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { defaultParams, getTemplate } from '../../symbols/registry.js';
-import { ASSISTANT_SKILLS, SKILLS_SYSTEM_PROMPT } from '../../assistant-skills.js';
 import { bouwConstructieplan } from './constructieplan.js';
 import { ontleedProfiel } from './draagstructuur.js';
 
@@ -71,15 +70,3 @@ test('elke stalen profielfamilie wijst naar een bestaand symbool met die maat', 
   }
 });
 
-test('de vaardigheid staat als chip in het paneel', () => {
-  const chip = ASSISTANT_SKILLS.find(s => s.id === 'structural-layout');
-  assert.ok(chip, 'de chip structural-layout ontbreekt');
-  assert.ok(chip.label && chip.hint && chip.invoke);
-  assert.equal(chip.needsInput, true);
-});
-
-test('de systeeminstructie noemt de opdracht en de eenheid', () => {
-  assert.match(SKILLS_SYSTEM_PROMPT, /app_structural_layout/);
-  assert.match(SKILLS_SYSTEM_PROMPT, /MILLIMETERS/);
-  assert.match(SKILLS_SYSTEM_PROMPT, /dryRun/);
-});

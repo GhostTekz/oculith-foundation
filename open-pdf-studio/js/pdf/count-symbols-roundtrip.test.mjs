@@ -44,7 +44,8 @@ if (napiCanvas) {
     break;
   }
 }
-const STANDARD_FONTS = fileURLToPath(new URL('../../node_modules/pdfjs-dist/standard_fonts/', import.meta.url));
+// PDF.js wants a trailing "/": a Windows path ends in "\\".
+const STANDARD_FONTS = fileURLToPath(new URL('../../node_modules/pdfjs-dist/standard_fonts/', import.meta.url)).replace(/\\/g, '/');
 
 async function save(bytes, annotations) {
   let saved;

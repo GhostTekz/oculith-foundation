@@ -1,4 +1,4 @@
-// externally marked PDFs (docs/MARKUP-INTEROP.md).
+// externally marked PDFs (docs/reference/editor/markup-interop.md).
 //
 // an external plan-review program writes markups with standard PDF keys plus its own private
 // keys (/FillOpacity, /BM, /GroupNesting, /SlopeType, /Measure extras, ...).

@@ -1,4 +1,4 @@
-// Edit-menu completeness (WP13, docs/EDIT-TOOLS.md): Lasso (Shift+O),
+// Edit-menu completeness (WP13, docs/reference/editor/markup-tools.md): Lasso (Shift+O),
 // Offset (O), Markup Selection Cycle (Shift+Space steps; a toggle turns the
 // repeated-click cycle on or off) and Undo History (Ctrl+Shift+H).
 

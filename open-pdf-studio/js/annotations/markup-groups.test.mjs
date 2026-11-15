@@ -1,4 +1,4 @@
-// Markup groups (docs/MARKUP-GROUPS.md): the external editor's Group, Ungroup, nesting,
+// Markup groups (docs/reference/editor/markups-list.md): the external editor's Group, Ungroup, nesting,
 // Remove Selected from Group, Remove Group Nesting, totals and category eyes
 // on the plain model.
 

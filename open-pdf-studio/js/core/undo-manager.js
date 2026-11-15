@@ -231,8 +231,9 @@ export async function undo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
-    await restorePageState(cmd.oldBytes, cmd.oldAnnotations, cmd.oldRotations, cmd.oldPage);
+    await restorePageState(cmd.oldBytes, cmd.oldAnnotations, cmd.oldRotations, cmd.oldPage, cmd.readBefore);
     applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, -1);
+    if (cmd.pageChange) await import('../pdf/page-changes.js').then((m) => m.announcePageChangeStep(cmd.pageChange, true));
     syncModifiedState();
     updateButtons();
     return;
@@ -328,8 +329,9 @@ export async function redo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
-    await restorePageState(cmd.newBytes, cmd.newAnnotations, cmd.newRotations, cmd.newPage);
+    await restorePageState(cmd.newBytes, cmd.newAnnotations, cmd.newRotations, cmd.newPage, cmd.readAfter);
     applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, 1);
+    if (cmd.pageChange) await import('../pdf/page-changes.js').then((m) => m.announcePageChangeStep(cmd.pageChange, false));
     syncModifiedState();
     updateButtons();
     return;
@@ -366,7 +368,7 @@ export async function redo() {
   refineAreasAfterHistory(cmd);
 }
 
-// Edit > Undo History (docs/EDIT-TOOLS.md): jump n steps back or forward.
+// Edit > Undo History (docs/reference/editor/markup-tools.md): jump n steps back or forward.
 // Exactly n single undo()/redo() calls, so the result equals pressing
 // Ctrl+Z / Ctrl+Y n times (page-structure steps included). Stops early when
 // the stack runs out. Returns the number of steps taken.
@@ -1217,5 +1219,11 @@ export function recordPageStructure(oldBytes, oldAnnotations, oldRotations, oldP
     newRotations: { ...rawOf(newRotations) },
     newPage: newPage,
     ...(extra.ocrShift ? { ocrShift: { ...extra.ocrShift, pages: [...extra.ocrShift.pages] } } : {}),
+    // Which page went where (page-changes.js): announced again on undo and redo.
+    ...(extra.pageChange ? { pageChange: extra.pageChange } : {}),
+    // The pages whose markups the model held before and after: on undo and
+    // redo the other pages are read from the restored file again.
+    ...(extra.readBefore ? { readBefore: [...extra.readBefore] } : {}),
+    ...(extra.readAfter ? { readAfter: [...extra.readAfter] } : {}),
   });
 }

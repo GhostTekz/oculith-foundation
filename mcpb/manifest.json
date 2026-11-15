@@ -73,22 +73,6 @@
       "description": "Merge one or more PDF files into the active document at the given position."
     },
     {
-      "name": "app_assistant_ask",
-      "description": "Submit a message into the app's assistant window as if the user typed it (opens the panel)."
-    },
-    {
-      "name": "app_assistant_pending",
-      "description": "Take the oldest assistant question waiting for an MCP client to answer (the relay provider)."
-    },
-    {
-      "name": "app_assistant_answer",
-      "description": "Answer a pending assistant question (id from app_assistant_pending)."
-    },
-    {
-      "name": "app_assistant_history",
-      "description": "Return the LIVE assistant conversation: { ok, messages:[{ role, content }] }."
-    },
-    {
       "name": "app_create_annotation",
       "description": "Create an annotation on the LIVE app's active document WITHOUT synthetic mouse input."
     },

@@ -74,3 +74,34 @@ test('package events are delivered only to their package and event name', async 
     stop();
   } finally { delete globalThis.window; }
 });
+
+test('call limits go to the native bridge, and its timeout keeps the timeout code', async () => {
+  const calls = [];
+  globalThis.window = { __TAURI__: { core: { invoke: async (command, args) => {
+    calls.push({ command, args });
+    if (args.method === 'slow') throw 'The edition helper did not answer slow within 2 s.';
+    if (args.method === 'quiet') throw 'The edition helper sent nothing for 3 s while running quiet.';
+    if (args.method === 'other') throw 'The key was refused.';
+    return { ok: true };
+  } } } };
+  try {
+    assert.deepEqual(await helperCall('ping', null, { timeoutMs: 1500, idleMs: 2500.2 }), { ok: true });
+    assert.deepEqual(await addonHelperCall('sample.tools', 'ping', null, { idleMs: 900 }), { ok: true });
+    assert.deepEqual(calls.map((c) => c.args), [
+      { method: 'ping', params: null, timeoutMs: 1500, idleMs: 2501 },
+      { packageId: 'sample.tools', method: 'ping', params: null, idleMs: 900 },
+    ]);
+    await assert.rejects(helperCall('slow', null, { timeoutMs: 2000 }), (e) => e.code === 'timeout' && /did not answer slow/.test(e.message));
+    await assert.rejects(helperCall('quiet', null, { idleMs: 3000 }), (e) => e.code === 'timeout' && /sent nothing/.test(e.message));
+    await assert.rejects(helperCall('other'), (e) => e === 'The key was refused.');
+  } finally { delete globalThis.window; }
+});
+
+test('a bridge that never answers still ends the call after its timeout', async () => {
+  globalThis.window = { __TAURI__: { core: { invoke: () => new Promise(() => {}) } } };
+  try {
+    const started = Date.now();
+    await assert.rejects(helperCall('hang', null, { timeoutMs: 50 }), (e) => e.code === 'timeout' && /did not answer hang/.test(e.message));
+    assert.ok(Date.now() - started < 3000);
+  } finally { delete globalThis.window; }
+});

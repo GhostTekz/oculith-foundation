@@ -1,4 +1,4 @@
-// Raceway branches in the open document (docs/RACEWAYS.md, Branches): the
+// Raceway branches in the open document (docs/reference/editor/raceways.md, Branches): the
 // junction of a branch run is derived from the runs as they are now, so a
 // moved or deleted parent, or a new opposite branch (tee → cross), shows at
 // the next redraw. When the junction no longer matches the run's takeoff

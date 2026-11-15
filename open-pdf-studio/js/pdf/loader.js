@@ -35,8 +35,13 @@ import { writeUntitledBacking } from './untitled-backing.js';
 import { getTemplateDirs } from './template-scope.js';
 import { sourceRenderRevision, sourceWriteActive } from './source-render-revision.js';
 import { isLargeOpen, openAnnotationWindow, pageTypeChunks, LARGE_FILE_BYTES, RANGE_OPEN_BYTES } from './large-open.js';
+import { closePageReaders, memoryRangeSource, readerFonts, readerImages } from './page-readers.js';
+
+export { closePageReaders };
 import { yieldToMain } from '../core/yield-to-main.js';
+import { $RAW } from 'solid-js/store';
 import { noteActivity } from './pdfjs-idle-cleanup.js';
+import { pdfjsWorkerSrc } from './pdfjs-worker-src.js';
 import { FileRangeSource, createRangeTransport, onRangeSourceFailed, RANGE_CHUNK_BYTES } from './file-range.js';
 
 
@@ -135,19 +140,29 @@ export function forgetPdfRangeSource(doc) {
 
 /**
  * Further PDF.js documents of `doc`'s file, each with its own worker, for
- * reading many pages at once (a scan of the whole set). Only over the
- * file's range source (no copy of the file in memory) and only while the
- * open document is that file, page for page; none otherwise. The caller
- * destroys them when done.
+ * reading many pages at once (a scan of the whole set). Over the file's
+ * range source (no copy of the file in memory); with `memory`, a file read
+ * whole is read by range over its bytes in memory instead (each reader
+ * holds what it reads of it); only while the open document is that file,
+ * page for page; none otherwise. `fontFaces` false: readers that are never
+ * drawn, whose fonts are not installed in the window (their text and
+ * operator lists are the same; installing each page's fonts is most of
+ * what reading a page's line work costs the window's thread). `images`
+ * false: readers whose operator lists leave out the images, which are
+ * never decoded (readerImages). The caller closes them with
+ * closePageReaders when done.
  */
-export async function openPageReaders(doc, count) {
-  const source = doc?._rangeSource;
+export async function openPageReaders(doc, count, { fontFaces = true, memory = false, images = true } = {}) {
+  const ranged = doc?._rangeSource;
+  const bytes = !ranged && memory && doc?.filePath ? originalBytesCache.get(doc.filePath) : null;
+  const source = ranged || (bytes?.length ? memoryRangeSource(bytes) : null);
   if (!source || !doc.pdfDoc || !(count > 0)) return [];
+  const pdfDoc = doc.pdfDoc;
   const readers = [];
   for (let k = 0; k < count; k++) {
     try {
-      const reader = await pdfjsLib.getDocument(pdfjsRangeParams(source)).promise;
-      if (reader.numPages !== doc.pdfDoc.numPages || doc._rangeSource !== source) { void reader.destroy(); break; }
+      const reader = await pdfjsLib.getDocument({ ...pdfjsRangeParams(source), ...readerFonts(fontFaces), ...readerImages(images) }).promise;
+      if (reader.numPages !== pdfDoc.numPages || doc.pdfDoc !== pdfDoc || (ranged && doc._rangeSource !== ranged)) { closePageReaders([reader]); break; }
       readers.push(reader);
     } catch {
       break;
@@ -223,17 +238,8 @@ export function clearCachedPdfBytes(filePath) {
   }
 }
 
-// Set worker source (path relative to HTML file, not this module)
-// Dev: Vite herschrijft de new URL(...)-vorm naar een /@fs/-URL en die valt
-// onder server.fs.allow — een verse webview (zonder cache) krijgt daar 403 op,
-// waarna PDF.js' fake-worker-fallback op dezelfde 403 strandt en getDocument
-// nooit resolvet (document laadt nooit). Het kale /node_modules/-pad wordt
-// altijd geserveerd, dus gebruik dat in dev; prod houdt de asset-URL (de
-// worker wordt door rollup als asset geëmit — zie assetFileNames in
-// vite.config.js).
-pdfjsLib.GlobalWorkerOptions.workerSrc = import.meta.env?.DEV
-  ? '/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'
-  : new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url).href;
+// PDF.js's worker, started through the WebKitGTK guard (pdfjs-worker-src.js).
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc();
 
 /**
  * Wrap doc.pdfDoc.getPage with a recovery layer that re-loads the doc when
@@ -735,6 +741,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
     }
     console.log(`[PERF] bookmarks DONE: ${(performance.now() - _t0).toFixed(0)}ms`);
 
+    const catalogReads = [];
     // Catalog fields (line-style presets, Tool Chest sequence counters, the
     // Markups List columns, spaces, scale viewports): read once with pdf-lib
     // (pdf-lib-catalog.js, in the worker where there is one) and applied
@@ -742,15 +749,15 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
     // ran is kept.
     {
       if (!Array.isArray(doc.stylePresets)) doc.stylePresets = [];
-      pdfLibCatalog(doc).then((catalog) => {
+      catalogReads.push(pdfLibCatalog(doc).then((catalog) => {
         if (isClosed() || !catalog) return;
         if (catalog.stylePresets?.length > 0) doc.stylePresets = catalog.stylePresets;
-      }).catch(() => { /* presets zijn optioneel — negeer leesfouten */ });
+      }).catch(() => { /* presets zijn optioneel — negeer leesfouten */ }));
     }
     // Tool Chest sequence counters (OPS_ToolSequences): a reopened PDF
     // continues D-01, D-02, ... A placement made while the catalog was still
     // loading keeps the higher value.
-    pdfLibCatalog(doc).then((catalog) => {
+    catalogReads.push(pdfLibCatalog(doc).then((catalog) => {
       if (isClosed() || !catalog) return;
       const fromFile = catalog.toolSequences || {};
       const current = doc.toolSequences && typeof doc.toolSequences === 'object' ? doc.toolSequences : {};
@@ -758,10 +765,10 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
         if (!Number.isInteger(current[key]) || current[key] < next) current[key] = next;
       }
       doc.toolSequences = current;
-    }).catch(() => { /* Optional metadata cannot block PDF loading. */ });
+    }).catch(() => { /* Optional metadata cannot block PDF loading. */ }));
     // The Markups List columns, status set, Custom Captions and assemblies.
     // A user may have named a column while the catalog was still loading.
-    pdfLibCatalog(doc).then(async (catalog) => {
+    catalogReads.push(pdfLibCatalog(doc).then(async (catalog) => {
       if (isClosed() || !catalog) return;
       applyMarkupColumns(doc, catalog);
       if (doc.assemblies == null) doc.assemblies = catalog.assemblies;
@@ -774,10 +781,10 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
           if (!isClosed() && isActive()) (doc.viewMode === 'continuous' ? redrawContinuous : redrawAnnotations)();
         }
       }
-    }).catch(() => { /* Optional metadata cannot block PDF loading. */ });
+    }).catch(() => { /* Optional metadata cannot block PDF loading. */ }));
     // An add-on reads its catalog data only when one of its declared keys is
     // present. It owns how that state joins an already opened document.
-    pdfLibCatalog(doc).then(async (catalog) => {
+    catalogReads.push(pdfLibCatalog(doc).then(async (catalog) => {
       if (isClosed() || !catalog || !edition.pdf?.readWorkspace) return;
       const keys = edition.pdf.catalogKeys;
       if (Array.isArray(keys) && !keys.some((key) => catalog.catalogKeys?.includes(key))) {
@@ -791,12 +798,12 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
         const { updateAnnotationsList } = await import('../ui/panels/annotations-list.js');
         if (!isClosed()) updateAnnotationsList();
       }
-    }).catch(() => { /* Optional metadata cannot block PDF loading. */ });
+    }).catch(() => { /* Optional metadata cannot block PDF loading. */ }));
 
     // Spaces (/OPS_Spaces per page) into doc.spaces. Until then the saver
     // keeps the file's spaces (spaces/pdf-spaces.js).
     doc._spacesRead = false;
-    pdfLibCatalog(doc).then(async (catalog) => {
+    catalogReads.push(pdfLibCatalog(doc).then(async (catalog) => {
       if (isClosed() || !catalog) return;
       const { takeOverSpaces } = await import('../spaces/model.js');
       if (isClosed()) return;
@@ -805,7 +812,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
         if (isClosed()) return;
         if (doc.viewMode === 'continuous') m.redrawContinuous(); else m.redrawAnnotations();
       }
-    }).catch(() => { /* Optional metadata cannot block PDF loading. */ });
+    }).catch(() => { /* Optional metadata cannot block PDF loading. */ }));
 
     // Meetschalen uit de PDF zelf (/VP + /Measure): CAD-plots en de DWG/DXF-
     // import brengen ze mee, zodat de maatvoering meteen klopt (#400). Alleen
@@ -818,7 +825,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
     // Daarna pas de oude documentschaal uit localStorage: die gaat naar de
     // pagina's zonder paginaschaal (migrateDocumentScale). Lukt het lezen
     // niet, dan blijft hij zoals vroeger de schaal van het hele document.
-    import('./pdf-viewports.js').then(async ({ beginViewportLezing, rondViewportLezingAf }) => {
+    catalogReads.push(import('./pdf-viewports.js').then(async ({ beginViewportLezing, rondViewportLezingAf }) => {
       if (isClosed()) return;
       const kenmerk = beginViewportLezing(doc);
       let paginaAantal = 0;
@@ -844,7 +851,11 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
       if (isClosed()) return;
       migrateDocumentScale(doc, paginaAantal);
       if (isActive()) updateAllStatus();
-    }).catch(() => { /* viewports zijn optioneel — negeer leesfouten */ });
+    }).catch(() => { /* viewports zijn optioneel — negeer leesfouten */ }));
+    // A save waits for these reads (pdf/saver.js): one started before they
+    // land would take a model they are still filling in, and their arrival
+    // would read as an edit made during the save.
+    doc._catalogApplied = Promise.all(catalogReads).then(() => {});
 
     // Look for a drawing scale ("1:100") in the page text if no scale is set
     // (fire-and-forget). This is only a suggestion: it is kept on the
@@ -1324,19 +1335,24 @@ export function cancelAnnotationLoading(doc) {
   }
   if (!doc) return;
   doc._annotationLoadId++;
+  // Page loads already running belong to the old pages (ensureAnnotationsForPage).
+  doc._annotationPagesEpoch = (doc._annotationPagesEpoch || 0) + 1;
   doc._loadedAnnotationPages.clear();
   if (doc._annotationPagesReady) doc._annotationPagesReady.clear();
   doc._pagesNeedingColorUpdate.clear();
   forgetPdfLibReads(doc);
+  notePagesChanged(doc);
 }
 
-// Mark all annotation pages as loaded (prevents background loader from overwriting after page ops)
-export function markAllAnnotationPagesLoaded(numPages, doc) {
+// Mark these pages' markups as read: their markups are in the model (after a
+// page change, page-manager.js). Other pages are read when shown, and until
+// then a save keeps their markups as the file has them.
+export function markAnnotationPagesLoaded(pages, doc) {
   if (!doc) {
     doc = getActiveDocument();
   }
   if (!doc) return;
-  for (let i = 1; i <= numPages; i++) {
+  for (const i of pages) {
     doc._loadedAnnotationPages.add(i);
     if (doc._annotationPagesReady) doc._annotationPagesReady.add(i);
   }
@@ -1679,7 +1695,7 @@ function ownListSource(doc, page) {
 
 // Load annotations for a single page on-demand (called when user navigates to a page)
 // If waitForColors=false, skips color extraction when pdf-lib isn't ready yet
-async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false) {
+async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false, epoch = doc?._annotationPagesEpoch || 0) {
   if (!doc || !doc.pdfDoc) return;
   const _sp0 = performance.now();
   // PDF.js keeps what it parses for this: freed after a quiet spell.
@@ -1765,10 +1781,12 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
   if (!state.documents.includes(doc)) return;
 
   const stampImageMap = await pageStampImages(doc, page, viewport, annotations, pageNum, data);
+  // The pages changed meanwhile: these markups belong to the old file.
+  if (epoch !== (doc._annotationPagesEpoch || 0)) return;
 
   const _cv0 = performance.now();
   const pushed = await _convertAndPushAnnotations(annotations, pageNum, viewport, stampImageMap, annotColorMap, doc,
-    { onStep: perfRecord });
+    { onStep: perfRecord, stillCurrent: () => state.documents.includes(doc) && epoch === (doc._annotationPagesEpoch || 0) });
   refineLoadedAreas(pushed);
   console.log(`[PERF] page ${pageNum}: convertAnnotations (${annotations.length}): ${(performance.now() - _cv0).toFixed(0)}ms`);
   console.log(`[PERF] page ${pageNum}: TOTAL: ${(performance.now() - _sp0).toFixed(0)}ms`);
@@ -1792,10 +1810,17 @@ export async function ensureAnnotationsForPage(pageNum, doc) {
     doc = getActiveDocument();
   }
   if (!doc) return;
+  // A page change (cancelAnnotationLoading) during this load gives the page
+  // number to another page: then this load neither adds its markups nor
+  // marks that page as read.
+  const epoch = doc._annotationPagesEpoch || 0;
   // A load of this page already running (renderPage starts it next to the
   // page render): wait for that one, so the caller sees the annotations.
+  // One that started before a page change read another page of the old
+  // file, and may never finish (the old PDF.js document is destroyed under
+  // it): this page is read anew.
   const lopend = annotationPageLoads.get(doc)?.get(pageNum);
-  if (lopend) return lopend;
+  if (lopend?.epoch === epoch) return lopend.wait;
   if (doc._loadedAnnotationPages.has(pageNum)) {
     return;
   }
@@ -1803,23 +1828,52 @@ export async function ensureAnnotationsForPage(pageNum, doc) {
   const _ea0 = performance.now();
   console.log(`[PERF] ensureAnnotationsForPage(${pageNum}) START`);
   const laden = (async () => {
-    await loadAnnotationsForSinglePage(doc, pageNum, false);
+    await loadAnnotationsForSinglePage(doc, pageNum, false, epoch);
+    if (epoch !== (doc._annotationPagesEpoch || 0)) return;
     // Pas nu staan de annotaties echt in het model; eerder mag de saver
     // deze pagina niet als 'geladen' behandelen (dataverlies-wachter).
     if (doc._annotationPagesReady) doc._annotationPagesReady.add(pageNum);
     console.log(`[PERF] ensureAnnotationsForPage(${pageNum}) DONE: ${(performance.now() - _ea0).toFixed(0)}ms`);
   })();
+  // Its callers go on at a page change: the load then adds nothing.
+  const entry = { epoch, wait: Promise.race([laden, pagesChangedAfter(doc, epoch)]) };
   if (!annotationPageLoads.has(doc)) annotationPageLoads.set(doc, new Map());
-  annotationPageLoads.get(doc).set(pageNum, laden);
+  annotationPageLoads.get(doc).set(pageNum, entry);
   try {
-    await laden;
+    await entry.wait;
   } finally {
-    annotationPageLoads.get(doc)?.delete(pageNum);
+    const loads = annotationPageLoads.get(doc);
+    if (loads?.get(pageNum) === entry) loads.delete(pageNum);
     noteAnnotationsRead(doc, pageNum);
   }
 }
-// Running annotation loads per document and page (ensureAnnotationsForPage).
+// Running annotation loads per document and page (ensureAnnotationsForPage):
+// { epoch, wait }.
 const annotationPageLoads = new WeakMap();
+
+// Per document: settles at its next page change (cancelAnnotationLoading).
+// Keyed by the raw document: the store hands out a proxy of the same one.
+const pageChanges = new WeakMap();
+const rawDoc = (doc) => doc?.[$RAW] || doc;
+
+function pagesChangedAfter(doc, epoch) {
+  if (epoch !== (doc._annotationPagesEpoch || 0)) return Promise.resolve();
+  const key = rawDoc(doc);
+  let change = pageChanges.get(key);
+  if (!change) {
+    let resolve;
+    change = { promise: new Promise((r) => { resolve = r; }), resolve };
+    pageChanges.set(key, change);
+  }
+  return change.promise;
+}
+
+function notePagesChanged(doc) {
+  const key = rawDoc(doc);
+  const change = pageChanges.get(key);
+  pageChanges.delete(key);
+  change?.resolve();
+}
 
 // Per document and page: settles once the page's annotation list was read
 // (from PDF.js or the pdf-lib worker), or its load ended. The text layer
@@ -1869,11 +1923,15 @@ export function annotationSheetsLoaded(doc = getActiveDocument()) {
  * whole-drawing work). `onProgress({ loaded, total })` after each sheet.
  */
 export async function ensureAllAnnotations(doc = getActiveDocument(), { onProgress } = {}) {
-  const total = doc?.pdfDoc?.numPages || 0;
-  for (let p = 1; p <= total; p++) {
+  for (let p = 1; ; p++) {
     if (!state.documents.includes(doc) || !doc.pdfDoc) return;
+    if (p > doc.pdfDoc.numPages) break;
     if (doc._annotationPagesReady?.has(p)) continue;
+    const epoch = doc._annotationPagesEpoch || 0;
     await ensureAnnotationsForPage(p, doc);
+    // The pages changed during this read: the pages read before stay read
+    // on their new numbers; go over the new pages again for the rest.
+    if (epoch !== (doc._annotationPagesEpoch || 0)) { p = 0; continue; }
     onProgress?.(annotationSheetsLoaded(doc));
   }
   const { updateAnnotationsList } = await import('../ui/panels/annotations-list.js');
@@ -2002,7 +2060,11 @@ export async function loadExistingAnnotations(doc) {
       stampImageMap = await pageStampImages(doc, pages[i], viewport, annotations, pageNum, data);
       if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
 
-      refineLoadedAreas(await _convertAndPushAnnotations(annotations, pageNum, viewport, stampImageMap, annotColorMap, doc));
+      const current = () => loadId === doc._annotationLoadId && state.documents.includes(doc);
+      refineLoadedAreas(await _convertAndPushAnnotations(annotations, pageNum, viewport, stampImageMap, annotColorMap, doc,
+        { stillCurrent: current }));
+      // Cancelled meanwhile (a page change): this page's markups were not added.
+      if (!current()) return;
       if (doc._annotationPagesReady) doc._annotationPagesReady.add(pageNum);
     }
   }
@@ -2019,19 +2081,6 @@ export async function loadExistingAnnotations(doc) {
         await new Promise(r => setTimeout(r, 0));
         if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
 
-        // Named viewports are /VP entries, not /Annots. Dropping every model
-        // object on this page would erase them when the color pass reloads.
-        const keptViewports = doc.annotations.filter(a => a.page === pageNum && a.type === 'scaleRegion');
-        doc.annotations = doc.annotations.filter(a => a.page !== pageNum);
-        const restoreViewports = () => {
-          if (!keptViewports.length) return;
-          const ids = new Set(doc.annotations.map(a => a.id));
-          for (const region of keptViewports) {
-            if (!ids.has(region.id)) doc.annotations.push(region);
-          }
-          invalidateScaleRegionCache();
-        };
-
         // Reload with full color data
         const page = await pdfDoc.getPage(pageNum);
         if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
@@ -2039,7 +2088,7 @@ export async function loadExistingAnnotations(doc) {
         const annotations = await pageAnnotations(page);
         if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
 
-        if (annotations.length === 0) { restoreViewports(); continue; }
+        if (annotations.length === 0) continue;
 
         const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'Link'].includes(a.subtype));
 
@@ -2047,8 +2096,19 @@ export async function loadExistingAnnotations(doc) {
         const annotColorMap = data?.colors || null;
         const stampImageMap = await pageStampImages(doc, page, viewport, annotations, pageNum, data);
 
-        refineLoadedAreas(await _convertAndPushAnnotations(annotations, pageNum, viewport, stampImageMap, annotColorMap, doc));
-        restoreViewports();
+        // The page's markups are swapped for the coloured ones in one step,
+        // right before the push: until then the page keeps its markups, so a
+        // save or a page change meanwhile never sees the page read and empty.
+        // Named viewports are /VP entries, not /Annots: they stay.
+        const pushed = await _convertAndPushAnnotations(annotations, pageNum, viewport, stampImageMap, annotColorMap, doc, {
+          stillCurrent: () => loadId === doc._annotationLoadId && state.documents.includes(doc),
+          beforePush: () => {
+            doc.annotations = doc.annotations.filter(a => a.page !== pageNum || a.type === 'scaleRegion');
+          },
+        });
+        if (!pushed) break;
+        refineLoadedAreas(pushed);
+        invalidateScaleRegionCache();
       }
       doc._pagesNeedingColorUpdate.clear();
     }

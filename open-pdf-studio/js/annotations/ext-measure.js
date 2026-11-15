@@ -1,5 +1,5 @@
 // A measurement read from an external editor markup keeps the external editor's scale (/Measure on the
-// markup, docs/MARKUP-INTEROP.md). Editing its shape recomputes the value with
+// markup, docs/reference/editor/markup-interop.md). Editing its shape recomputes the value with
 // that scale, not with the page scale, and the text keeps the external editor's format.
 // The scale is labelled "from the file scale": an explicit source, but the external editor's.
 
