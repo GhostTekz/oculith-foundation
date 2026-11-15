@@ -1,4 +1,5 @@
 import { perfRecord } from '../core/perf.js';
+import { writeDocumentFile } from '../core/document-file-events.js';
 import { $RAW } from 'solid-js/store';
 import { state, getActiveDocument } from '../core/state.js';
 import { ifcCategoryForAnnotationType } from '../solid/data/ifcCategoryMap.js';
@@ -3612,19 +3613,21 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null) {
       try {
         if (!stillCurrent() || !editsUnchanged()) throw changedDuringSave();
         const _svWrite = performance.now();
-        if (increment) {
-          try {
-            await appendBinaryFileAtomic(outputPath, existingPdfBytes, increment);
-          } catch (appendErr) {
-            if (!String(appendErr?.message || appendErr).includes('append-mismatch')) throw appendErr;
-            // The file on disk is not the one this save started from: write
-            // the whole result, as a full save would.
-            console.warn('[saver] file changed on disk; writing the whole file instead of appending');
+        await writeDocumentFile(isTauri() ? { documentId: activeDoc?.id, path: outputPath } : null, async () => {
+          if (increment) {
+            try {
+              await appendBinaryFileAtomic(outputPath, existingPdfBytes, increment);
+            } catch (appendErr) {
+              if (!String(appendErr?.message || appendErr).includes('append-mismatch')) throw appendErr;
+              // The file on disk is not the one this save started from: write
+              // the whole result, as a full save would.
+              console.warn('[saver] file changed on disk; writing the whole file instead of appending');
+              await writeBinaryFileAtomic(outputPath, savedBytes);
+            }
+          } else {
             await writeBinaryFileAtomic(outputPath, savedBytes);
           }
-        } else {
-          await writeBinaryFileAtomic(outputPath, savedBytes);
-        }
+        });
         perfRecord('save.write', performance.now() - _svWrite);
         _svAfter = performance.now();
       } catch (writeErr) {

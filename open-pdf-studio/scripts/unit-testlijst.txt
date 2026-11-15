@@ -55,6 +55,7 @@ js/pdf/saver/text-edits-save.test.mjs
 js/pdf/tile-cache.test.mjs
 js/ui/panels/markup-virtual-rows.test.mjs
 js/core/atomic-write.test.mjs
+js/core/document-file-events.test.mjs
 scripts/test-nen-ifc-map.mjs
 scripts/test-systeemraster.mjs
 js/drafting/tekeningtype.test.mjs

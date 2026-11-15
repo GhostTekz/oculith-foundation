@@ -1,4 +1,5 @@
 import { perfRecord } from '../core/perf.js';
+import { notifyDocumentFileChanged } from '../core/document-file-events.js';
 import { state, getNextUntitledName, getActiveDocument } from '../core/state.js';
 import { clearUndoHistory } from '../core/undo-stacks.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
@@ -501,6 +502,9 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
       ? pdfjsRangeParams(rangeSource)
       : { ...PDFJS_OPTIONS, data: typedArray }).promise;
     if (isClosed()) return;
+    if (filePath && isTauri() && !filePath.startsWith('__memory__')) {
+      notifyDocumentFileChanged({ documentId: doc.id, path: filePath, reason: 'loaded' });
+    }
     console.log(`[PERF] PDF.js getDocument done: ${(performance.now() - _t0).toFixed(0)}ms, pages: ${doc.pdfDoc.numPages}`);
     perfRecord('open.pdfjs', performance.now() - _t0);
     const largeOpen = isLargeOpen({ numPages: doc.pdfDoc.numPages, byteLength: fileBytes });

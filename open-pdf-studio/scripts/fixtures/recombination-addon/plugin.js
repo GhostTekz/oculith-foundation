@@ -29,6 +29,8 @@ export function createEdition() {
   return {
     apiVersion: 1,
     id: 'sample-addon',
+    electricalSymbols: [],
+    constructionSymbols: [],
     productName: 'Oculith Draw Sample',
     logoPath: '/community-icon.svg',
     faviconPath: 'community-icon.svg',

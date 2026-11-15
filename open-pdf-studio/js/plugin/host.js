@@ -34,6 +34,7 @@ const MODULES = {
   'js/core/platform.js': () => import('../core/platform.js'),
   'js/core/edition-helper.js': () => import('../core/edition-helper.js'),
   'js/core/perf.js': () => import('../core/perf.js'),
+  'js/core/document-file-events.js': () => import('../core/document-file-events.js'),
   'js/core/default-author.js': () => import('../core/default-author.js'),
   'js/core/state.js': () => import('../core/state.js'),
   'js/core/stores/selection-helpers.js': () => import('../core/stores/selection-helpers.js'),
