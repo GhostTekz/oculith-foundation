@@ -43,6 +43,10 @@ The inventory includes platform-specific optional packages that may not be
 present in every desktop bundle. Changes to the dependency lockfile require
 review and regeneration of this inventory and its copied notices.
 
+Area cutouts use polygon-clipping 0.15.7 and its locked dependencies,
+robust-predicates and splaytree. Their MIT and Unlicense texts are retained
+under `npm/`; splaytree's full MIT notice is in its copied `Readme.md`.
+
 The `@crabnebula/tauri-plugin-drag` 2.1.0 npm archive has no license field or
 license file. Its `npm/@crabnebula/tauri-plugin-drag/` directory contains the
 upstream repository's `LICENSE.spdx`, `LICENSE_MIT`, and `LICENSE_APACHE-2.0`

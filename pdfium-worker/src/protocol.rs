@@ -33,6 +33,9 @@ pub enum Request {
         region_y_pt: f32,
         region_w_pt: f32,
         region_h_pt: f32,
+        /// Pixel rectangle within the original region, preserving its transform.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pixel_clip: Option<[u32; 4]>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         ocg_visibility: Vec<LayerVisibility>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,6 +65,8 @@ pub enum Response {
         annot_appearance: bool,
         #[serde(default)]
         annot_appearance_index: bool,
+        #[serde(default)]
+        region_pixel_clip: bool,
     },
     RenderOk { id: u64, ok: bool, w: u32, h: u32, shm_bytes: u64 },
     RenderErr { id: u64, ok: bool, error: String },

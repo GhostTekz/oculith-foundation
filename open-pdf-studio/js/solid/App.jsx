@@ -41,7 +41,7 @@ import { state } from '../core/state.js';
 import { edition } from '../editions/active.js';
 import { meldLegeStart, WEB_SESSIE_SLEUTEL } from '../core/sessie-herstel.js';
 import { For, ErrorBoundary, Show, createEffect, createSignal, lazy } from 'solid-js';
-import { compareActive } from '../compare/compare-store.js';
+import { compareActive, compareFocused } from '../compare/compare-store.js';
 
 // Compare mode is rare: its view (and the compare engine it pulls in) loads
 // the first time a comparison starts, then stays mounted.
@@ -85,7 +85,7 @@ function DesktopApp() {
   createEffect(() => { if (compareActive()) setCompareUsed(true); });
 
   return (
-    <>
+    <div class="desktop-workspace" classList={{ 'comparison-focused': compareFocused() }}>
       <MenuBar />
 
       {/* Workflow tabs, their tools and Quick Access (the 'standard' toolbar). */}
@@ -188,7 +188,7 @@ function DesktopApp() {
       <SketchModeBar />
       <TourCoach />
       <TooltipLayer />
-    </>
+    </div>
   );
 }
 

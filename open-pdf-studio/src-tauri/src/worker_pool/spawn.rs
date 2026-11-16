@@ -16,6 +16,7 @@ pub async fn spawn_worker(worker: Arc<WorkerState>, exe_path: &std::path::Path) 
     worker.supports_ocg_visibility.store(false, std::sync::atomic::Ordering::Release);
     worker.supports_annot_appearance.store(false, std::sync::atomic::Ordering::Release);
     worker.supports_annot_appearance_index.store(false, std::sync::atomic::Ordering::Release);
+    worker.supports_region_pixel_clip.store(false, std::sync::atomic::Ordering::Release);
 
     // Namespace SHM by THIS app process's PID so a detached document window
     // running as its own process spawns workers with distinct SHM files
@@ -64,6 +65,10 @@ pub async fn spawn_worker(worker: Arc<WorkerState>, exe_path: &std::path::Path) 
     );
     worker.supports_annot_appearance_index.store(
         ready["annot_appearance_index"].as_bool() == Some(true),
+        std::sync::atomic::Ordering::Release,
+    );
+    worker.supports_region_pixel_clip.store(
+        ready["region_pixel_clip"].as_bool() == Some(true),
         std::sync::atomic::Ordering::Release,
     );
 

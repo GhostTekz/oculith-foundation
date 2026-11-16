@@ -242,7 +242,7 @@ function pickForSheet(notes, pageWidthPt, pageHeightPt) {
 // ── Text placement ───────────────────────────────────────────────────────────
 
 /**
- * PDF.js text items in page space: {str, x, y, width, height, vertical}.
+ * PDF.js text items in page space: {str, x, y, width, height, baseline, vertical}.
  * `viewport` is a PDF.js PageViewport at scale 1 (with the page rotation the
  * app uses); its convertToViewportPoint maps user space to page space.
  * @param {Array<{str:string, transform:number[], width:number, height:number}>} items
@@ -269,6 +269,7 @@ export function placeTextItems(items, viewport) {
     out.push({
       str, x: Math.min(...xs), y: Math.min(...ys),
       width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys),
+      baseline: (p0[1] + p1[1]) / 2,
       vertical: w > 0 && Math.abs(dir[1]) > Math.abs(dir[0]),
     });
   }
@@ -315,9 +316,15 @@ export function textLines(items) {
   const rows = [];
   for (const item of horizontal) {
     const cy = item.y + item.height / 2;
-    const row = rows.find(r => Math.abs(r.cy - cy) <= 0.45 * Math.max(r.h, item.height));
+    // A larger view identifier can sit between a title and its scale note.
+    // Matching box centers joins "1" to "1/8\"", creating a false 1 1/8 scale.
+    // PDF text has a real baseline; use it even when adjacent fonts differ.
+    // OCR and older placed-item callers retain the box-based fallback.
+    const row = rows.find(r => Number.isFinite(r.baseline) && Number.isFinite(item.baseline)
+      ? Math.abs(r.baseline - item.baseline) <= 0.2 * Math.min(r.h, item.height)
+      : Math.abs(r.cy - cy) <= 0.45 * Math.max(r.h, item.height));
     if (row) row.items.push(item);
-    else rows.push({ cy, h: item.height, items: [item] });
+    else rows.push({ cy, baseline: item.baseline, h: item.height, items: [item] });
   }
   const lines = [];
   const build = (list) => {

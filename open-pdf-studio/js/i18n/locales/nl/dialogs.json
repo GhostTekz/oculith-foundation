@@ -561,6 +561,10 @@
   "signatureVerification": {
     "checking": "Digitale handtekeningen controleren…",
     "barLabel": "Digitale handtekeningen",
+    "unsignedFieldsSummary_one": "{{count}} niet-ondertekend handtekeningveld",
+    "unsignedFieldsSummary_other": "{{count}} niet-ondertekende handtekeningvelden",
+    "showUnsignedFields": "Velden tonen",
+    "hideUnsignedFields": "Velden verbergen",
     "listError": "De handtekeningen konden niet worden gecontroleerd: {{detail}}",
     "documentTimestamp": "Documenttijdstempel",
     "documentTimestampBy": "Documenttijdstempel ({{tsa}})",

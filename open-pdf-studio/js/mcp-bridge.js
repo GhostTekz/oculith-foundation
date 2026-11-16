@@ -333,13 +333,13 @@ async function handleMouseClick(params) {
 
   if (buttonName === 'right') {
     target.dispatchEvent(new MouseEvent('contextmenu',
-      makeMouseInit(x, y, { button, buttons: 0 })));
+      makeMouseInit(x, y, { ...mods, button, buttons: 0 })));
   } else {
     target.dispatchEvent(new MouseEvent('click',
-      makeMouseInit(x, y, { button, buttons: 0, detail: double ? 2 : 1 })));
+      makeMouseInit(x, y, { ...mods, button, buttons: 0 })));
     if (double) {
       target.dispatchEvent(new MouseEvent('dblclick',
-        makeMouseInit(x, y, { button, buttons: 0, detail: 2 })));
+        makeMouseInit(x, y, { ...mods, button, buttons: 0 })));
     }
   }
   return { ok: true, x, y, button: buttonName, double, target: describeTarget(target) };
@@ -513,9 +513,14 @@ async function handleType(params) {
           const pos = start + ch.length;
           try { target.setSelectionRange(pos, pos); } catch { /* readonly */ }
         } else {
-          // contentEditable: insert via execCommand fallback.
-          if (typeof document.execCommand === 'function') {
-            document.execCommand('insertText', false, ch);
+          // WebKit can refuse rich-text insertion while its window is in
+          // the background. Do not report characters that never reached
+          // the editor, or dispatch an input event for that failed edit.
+          if (typeof document.execCommand !== 'function' ||
+              !document.execCommand('insertText', false, ch)) {
+            target.dispatchEvent(new KeyboardEvent('keyup', init));
+            return { ok: false, error: 'Rich-text insertion was refused; focus the editor window and retry.',
+              typed, target: describeTarget(target), editable: true };
           }
         }
         target.dispatchEvent(new InputEvent('input', {
@@ -523,7 +528,9 @@ async function handleType(params) {
           inputType: 'insertText', data: ch,
         }));
       } catch (e) {
-        // best-effort: continue typing
+        target.dispatchEvent(new KeyboardEvent('keyup', init));
+        return { ok: false, error: 'Text insertion failed.',
+          typed, target: describeTarget(target), editable: true };
       }
     }
     target.dispatchEvent(new KeyboardEvent('keyup', init));

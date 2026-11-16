@@ -175,6 +175,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
   // Look up extra colors extracted via pdf-lib (IC entry, appearance stream
   // colors). Zie extra-sleutel.js voor het zoeken op de rauwe /Rect.
   let extraColors = extraVoorAnnotatie(annotColorMap, annot) || {};
+  const vertices = extraColors.pdfVertices || annot.vertices;
   if (extraColors.pluginAnnotation) {
     return createAnnotation({ ...extraColors.pluginAnnotation, page: pageNum,
       ...(extraColors.markupTextValue ? { markupTextValue: extraColors.markupTextValue } : {}),
@@ -540,7 +541,9 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
       let sqX = sqRect.x, sqY = sqRect.y, sqW = sqRect.width, sqH = sqRect.height;
       let sqRotation = 0;
       if (extraColors.rotation !== undefined && extraColors.rotation !== 0) {
-        sqRotation = Math.round(extraColors.rotation);
+        // Our saver stores the exact angle; rounding it moves the shape
+        // away from its saved appearance each time the document reopens.
+        sqRotation = extraColors.rotation;
         // /Rect is de omhullende van de gedraaide rechthoek, niet zijn maat.
         ({ x: sqX, y: sqY, width: sqW, height: sqH } = echteVormMaat(sqRect));
       } else if (extraColors.matrixAngle !== undefined && Math.abs(extraColors.matrixAngle) > 1) {
@@ -751,10 +754,10 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
       break;
 
     case 'PolyLine':
-      if (annot.vertices && annot.vertices.length >= 4) {
+      if (vertices && vertices.length >= 4) {
         const plPoints = [];
-        for (let i = 0; i < annot.vertices.length; i += 2) {
-          const [plx, ply] = convertPoint(annot.vertices[i], annot.vertices[i + 1]);
+        for (let i = 0; i < vertices.length; i += 2) {
+          const [plx, ply] = convertPoint(vertices[i], vertices[i + 1]);
           plPoints.push({ x: plx, y: ply });
         }
 
@@ -917,12 +920,12 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
       break;
 
     case 'Polygon':
-      if (annot.vertices && annot.vertices.length >= 6) {
+      if (vertices && vertices.length >= 6) {
         // Calculate bounding box and points in viewport coordinates
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         const polyPoints = [];
-        for (let i = 0; i < annot.vertices.length; i += 2) {
-          const [pvx, pvy] = convertPoint(annot.vertices[i], annot.vertices[i + 1]);
+        for (let i = 0; i < vertices.length; i += 2) {
+          const [pvx, pvy] = convertPoint(vertices[i], vertices[i + 1]);
           polyPoints.push({ x: pvx, y: pvy });
           minX = Math.min(minX, pvx);
           maxX = Math.max(maxX, pvx);
@@ -1185,7 +1188,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
           y: minY,
           width: maxX - minX,
           height: maxY - minY,
-          sides: Math.floor(annot.vertices.length / 2),
+          sides: Math.floor(vertices.length / 2),
           // Preserve the real vertices so a generic /Polygon renders its actual
           // shape instead of a regular N-gon synthesised from the bounding box
           // (issue #286). cloud/cloudPolyline already relied on these points.

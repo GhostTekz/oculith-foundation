@@ -34,7 +34,7 @@ import PanelHeader from '../../panels/PanelHeader.jsx';
 import { openPanelMenu } from '../../panels/PanelMenu.jsx';
 import { toolIcon } from '../../../data/oculithToolIcons.js';
 import { addSavedFilter, readSavedFilters, writeSavedFilters } from '../../../../ui/panels/markup-saved-filters.js';
-import { saveFileDialog, writeBinaryFile } from '../../../../core/platform.js';
+import { isTauri, saveFileDialog, writeBinaryFile } from '../../../../core/platform.js';
 import { buildVirtualRows, virtualRowKey, virtualRowWindow } from '../../../../ui/panels/markup-virtual-rows.js';
 import {
   cutIcon, copyIcon, deleteIcon, flattenIcon, exportIcon, deselectIcon, propertiesIcon
@@ -95,6 +95,13 @@ function typeGlyph(type) {
 const FILTER_LIST_KEY = 'ocudraw.markups.filterList.v1';
 function storedFilterList() {
   try { return globalThis.localStorage?.getItem(FILTER_LIST_KEY) === '1'; } catch { return false; }
+}
+
+function markupExportPath(doc, name) {
+  if (!isTauri() || doc?.isUntitled || doc?._renderTemp) return name;
+  const source = doc?.filePath || doc?.currentPdfPath || '';
+  const separator = Math.max(source.lastIndexOf('/'), source.lastIndexOf('\\'));
+  return separator < 0 ? name : source.slice(0, separator + 1) + name;
 }
 
 export default function AnnotationsPanel() {
@@ -1383,7 +1390,7 @@ export default function AnnotationsPanel() {
       if (getActiveDocument() !== doc) return;
       const fileName = (doc.filePath || doc.currentPdfPath || 'drawing').split(/[\\/]/u).pop().replace(/\.pdf$/iu, '');
       const suffix = selectionOnly ? '-selected-markups.csv' : '-markups.csv';
-      const path = await saveFileDialog(`${fileName}${suffix}`, [{ name: 'CSV', extensions: ['csv'] }]);
+      const path = await saveFileDialog(markupExportPath(doc, `${fileName}${suffix}`), [{ name: 'CSV', extensions: ['csv'] }]);
       if (!path) return;
       const csv = markupCsv(doc.annotations, selected, doc.markupTextColumnName,
         doc.markupChoiceColumn, doc.markupNumberColumn, doc.markupCheckmarkColumn,
@@ -1434,7 +1441,7 @@ export default function AnnotationsPanel() {
         spaceOf: await markupSpaceNamer(doc) };
       const sourcePath = doc.filePath || doc.currentPdfPath || 'drawing.pdf';
       const base = String(sourcePath).split(/[\\/]/u).pop().replace(/\.pdf$/iu, '') || 'drawing';
-      const path = await saveFileDialog(`${base}-markups-summary.${format}`,
+      const path = await saveFileDialog(markupExportPath(doc, `${base}-markups-summary.${format}`),
         [{ name: format.toUpperCase(), extensions: [format] }]);
       if (!path) return;
       const columns = { customTextColumn: doc.markupTextColumnName, customSecondTextColumn: doc.markupTextColumn2Name,

@@ -12,7 +12,7 @@
   --compare-error-text: #a02424;
 }
 
-.compare-view { background: var(--theme-content-bg); }
+.compare-view { min-height: 0; overflow: hidden; background: var(--theme-content-bg); }
 .compare-body { min-width: 0; }
 .compare-toolbar {
   display: flex;
@@ -33,11 +33,17 @@
   background: var(--theme-panel-border);
 }
 .compare-toolbar input[type='number'],
+.compare-view-mode,
 .compare-page-pairs input,
 .compare-page-pairs select {
   border: 1px solid var(--theme-border);
   background: var(--theme-surface);
   color: var(--theme-text);
+}
+.compare-view-mode {
+  padding: 3px 6px;
+  border-radius: var(--ox-r-xs);
+  font: inherit;
 }
 .compare-toolbar input[type='range'] { width: 84px; }
 .compare-exit {
@@ -82,6 +88,7 @@
 .compare-panel-tab:hover, .compare-type-toggle:hover { background: var(--theme-hover); }
 .compare-toolbar button:focus-visible,
 .compare-toolbar input:focus-visible,
+.compare-toolbar select:focus-visible,
 .compare-page-pairs button:focus-visible,
 .compare-change-list button:focus-visible,
 .compare-exit:focus-visible {
@@ -164,3 +171,29 @@
   color: var(--compare-error-text);
   font-size: 11px;
 }
+
+/* A review must leave room for the actual sheets on a scaled laptop display.
+   Matching, alignment, saved plans and batch controls remain in one drawer. */
+.compare-toolbar { flex-shrink: 0; }
+.compare-toolbar .pref-btn { min-width: 28px; padding: 4px 8px; }
+.compare-review-tools {
+  flex: 0 0 auto;
+  max-height: 45%;
+  overflow: auto;
+  border-bottom: 1px solid var(--theme-panel-border);
+  background: var(--theme-panel-bg);
+  color: var(--theme-text);
+  font-size: 12px;
+}
+.compare-review-tools > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 10px;
+  background: var(--theme-panel-bg);
+}
+.compare-review-tools > summary:focus-visible {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: -2px;
+}
+.compare-workspace { min-width: 0; overflow: hidden; }

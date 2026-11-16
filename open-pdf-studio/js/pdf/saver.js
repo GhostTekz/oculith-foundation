@@ -2093,6 +2093,9 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
             const stampRect = stampDesign ? stampDesignRect(ann, convertX, convertY) : [x1, y1, x2, y2];
 
             const stampDictObj = stampAnnotObject(ann, { rect: stampRect, colorArr, opacity });
+            // The shared writer below keeps the model's /NM and resolves copied
+            // names. The batch helper's fresh name would replace it on every save.
+            delete stampDictObj.NM;
 
             annotDict = context.obj(stampDictObj);
 

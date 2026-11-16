@@ -72,6 +72,7 @@ fn run() -> Result<()> {
         ocg_visibility: true,
         annot_appearance: true,
         annot_appearance_index: true,
+        region_pixel_clip: true,
     };
     writeln!(std::io::stdout(), "{}", serde_json::to_string(&ready)?)?;
     std::io::stdout().flush()?;
@@ -125,13 +126,15 @@ fn run() -> Result<()> {
             Request::RenderRegion {
                 id, path, page_index, scale, rotation,
                 region_x_pt, region_y_pt, region_w_pt, region_h_pt,
+                pixel_clip,
                 ocg_visibility, annot_appearance, annot_appearance_index,
             } => {
                 let show = render::AnnotShow::from_request(annot_appearance.as_deref(), annot_appearance_index.as_deref());
-                let resp = match renderer.render_region(
+                let resp = match renderer.render_region_tile(
                     &path, page_index, scale, rotation,
                     region_x_pt, region_y_pt, region_w_pt, region_h_pt,
                     &ocg_visibility, show, shm_region.payload_mut(),
+                    pixel_clip,
                 ) {
                     Ok(result) => {
                         match shm_region.write_header(result.width, result.height) {

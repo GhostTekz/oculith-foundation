@@ -113,10 +113,10 @@ export function provides(id) { return Object.hasOwn(loaders, id); }
 
 /**
  * Load interface modules: one after another in the given order, or all at
- * once with `parallel` (start-up uses this for EARLY and for a plug-in's
- * modules). Every module imports what its own start-up needs, so the
- * editor's module graph, not this list, orders their evaluation; their
- * files are already preloaded with main.js (index.html).
+ * once with `parallel` (used for the independent EARLY modules). Keep the
+ * edition-dependent entries serial: older WebKit can expose an uninitialized
+ * namespace when concurrent imports reach the same cyclic output chunk.
+ * Their files are already preloaded with main.js (index.html).
  */
 export async function loadHostModules(ids, { parallel = false } = {}) {
   const missing = ids.filter((id) => !loaded.has(id));

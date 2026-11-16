@@ -20,7 +20,7 @@
       },
       {
         "name": "ocudraw:npmLockSha256",
-        "value": "7c6c01898c930b39417afa4e8baff015ee7619f3525fb3a36470019c2e59c423"
+        "value": "e10313052460915a4b970f3c73c997a43d18838a15f463216d1a097eae026d76"
       },
       {
         "name": "ocudraw:scope",
@@ -22556,6 +22556,54 @@
     },
     {
       "type": "library",
+      "name": "polygon-clipping",
+      "version": "0.15.7",
+      "bom-ref": "pkg:npm/polygon-clipping@0.15.7",
+      "purl": "pkg:npm/polygon-clipping@0.15.7",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "ocudraw:inventory",
+          "value": "npm production lockfile"
+        },
+        {
+          "name": "ocudraw:noticePath",
+          "value": "open-pdf-studio/src-tauri/package-notices/npm/polygon-clipping/LICENSE.md"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "robust-predicates",
+      "version": "3.0.3",
+      "bom-ref": "pkg:npm/robust-predicates@3.0.3",
+      "purl": "pkg:npm/robust-predicates@3.0.3",
+      "licenses": [
+        {
+          "license": {
+            "name": "Unlicense"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "ocudraw:inventory",
+          "value": "npm production lockfile"
+        },
+        {
+          "name": "ocudraw:noticePath",
+          "value": "open-pdf-studio/src-tauri/package-notices/npm/robust-predicates/LICENSE"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "seroval-plugins",
       "version": "1.5.0",
       "bom-ref": "pkg:npm/seroval-plugins@1.5.0",
@@ -22623,6 +22671,30 @@
         {
           "name": "ocudraw:noticePath",
           "value": "open-pdf-studio/src-tauri/package-notices/npm/solid-js/LICENSE"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "splaytree",
+      "version": "3.2.3",
+      "bom-ref": "pkg:npm/splaytree@3.2.3",
+      "purl": "pkg:npm/splaytree@3.2.3",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "ocudraw:inventory",
+          "value": "npm production lockfile"
+        },
+        {
+          "name": "ocudraw:noticePath",
+          "value": "open-pdf-studio/src-tauri/package-notices/npm/splaytree/Readme.md"
         }
       ]
     },
