@@ -332,7 +332,17 @@ export function applyPageScale(scaleData, pages = 'current') {
   if (!doc) return;
   const targets = paginasVoorSchaal(pages, doc);
   if (!targets.length) return;
-  const oldPageScales = doc.pageScales == null ? null : JSON.parse(JSON.stringify(doc.pageScales));
+  const oldPageScales = JSON.parse(JSON.stringify(doc.pageScales || {}));
+  // A save replaces the PDF's scale. History must keep the previous physical
+  // calibration, including an explicit unset value, rather than falling back
+  // to the now changed PDF when an earlier override key was absent.
+  for (const page of targets) {
+    if (Object.prototype.hasOwnProperty.call(oldPageScales, page)) continue;
+    const previous = paginaOfDocumentSchaal(doc, page);
+    oldPageScales[page] = previous
+      ? { ...previous, method: previous.method === 'pdfPage' ? 'ratio' : previous.method }
+      : null;
+  }
   const measurements = doc.annotations.filter(annotation => MEASUREMENT_TYPES.includes(annotation.type));
   const originals = measurements.map(annotation => cloneAnnotation(annotation));
   doc.pageScales = metPaginaSchaal(doc.pageScales, scaleData || null, targets);
