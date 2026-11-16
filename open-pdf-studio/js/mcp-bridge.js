@@ -1904,6 +1904,10 @@ async function handleSwitchTab(params) {
     return { ok: false, error: `index out of range (have ${total} tabs)` };
   }
   const tabsMod = await import('./ui/chrome/tabs.js');
+  const { blurCompareTab } = await import('./compare/compare-store.js');
+  // Match a PDF tab click: show the requested document while keeping the
+  // comparison session available on its own tab.
+  blurCompareTab();
   tabsMod.switchToTab(index);
   return { ok: true, activeIndex: stateMod.state.activeDocumentIndex };
 }
