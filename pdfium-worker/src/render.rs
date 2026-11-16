@@ -359,6 +359,28 @@ impl Renderer {
         annot_appearance: Option<AnnotShow>,
         out: &mut [u8],
     ) -> Result<RenderResult> {
+        self.render_region_tile(path, page_index, scale, rotation,
+            region_x_pt, region_y_pt, region_w_pt, region_h_pt,
+            visibility, annot_appearance, out, None)
+    }
+
+    /// A bounded transfer tile on the original region's pixel grid. Keeping
+    /// the original point origin avoids rounding a new origin at high zoom.
+    pub fn render_region_tile(
+        &mut self,
+        path: &str,
+        page_index: u32,
+        scale: f32,
+        rotation: i32,
+        region_x_pt: f32,
+        region_y_pt: f32,
+        region_w_pt: f32,
+        region_h_pt: f32,
+        visibility: &[LayerVisibility],
+        annot_appearance: Option<AnnotShow>,
+        out: &mut [u8],
+        pixel_clip: Option<[u32; 4]>,
+    ) -> Result<RenderResult> {
         if rotation != 0 {
             return Err(anyhow!("render_region: rotation {} not supported", rotation));
         }
@@ -367,8 +389,17 @@ impl Renderer {
         }
         // Bitmap-afmetingen hangen alleen van regio + schaal af: valideer ze
         // (incl. de SHM-grens) voordat het document/de pagina geladen wordt.
-        let bitmap_w = (region_w_pt * scale).ceil() as i32;
-        let bitmap_h = (region_h_pt * scale).ceil() as i32;
+        let full_w = (region_w_pt * scale).ceil() as i32;
+        let full_h = (region_h_pt * scale).ceil() as i32;
+        let [pixel_x, pixel_y, bitmap_w, bitmap_h] = if let Some([x, y, w, h]) = pixel_clip {
+            if w == 0 || h == 0 || u64::from(x) + u64::from(w) > full_w.max(0) as u64
+                || u64::from(y) + u64::from(h) > full_h.max(0) as u64 {
+                return Err(anyhow!("render_region: pixel clip outside region"));
+            }
+            [x as i32, y as i32, w as i32, h as i32]
+        } else {
+            [0, 0, full_w, full_h]
+        };
         if bitmap_w <= 0 || bitmap_h <= 0 {
             return Err(anyhow!("render_region: invalid bitmap {}x{}", bitmap_w, bitmap_h));
         }
@@ -396,7 +427,9 @@ impl Renderer {
             // blijven op de volledige-pagina-render.
             let config = PdfRenderConfig::new()
                 .set_fixed_size(bitmap_w, bitmap_h)
-                .transform(scale, 0.0, 0.0, scale, -region_x_pt * scale, -region_y_pt * scale)
+                .transform(scale, 0.0, 0.0, scale,
+                    -region_x_pt * scale - pixel_x as f32,
+                    -region_y_pt * scale - pixel_y as f32)
                 .map_err(|e2| anyhow!("invalid transform: {}", e2))?
                 .render_annotations(annot_appearance.is_some())
                 .use_lcd_text_rendering(true)

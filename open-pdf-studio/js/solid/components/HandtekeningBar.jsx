@@ -1,4 +1,4 @@
-import { Show, For } from 'solid-js';
+import { Show, For, createEffect, createMemo, createSignal, on } from 'solid-js';
 import { toestand, items, foutDetail } from '../stores/handtekeningBarStore.js';
 import { state } from '../../core/state.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
@@ -29,6 +29,12 @@ export default function HandtekeningBar() {
   const gewijzigdInApp = () => wijktAfVanSchijf(state.documents[state.activeDocumentIndex]);
 
   const kleur = () => balkErnst(toestand(), items());
+  const isUnsigned = (h) => h.soort === 'leeg-veld' && h.status?.code === 'niet-ondertekend-veld';
+  const unsigned = createMemo(() => items().filter(isUnsigned));
+  const grouped = () => unsigned().length > 1;
+  const individual = createMemo(() => grouped() ? items().filter((h) => !isUnsigned(h)) : items());
+  const [showUnsigned, setShowUnsigned] = createSignal(false);
+  createEffect(on(() => state.documents[state.activeDocumentIndex]?.id, () => setShowUnsigned(false)));
 
   const details = (h) => {
     import('../../pdf/handtekeningen/verificatie.js').then(m => m.openHandtekeningDetails(JSON.parse(JSON.stringify(h))));
@@ -39,6 +45,29 @@ export default function HandtekeningBar() {
   const sluit = () => {
     import('../../pdf/handtekeningen/verificatie.js').then(m => m.sluitBalkVoorActiefDocument());
   };
+  const renderItem = (h) => (
+    <div class="handtekening-bar-regel">
+      <span class={`handtekening-bar-stip ${ernst(h)}`} />
+      <span class="handtekening-bar-tekst" title={delen(h).tekst}>
+        <span class="handtekening-bar-status">{delen(h).status}</span>
+        <Show when={delen(h).rest}>
+          <span class="handtekening-bar-naam">{delen(h).scheiding}{delen(h).rest}</span>
+        </Show>
+      </span>
+      <span class="handtekening-bar-acties">
+        <Show when={kanOndertekendeVersieTonen(h)}>
+          <button class="handtekening-bar-actie handtekening-bar-versie" onClick={() => versie(h)}>
+            {v('showSignedVersion')}
+          </button>
+        </Show>
+        <Show when={h.soort !== 'leeg-veld'}>
+          <button class="handtekening-bar-actie handtekening-bar-details" onClick={() => details(h)}>
+            {v('details')}
+          </button>
+        </Show>
+      </span>
+    </div>
+  );
 
   return (
     <Show when={toestand() !== 'verborgen'}>
@@ -54,31 +83,20 @@ export default function HandtekeningBar() {
             <span class="handtekening-bar-tekst">{v('listError', { detail: foutDetail() })}</span>
           </Show>
           <Show when={toestand() === 'klaar'}>
-            <For each={items()}>
-              {(h) => (
-                <div class="handtekening-bar-regel">
-                  <span class={`handtekening-bar-stip ${ernst(h)}`} />
-                  <span class="handtekening-bar-tekst" title={delen(h).tekst}>
-                    <span class="handtekening-bar-status">{delen(h).status}</span>
-                    <Show when={delen(h).rest}>
-                      <span class="handtekening-bar-naam">{delen(h).scheiding}{delen(h).rest}</span>
-                    </Show>
-                  </span>
-                  <span class="handtekening-bar-acties">
-                    <Show when={kanOndertekendeVersieTonen(h)}>
-                      <button class="handtekening-bar-actie handtekening-bar-versie" onClick={() => versie(h)}>
-                        {v('showSignedVersion')}
-                      </button>
-                    </Show>
-                    <Show when={h.soort !== 'leeg-veld'}>
-                      <button class="handtekening-bar-actie handtekening-bar-details" onClick={() => details(h)}>
-                        {v('details')}
-                      </button>
-                    </Show>
-                  </span>
-                </div>
-              )}
-            </For>
+            <For each={individual()}>{renderItem}</For>
+            <Show when={grouped()}>
+              <div class="handtekening-bar-regel" data-signature-unsigned-summary>
+                <span class="handtekening-bar-stip" />
+                <span class="handtekening-bar-tekst">{v('unsignedFieldsSummary', { count: unsigned().length })}</span>
+                <button class="handtekening-bar-actie" aria-expanded={showUnsigned()} aria-controls="unsigned-signature-fields"
+                  onClick={() => setShowUnsigned((shown) => !shown)} data-signature-unsigned-toggle>
+                  {v(showUnsigned() ? 'hideUnsignedFields' : 'showUnsignedFields')}
+                </button>
+              </div>
+              <div id="unsigned-signature-fields">
+                <Show when={showUnsigned()}><For each={unsigned()}>{renderItem}</For></Show>
+              </div>
+            </Show>
             <Show when={lijstIsAfgekapt(items())}>
               <div class="handtekening-bar-regel">
                 <span class="handtekening-bar-stip waarschuwing" />

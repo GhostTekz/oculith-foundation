@@ -41,10 +41,17 @@ export function initContextMenus() {
       e.preventDefault();
       return;
     }
+    const target = e.target;
+    if (state._suppressNextContextmenu && target instanceof Element &&
+        target.closest('#annotation-canvas, .annotation-canvas')) {
+      e.preventDefault();
+      return;
+    }
     const nonDrawTools = ['select', 'hand'];
     // Check if any multi-click tool is in progress
     const isMultiClickActive = state.isDrawingPolyline || state.isDrawingCloudPolyline ||
       state.isDrawingDimension || (state.measurePoints && state.measurePoints.length >= 1) ||
+      (state.measurePhase === 'holes' && state.measureOuterPoints?.length >= 3) ||
       state.addHoleTargetId || state.dimChainTargetId;
     if (!nonDrawTools.includes(state.currentTool) && !state.isDrawing && !isMultiClickActive) {
       // Tool Chest and the other panel chrome have their own menus. A
@@ -74,25 +81,24 @@ export function initContextMenus() {
         return;
       }
 
-      // Let tool handle its own right-click behavior (polyline finish, measurement finish, etc.)
-      // These are handled via the pointerdown handler with e.button === 2
-      const isMultiClickActive = state.isDrawingPolyline || state.isDrawingCloudPolyline ||
-        state.isDrawingDimension || (state.measurePoints && state.measurePoints.length >= 1) ||
-        state.addHoleTargetId || state.dimChainTargetId;
-      if (isMultiClickActive) {
-        e.preventDefault();
-        return;
-      }
-      // Tool just finished via right-click (polyline sluit-operatie). Slik
-      // dit ene contextmenu-event in zodat de gebruiker niet onmiddellijk
-      // het selectie-menu krijgt nadat hij de scheur/polygoon afsloot.
-      // Volgende rechtermuisklik werkt weer normaal.
+      // A consumed finish click gets no annotation menu, even when the tool
+      // just changed phase or cleared its in-progress points.
       if (state._suppressNextContextmenu) {
         state._suppressNextContextmenu = false;
         e.preventDefault();
         return;
       }
 
+      // Let tool handle its own right-click behavior (polyline finish, measurement finish, etc.)
+      // These are handled via the pointerdown handler with e.button === 2
+      const isMultiClickActive = state.isDrawingPolyline || state.isDrawingCloudPolyline ||
+        state.isDrawingDimension || (state.measurePoints && state.measurePoints.length >= 1) ||
+        (state.measurePhase === 'holes' && state.measureOuterPoints?.length >= 3) ||
+        state.addHoleTargetId || state.dimChainTargetId;
+      if (isMultiClickActive) {
+        e.preventDefault();
+        return;
+      }
       // Zelfde scherm→app-mapping als alle tools (enkelpagina-viewport-
       // transform + doorlopende per-pagina-canvassen). De oude inline-formule
       // negeerde de viewport-offsets, waardoor de hit-test bij gepande/

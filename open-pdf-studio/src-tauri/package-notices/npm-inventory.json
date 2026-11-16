@@ -188,6 +188,18 @@
       "noticeFile": "npm/pdfjs-dist/LICENSE"
     },
     {
+      "name": "polygon-clipping",
+      "version": "0.15.7",
+      "licenseFromLockfile": "MIT",
+      "noticeFile": "npm/polygon-clipping/LICENSE.md"
+    },
+    {
+      "name": "robust-predicates",
+      "version": "3.0.3",
+      "licenseFromLockfile": "Unlicense",
+      "noticeFile": "npm/robust-predicates/LICENSE"
+    },
+    {
       "name": "seroval",
       "version": "1.5.0",
       "licenseFromLockfile": "MIT",
@@ -204,6 +216,12 @@
       "version": "1.9.11",
       "licenseFromLockfile": "MIT",
       "noticeFile": "npm/solid-js/LICENSE"
+    },
+    {
+      "name": "splaytree",
+      "version": "3.2.3",
+      "licenseFromLockfile": "MIT",
+      "noticeFile": "npm/splaytree/Readme.md"
     },
     {
       "name": "tslib",

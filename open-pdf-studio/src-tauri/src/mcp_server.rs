@@ -531,13 +531,17 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": "app_mouse_click",
-                "description": "Dispatch a synthetic mouse click at (x, y). Sequence: mousemove -> mousedown -> mouseup -> click (or contextmenu for right). button: 'left' (default) | 'middle' | 'right'.",
+                "description": "Dispatch a synthetic mouse click at (x, y). Sequence: mousemove -> mousedown -> mouseup -> click (or contextmenu for right). button: 'left' (default) | 'middle' | 'right'. Use ctrl, shift or alt for modified clicks; double=true also dispatches dblclick.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "x":      { "type": "integer" },
                         "y":      { "type": "integer" },
-                        "button": { "type": "string", "enum": ["left", "middle", "right"], "default": "left" }
+                        "button": { "type": "string", "enum": ["left", "middle", "right"], "default": "left" },
+                        "ctrl":   { "type": "boolean", "default": false },
+                        "shift":  { "type": "boolean", "default": false },
+                        "alt":    { "type": "boolean", "default": false },
+                        "double": { "type": "boolean", "default": false }
                     },
                     "required": ["x", "y"],
                     "additionalProperties": false

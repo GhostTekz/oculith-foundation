@@ -10,6 +10,7 @@
 
 import { state } from '../core/state.js';
 import { getAnnotationBounds } from '../core/stores/selection-helpers.js';
+import { textboxLineRuns } from '../annotations/rendering/textbox-layout.js';
 import i18next from '../i18n/config.js';
 
 // Twee annotaties "matchen" als ze hetzelfde type hebben én hun middelpunt
@@ -31,11 +32,41 @@ function _centerAndBounds(ann) {
   return { cx: b.x + b.width / 2, cy: b.y + b.height / 2, b };
 }
 
-// Vergelijkings-signatuur voor "gewijzigd": inhoud/kleur/lijndikte + globale maat.
+// Compare the effective text styles used by the renderer. Equivalent adjacent
+// runs must not become a revision merely because an editor split them apart.
+function _textStyle(ann) {
+  const boxed = ann.type === 'textbox' || ann.type === 'callout';
+  if (!boxed && ann.type !== 'text') return '';
+  const color = (boxed && ann.textColor) || ann.color || '#000000';
+  const runs = textboxLineRuns(boxed ? ann : { ...ann, textRuns: null, fontStrikethrough: false });
+  const lines = runs.map(line => {
+    const normalized = [];
+    for (const run of line) {
+      if (!run.text) continue;
+      const style = JSON.stringify([!!run.bold, !!run.italic, !!run.underline,
+        !!run.strikethrough, run.color || color]);
+      const previous = normalized.at(-1);
+      if (previous?.[1] === style) previous[0] += run.text;
+      else normalized.push([run.text, style]);
+    }
+    return normalized;
+  });
+  return JSON.stringify([ann.fontFamily || 'Arial', ann.fontSize || (boxed ? 14 : 16), lines]);
+}
+
+// Vergelijkings-signatuur voor "gewijzigd": inhoud, uiterlijk en globale maat.
 function _sig(ann, b) {
+  const opacity = ann.opacity ?? (ann.type === 'highlight' ? 0.3 : 1);
   return [
     ann.text || ann.content || '',
-    ann.color || ann.strokeColor || ann.fillColor || '',
+    ann.color || ann.strokeColor || '',
+    // Stroke, fill and text can change independently on the same markup.
+    // A populated legacy color must not hide a changed fill or text color.
+    ann.strokeColor || ann.color || '',
+    ann.fillColor || '',
+    ann.textColor || '',
+    opacity, ann.fillOpacity ?? opacity,
+    _textStyle(ann),
     ann.lineWidth ?? ann.strokeWidth ?? ann.borderWidth ?? '',
     Math.round(b.width), Math.round(b.height),
     ann.rotation || 0,
@@ -46,6 +77,11 @@ function _sig(ann, b) {
     ann.type === 'count' ? (ann.markerStyle || '') : '',
     ann.type === 'count' ? (ann.symbolId || '') : '',
   ].join('|');
+}
+
+function _entry(ann) {
+  const bounds = _centerAndBounds(ann);
+  return { ann, bounds, signature: bounds ? _sig(ann, bounds.b) : '' };
 }
 
 function _countIdentity(ann) {
@@ -82,8 +118,8 @@ function _rec(type, ann, b, before = null) {
 export function diffAnnotationLists(oldAnns, newAnns) {
   const changes = [];
   const oldUsed = new Set();
-  const old = (oldAnns || []).map(ann => ({ ann, bounds: _centerAndBounds(ann) }));
-  const next = (newAnns || []).map(ann => ({ ann, bounds: _centerAndBounds(ann), match: -1 }));
+  const old = (oldAnns || []).map(_entry);
+  const next = (newAnns || []).map(ann => ({ ..._entry(ann), match: -1 }));
 
   // Match unchanged signatures first. Co-located counts can have identical
   // marker bounds, so list order must not turn a harmless reorder into edits.
@@ -95,7 +131,7 @@ export function diffAnnotationLists(oldAnns, newAnns) {
       for (let i = 0; i < old.length; i++) {
         const candidate = old[i];
         if (oldUsed.has(i) || !candidate.bounds || candidate.ann.type !== entry.ann.type) continue;
-        if (exactOnly && _sig(candidate.ann, candidate.bounds.b) !== _sig(entry.ann, entry.bounds.b)) continue;
+        if (exactOnly && candidate.signature !== entry.signature) continue;
         const distance = Math.hypot(entry.bounds.cx - candidate.bounds.cx, entry.bounds.cy - candidate.bounds.cy);
         if (distance <= CENTER_TOL && distance < best) { best = distance; match = i; }
       }
@@ -110,7 +146,7 @@ export function diffAnnotationLists(oldAnns, newAnns) {
       continue;
     }
     const before = old[entry.match];
-    if (_sig(before.ann, before.bounds.b) !== _sig(entry.ann, entry.bounds.b)) {
+    if (before.signature !== entry.signature) {
       changes.push(_rec('modified', entry.ann, entry.bounds.b, before.ann));
     }
   }

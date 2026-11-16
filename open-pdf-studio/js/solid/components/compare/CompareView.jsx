@@ -35,6 +35,7 @@ import {
   canNextPagePair,
   canPrevPagePair,
   setCompareZoom,
+  setCompareMode,
   setCompareOffset,
   requestCompareFit,
   requestCompareReset,
@@ -101,6 +102,7 @@ export default function CompareView() {
   let oldWrapRef;  // scaled wrapper holding OLD page + its diff overlay
   let newWrapRef;  // scaled wrapper holding NEW page + its diff overlay
   let _scrollSyncing = false;
+  let focusAfterRender = null;
   // Spiegel de scrollpositie proportioneel: de twee pagina's kunnen
   // verschillende afmetingen hebben, dus een absolute pixel-kopie zou
   // uiteenlopen. We rekenen met de fractie van de scrollbare ruimte zodat
@@ -112,8 +114,12 @@ export default function CompareView() {
     const sy = src.scrollHeight - src.clientHeight;
     const dx = dst.scrollWidth - dst.clientWidth;
     const dy = dst.scrollHeight - dst.clientHeight;
-    dst.scrollLeft = sx > 0 ? (src.scrollLeft / sx) * dx : src.scrollLeft;
-    dst.scrollTop = sy > 0 ? (src.scrollTop / sy) * dy : src.scrollTop;
+    const left = sx > 0 ? (src.scrollLeft / sx) * dx : src.scrollLeft;
+    const top = sy > 0 ? (src.scrollTop / sy) * dy : src.scrollTop;
+    // Scroll positions can round to whole pixels. Do not echo subpixel
+    // corrections between panes: that feedback slowly walks the page away.
+    if (Math.abs(dst.scrollLeft - left) >= 1) dst.scrollLeft = left;
+    if (Math.abs(dst.scrollTop - top) >= 1) dst.scrollTop = top;
     requestAnimationFrame(() => { _scrollSyncing = false; });
   };
   // Pannen door slepen in een paneel; de scroll-sync spiegelt de beweging
@@ -122,6 +128,7 @@ export default function CompareView() {
   const startPanDrag = (e, pane) => {
     // Left button or middle button drags to pan.
     if (!pane || (e.button !== 0 && e.button !== 1)) return;
+    focusAfterRender = null;
     const rect = pane.getBoundingClientRect();
     // Klik op de scrollbalk zelf niet kapen.
     if (e.clientX - rect.left > pane.clientWidth || e.clientY - rect.top > pane.clientHeight) return;
@@ -698,8 +705,14 @@ export default function CompareView() {
     // into on-screen (content) px, so fold cssScale in to hit the right spot
     // even if a zoom preview is still in flight.
     const ratio = changeRatio(c) * cssScale();
-    const cx = wrap.offsetLeft + (c.x + c.width / 2) * ratio;
-    const cy = wrap.offsetTop + (c.y + c.height / 2) * ratio;
+    // A wrapper's offset parent can be outside its scroll pane. Measure the
+    // actual page origin so toolbar height and centered paper stay out of it.
+    const pageRect = wrap.getBoundingClientRect();
+    const paneRect = pane.getBoundingClientRect();
+    const cx = pane.scrollLeft + pageRect.left - paneRect.left - pane.clientLeft
+      + (c.x + c.width / 2) * ratio;
+    const cy = pane.scrollTop + pageRect.top - paneRect.top - pane.clientTop
+      + (c.y + c.height / 2) * ratio;
     pane.scrollTo({
       left: Math.max(0, cx - pane.clientWidth / 2),
       top: Math.max(0, cy - pane.clientHeight / 2),
@@ -732,6 +745,9 @@ export default function CompareView() {
     // 3. zoom around the pane centre, where the change now sits
     const rect = refPane.getBoundingClientRect();
     zoomAnchored(refPane, rect.left + refPane.clientWidth / 2, rect.top + refPane.clientHeight / 2, factor);
+    // A fitted sheet cannot always scroll to the requested center yet. Once
+    // its larger bitmap is laid out, center the actual selected region again.
+    focusAfterRender = c;
   };
 
   const focusOnChange = (c) => {
@@ -839,6 +855,19 @@ export default function CompareView() {
       // to the new baseline so the preview stays consistent.
       const cur = compareZoom();
       setCssScale(cur === renderedZoom ? 1 : cur / renderedZoom);
+      if (focusAfterRender && cur === renderedZoom) {
+        const change = focusAfterRender;
+        focusAfterRender = null;
+        queueMicrotask(() => {
+          if (!compareFocused() || compareFocusedChange() !== change) return;
+          const pairs = compareMode() === 'overlay'
+            ? [[bodyRef, overlayWrapRef]]
+            : [[oldPaneRef, oldWrapRef], [newPaneRef, newWrapRef]];
+          _scrollSyncing = true;
+          for (const [pane, wrap] of pairs) scrollPaneToChange(pane, wrap, change, false);
+          requestAnimationFrame(() => { _scrollSyncing = false; });
+        });
+      }
       // Repaint highlights at the crisp scale (ratio changed with the bitmap).
       repaintHighlights();
       if (pending) {
@@ -868,6 +897,7 @@ export default function CompareView() {
     compareNewPage();
     compareOffset();
     if (compareActive()) {
+      focusAfterRender = null;
       // Reset CSS preview state — after a path/page/mode change the bitmap
       // baseline is whatever the next render produces.
       setCssScale(1);
@@ -917,6 +947,7 @@ export default function CompareView() {
   createEffect(() => {
     const req = compareFitRequest();
     if (!req.kind || !compareActive()) return;
+    focusAfterRender = null;
     // Reset scroll to the top-left so the (re)fitted page is fully framed
     // rather than left scrolled where the previous zoom sat. Flag the upcoming
     // render to keep this scroll instead of scaling the old one.
@@ -1034,6 +1065,7 @@ export default function CompareView() {
   // the anchor holds through the CSS preview; flags the render to skip its
   // post-swap re-scale so the factor isn't double-applied.
   const zoomAnchored = (pane, ax, ay, factor) => {
+    focusAfterRender = null;
     if (!pane) { setCompareZoom(compareZoom() * factor); return; }
     const rect = pane.getBoundingClientRect();
     const offX = ax - rect.left;
@@ -1287,7 +1319,11 @@ export default function CompareView() {
         >
           {/* Titel + weergavemodus */}
           <strong>{t('compare.title') || 'Compare PDFs'}</strong>
-          <span class="compare-toolbar-muted">{compareMode() === 'overlay' ? (t('compare.overlay') || 'Overlay') : (t('compare.sideBySide') || 'Side-by-side')}</span>
+          <select class="compare-view-mode" aria-label="Comparison view" value={compareMode()}
+            onChange={e => setCompareMode(e.currentTarget.value)}>
+            <option value="side">{t('compare.sideBySide') || 'Side-by-side'}</option>
+            <option value="overlay">{t('compare.overlay') || 'Overlay'}</option>
+          </select>
 
           <Sep />
 
@@ -1307,8 +1343,23 @@ export default function CompareView() {
           <button class="pref-btn pref-btn-secondary" title={t('compare.fit') || 'Passend'} onClick={requestCompareFit}>{t('compare.fit') || 'Passend'}</button>
           <button class="pref-btn pref-btn-secondary" title={t('compare.reset') || '100%'} onClick={requestCompareReset}>{t('compare.reset') || '100%'}</button>
 
-          <Sep />
-
+          <span style="flex:1;"></span>
+          <button
+            class="compare-exit"
+            onClick={exitCompare}
+            title="Esc"
+          >
+            ✕ {t('compare.exit') || 'Vergelijken sluiten'}
+          </button>
+        </div>
+        <details class="compare-review-tools">
+          <summary>
+            Review tools · {compareConfirmedPairs().length} confirmed matches
+            {' · '}{compareCurrentConfirmedPair() ? 'Current pair confirmed' : 'Current pair unconfirmed'}
+            <Show when={batchRunning()}> · Batch {batchProgress()?.completed || 0}/{batchProgress()?.total || 0}</Show>
+          </summary>
+          <div class="compare-review-tools-content">
+          <div class="compare-toolbar compare-display-options">
           {/* Markering */}
           <span class="compare-toolbar-muted">{t('compare.marking') || 'Markering'}</span>
           <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title={t('compare.boxHint') || 'Toon wijzigingen als gevuld vlak'}>
@@ -1330,23 +1381,23 @@ export default function CompareView() {
             <output for="compare-old-opacity" style="min-width:32px; font-variant-numeric:tabular-nums;">{oldLayerOpacity()}%</output>
             <Sep />
             <span class="compare-toolbar-muted">{t('compare.align') || 'Align'}</span>
-            <span class="compare-toolbar-muted">dx</span>
+            <label class="compare-toolbar-muted" for="compare-align-dx">dx</label>
             <input
-              type="number"
+              id="compare-align-dx" type="number"
               style="width:56px;"
               value={compareOffset().dx}
               onInput={(e) => setCompareOffset({ dx: parseFloat(e.target.value) || 0 })}
             />
-            <span class="compare-toolbar-muted">dy</span>
+            <label class="compare-toolbar-muted" for="compare-align-dy">dy</label>
             <input
-              type="number"
+              id="compare-align-dy" type="number"
               style="width:56px;"
               value={compareOffset().dy}
               onInput={(e) => setCompareOffset({ dy: parseFloat(e.target.value) || 0 })}
             />
-            <span class="compare-toolbar-muted">rot</span>
+            <label class="compare-toolbar-muted" for="compare-align-rotation">rot</label>
             <input
-              type="number"
+              id="compare-align-rotation" type="number"
               step="0.1"
               style="width:56px;"
               value={compareOffset().rotation}
@@ -1354,14 +1405,6 @@ export default function CompareView() {
             />
           </Show>
 
-          <span style="flex:1;"></span>
-          <button
-            class="compare-exit"
-            onClick={exitCompare}
-            title="Esc"
-          >
-            ✕ {t('compare.exit') || 'Vergelijken sluiten'}
-          </button>
         </div>
         <div class="compare-page-pairs" style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:5px 10px; background:var(--theme-panel-bg); border-bottom:1px solid var(--theme-panel-border); color:var(--theme-text); font-size:12px;">
           <strong>Page pairs</strong>
@@ -1516,7 +1559,9 @@ export default function CompareView() {
             </details>
           </div>
         </Show>
-        <div style="flex:1; display:flex; min-height:0;">
+          </div>
+        </details>
+        <div class="compare-workspace" style="flex:1; display:flex; min-height:0;">
           <div
             class="compare-body"
             ref={bodyRef}
@@ -1525,12 +1570,12 @@ export default function CompareView() {
             onPointerDown={(e) => { if (compareMode() !== 'side') startPanDrag(e, bodyRef); }}
             style={compareMode() === 'side'
               ? 'flex:1; overflow:hidden; display:flex; align-items:stretch; padding:0; gap:0;'
-              : 'flex:1; overflow:auto; display:flex; align-items:flex-start; justify-content:center; padding:14px; gap:14px;'}
+              : 'flex:1; overflow:auto; display:flex; align-items:flex-start; padding:14px; gap:14px;'}
           >
             <Show
               when={compareMode() === 'side'}
               fallback={
-                <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+                <div style="flex:0 0 auto; margin:0 auto; display:flex; flex-direction:column; align-items:center; gap:8px;">
                   {/* The old page is a visual review layer. Detection and PDF
                       exports continue to use their separate source canvases. */}
                   <div

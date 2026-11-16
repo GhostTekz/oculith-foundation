@@ -1734,22 +1734,16 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false,
 
   if (annotations.length === 0) return;
 
-  const hasSquareAnnotations = annotations.some(a => a.subtype === 'Square');
-  const hasCircleAnnotations = annotations.some(a => a.subtype === 'Circle');
-  const hasLineAnnotations = annotations.some(a => a.subtype === 'Line');
-  // Polygons and polylines carry the editor's own data too (fill opacity,
-  // layer, the keys of an outline the file marks as something more): without
-  // it they load as bare shapes until a background pass, which a large file
-  // may never reach while a sheet is open.
-  const hasPolyAnnotations = annotations.some(a => a.subtype === 'Polygon' || a.subtype === 'PolyLine');
   const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'Link'].includes(a.subtype));
 
   // The pdf-lib reads of this document: colors and stamp images. A document
   // that is not a large set reads them anyway (loadPDF starts them after
   // the first paint): wait for them rather than read the colors twice.
   let source = doc._pdfLibSource?.settled ? doc._pdfLibSource : null;
-  if (!source && (waitForColors || hasSquareAnnotations || hasCircleAnnotations || hasLineAnnotations || hasPolyAnnotations
-      || (needsExtraData && !doc._deferSharedPdfLib))) {
+  // Large sets have no later metadata pass. FreeText, stamps and the other
+  // editable markups need their original names, styling and custom fields
+  // before this page is marked ready and its models can be saved.
+  if (!source && (waitForColors || needsExtraData)) {
     await afterFirstPaint(doc);
     if (!state.documents.includes(doc)) return;
     const _pl0 = performance.now();

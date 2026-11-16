@@ -533,10 +533,9 @@ impl WorkerPool {
         Ok(WorkerBitmap::from_shm(w, h, &mmap[HEADER..HEADER + shm_bytes]))
     }
 
-    /// Render a page REGION (tile) via the pool. Small tiles fit the 64 MB SHM
-    /// easily, so — unlike whole huge pages — these succeed via the pool and
-    /// render in a SEPARATE process (safe: no concurrent in-proc PDFium). One
-    /// attempt; on error the caller falls back to in-proc.
+    /// Render a page region in a separate process. Oversized regions are
+    /// transferred in pixel-aligned pieces through the worker's fixed SHM
+    /// slot, preserving the requested scale and original pixel transform.
     ///
     /// `spread`: true = tegels over alle workers spreiden (parallelle eerste
     /// render); false = affinity op (pad,pagina) zodat interactieve tegels
@@ -662,11 +661,8 @@ impl WorkerPool {
         }
         let _t_run = std::time::Instant::now();
         let _plog = PoolTrace::new(worker.slot, "region", path, page_index, scale, _t_queue, _t_run);
-        let id = self.next_request_id.fetch_add(1, Ordering::Release);
-
         let mut req = json!({
             "op": "render_region",
-            "id": id,
             "path": path,
             "page_index": page_index,
             "scale": scale,
@@ -684,6 +680,65 @@ impl WorkerPool {
             req["annot_appearance"] = json!(show.names);
             if !show.indices.is_empty() { req["annot_appearance_index"] = json!(show.indices); }
         }
+        let width = (region_w_pt * scale).ceil() as i32;
+        let height = (region_h_pt * scale).ceil() as i32;
+        if width <= 0 || height <= 0 {
+            return Err(anyhow!("worker render error: invalid region dimensions"));
+        }
+        let (width, height) = (width as u32, height as u32);
+        let payload = worker.shm.lock().await.as_ref()
+            .ok_or_else(|| anyhow!("worker {} has no shm", worker.slot))?
+            .len().saturating_sub(32);
+        let bytes = u64::from(width) * u64::from(height) * 4;
+        if bytes <= payload as u64 {
+            return self.render_region_tile_on_worker(&worker, req).await;
+        }
+        if !worker.supports_region_pixel_clip.load(Ordering::Acquire) {
+            return Err(anyhow!("worker render error: region pixel clipping unsupported"));
+        }
+        let length = usize::try_from(bytes).ok().and_then(|n| n.checked_add(8))
+            .ok_or_else(|| anyhow!("worker render error: region dimensions overflow"))?;
+        let mut framed = Vec::new();
+        framed.try_reserve_exact(length)
+            .map_err(|e| anyhow!("worker render error: region allocation: {e}"))?;
+        framed.extend_from_slice(&width.to_le_bytes());
+        framed.extend_from_slice(&height.to_le_bytes());
+        framed.resize(length, 0);
+        let tile_w = width.min(4096).min((payload / 4) as u32).max(1);
+        let tile_h = height.min((payload / 4 / tile_w as usize) as u32).max(1);
+        eprintln!("[pool] region tiled {}x{} px through {}x{} transfers", width, height, tile_w, tile_h);
+        for y in (0..height).step_by(tile_h as usize) {
+            for x in (0..width).step_by(tile_w as usize) {
+                if ticket.is_some_and(|t| self.supersede.superseded(t)) {
+                    return Err(anyhow!(RENDER_SUPERSEDED));
+                }
+                let w = tile_w.min(width - x);
+                let h = tile_h.min(height - y);
+                req["pixel_clip"] = json!([x, y, w, h]);
+                let tile = self.render_region_tile_on_worker(&worker, req.clone()).await?;
+                if tile.width != w || tile.height != h {
+                    return Err(anyhow!("worker region tile dimensions disagree with request"));
+                }
+                let row_bytes = w as usize * 4;
+                for row in 0..h as usize {
+                    let dest = 8 + ((y as usize + row) * width as usize + x as usize) * 4;
+                    framed[dest..dest + row_bytes]
+                        .copy_from_slice(&tile.rgba()[row * row_bytes..(row + 1) * row_bytes]);
+                }
+            }
+        }
+        Ok(WorkerBitmap { width, height, framed })
+    }
+
+    /// The caller holds the worker's priority and exchange locks across all
+    /// pieces, so no other request can overwrite a tile before it is copied.
+    async fn render_region_tile_on_worker(
+        &self,
+        worker: &WorkerState,
+        mut req: serde_json::Value,
+    ) -> Result<WorkerBitmap> {
+        let id = self.next_request_id.fetch_add(1, Ordering::Release);
+        req["id"] = json!(id);
         let req_line = format!("{}\n", req);
 
         {

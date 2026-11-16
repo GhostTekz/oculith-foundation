@@ -965,6 +965,23 @@ export async function extractAnnotationColors(pageNum, pdfDoc, {
         }
       }
 
+      // PDF.js exposes vertices through Float32Array. Keep the file's
+      // double-precision coordinates for editable polygons and polylines.
+      if (subtypeName === '/Polygon' || subtypeName === '/PolyLine') {
+        const raw = annotDict.get(PDFName.of('Vertices'));
+        const vertices = raw ? (context.lookup(raw) || raw) : null;
+        const minimum = subtypeName === '/Polygon' ? 6 : 4;
+        if (vertices instanceof PDFArray && vertices.size() >= minimum && vertices.size() % 2 === 0) {
+          const values = [];
+          for (let vi = 0; vi < vertices.size(); vi++) {
+            const value = pdfNum(context.lookup(vertices.get(vi)) || vertices.get(vi));
+            if (!Number.isFinite(value)) break;
+            values.push(value);
+          }
+          if (values.length === vertices.size()) colors.pdfVertices = values;
+        }
+      }
+
       // Read /OPS_Holes (our custom holes data for measureArea with cutouts)
       const opsHolesRaw = annotDict.get(PDFName.of('OPS_Holes'));
       if (opsHolesRaw) {

@@ -561,6 +561,10 @@
   "signatureVerification": {
     "checking": "Checking digital signatures…",
     "barLabel": "Digital signatures",
+    "unsignedFieldsSummary_one": "{{count}} unsigned signature field",
+    "unsignedFieldsSummary_other": "{{count}} unsigned signature fields",
+    "showUnsignedFields": "Show fields",
+    "hideUnsignedFields": "Hide fields",
     "listError": "The signatures could not be checked: {{detail}}",
     "documentTimestamp": "Document timestamp",
     "documentTimestampBy": "Document timestamp ({{tsa}})",

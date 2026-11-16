@@ -14,6 +14,8 @@ import {
 } from '../symbols/two-point.js';
 import { isPointPolygon, rotatePointPolygon } from './polygon-transform.js';
 import { herrekenExtMaat } from './ext-measure.js';
+import { subtractAreaCutout, applyAreaCutout } from './area-cutout.js';
+import { vlakRingen, ringenIndelen } from './vlak-ringen.js';
 import {
   MIN_GEBIED_PX, schaalRechthoekMetGreep, schermPxNaarPt, veiligeVerhouding,
   tekstvakMinimum, nietNul,
@@ -750,8 +752,34 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
                 return keepArc(p, nx, ny);
               });
             });
+            const rings = vlakRingen(originalAnn.points, originalAnn.holes);
+            const ringIndex = rings.indexOf(originalAnn.holes[holeIdx]);
+            if (ringIndex >= 0 && ringenIndelen(rings)[ringIndex] === false) {
+              const otherHoles = originalAnn.holes.filter((_, index) => index !== holeIdx);
+              let result;
+              try {
+                result = subtractAreaCutout(originalAnn.points, otherHoles, annotation.holes[holeIdx]);
+              } catch (error) {
+                console.error('Area cutout grip failed:', error);
+                Object.assign(annotation, originalAnn);
+                return;
+              }
+              // Grips keep an area present. A whole-area cutout is removed
+              // by the Add Hole operation, with its normal delete history.
+              if (result?.empty) {
+                Object.assign(annotation, originalAnn);
+                return;
+              }
+              applyAreaCutout(annotation, result || { points: originalAnn.points, holes: otherHoles });
+            }
+            delete annotation.enginePixels;
             // Recalculate measurement text with holes
-            annotation.measureText = formatMeasurement(calculateArea(annotation.points, annotation.holes, annotation.page));
+            const area = calculateArea(annotation.points, annotation.holes, annotation.page);
+            annotation.measureText = formatMeasurement(area);
+            if (annotation.type === 'measureArea') {
+              annotation.measureValue = area.value;
+              annotation.measureUnit = area.unit;
+            }
             herrekenExtMaat(annotation); // bestandsmeting: the file's schaal
             refreshMeasureExtras(annotation);
           }
@@ -804,11 +832,17 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
             annotation.y = Math.min(...ys);
             annotation.width = Math.max(...xs) - annotation.x;
             annotation.height = Math.max(...ys) - annotation.y;
-            // Recalculate measurement text (with holes if present)
+            // Keep quantities and captions together after a vertex edit.
             if (annotation.type === 'measureArea') {
-              annotation.measureText = formatMeasurement(calculateArea(annotation.points, annotation.holes, annotation.page));
+              const area = calculateArea(annotation.points, annotation.holes, annotation.page);
+              annotation.measureValue = area.value;
+              annotation.measureUnit = area.unit;
+              annotation.measureText = formatMeasurement(area);
             } else if (annotation.type === 'measurePerimeter') {
-              annotation.measureText = formatMeasurement(calculatePerimeter(annotation.points, annotation.page));
+              const perimeter = calculatePerimeter(annotation.points, annotation.page);
+              annotation.measureValue = perimeter.value;
+              annotation.measureUnit = perimeter.unit;
+              annotation.measureText = formatMeasurement(perimeter);
             }
             herrekenExtMaat(annotation); // bestandsmeting: the file's schaal
             refreshMeasureExtras(annotation);

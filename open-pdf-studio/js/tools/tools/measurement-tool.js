@@ -1,7 +1,7 @@
-import { state, getActiveDocument } from '../../core/state.js';
+import { state, getActiveDocument, clearSelection } from '../../core/state.js';
 import { cloneAnnotation, createAnnotation } from '../../annotations/factory.js';
 import { recordModify, recordAdd } from '../../core/undo-manager.js';
-import { calculateArea, calculateDistance, formatMeasurement, formatDimensionText, arcControlPoint, expandArcPoints } from '../../annotations/measurement.js';
+import { calculateArea, calculateDistance, formatMeasurement, formatDimensionText, arcControlPoint, expandArcPoints, refreshMeasureExtras } from '../../annotations/measurement.js';
 import { applyToolTransform } from '../tool-context.js';
 import { randkleurenUitVoorkeur } from '../../annotations/fill-utils.js';
 import { zetRechtopRond } from '../../pdf/weergave-ruimte.js';
@@ -16,6 +16,9 @@ import {
 } from '../type-length-input.js';
 import { setMeasureReadout, clearMeasureReadout } from '../measure-readout.js';
 import { hergebruikKlikSnap, paintHoverSnap } from '../pointer-snap.js';
+import { subtractAreaCutout, applyAreaCutout } from '../../annotations/area-cutout.js';
+import { deleteAnnotationsWithUndo } from '../../annotations/mutations.js';
+import { updateStatusMessage } from '../../ui/chrome/status-bar.js';
 
 // Last cursor position for measurement tools — used when Enter commits at
 // typed length so we know the direction.
@@ -431,6 +434,9 @@ function _measureMultiClickDown(ctx, e, toolType) {
 
   // Right-click finishes
   if (e.button === 2) {
+    if (state.measurePoints?.length || (isArea && state.measurePhase === 'holes' && state.measureOuterPoints)) {
+      state._suppressNextContextmenu = true;
+    }
     if (isArea && state.measurePhase === 'holes') {
       // In holes phase: right-click finalizes the entire annotation
       _finishMeasureWithHoles(ctx);
@@ -1168,21 +1174,24 @@ function _finishAddHole(ctx) {
   if (pts.length >= 3 && targetId && doc) {
     const ann = doc.annotations.find(a => a.id === targetId);
     if (ann) {
-      // Record original state for undo
-      const oldAnn = cloneAnnotation(ann);
-
-      // Add the hole
-      if (!ann.holes) ann.holes = [];
-      ann.holes = [...ann.holes, [...pts]];
-
-      // Recalculate the area measurement (measureArea only)
-      if (ann.type === 'measureArea') {
-        _recalcMeasureAreaText(ann, ctx);
-        void import('../../annotations/geos-area.js').then((mod) => mod.scheduleAreaRefine(ann));
+      try {
+        const result = subtractAreaCutout(ann.points, ann.holes, pts);
+        if (result?.empty) {
+          deleteAnnotationsWithUndo(doc, [ann]);
+          clearSelection();
+          ctx.hideProperties();
+        } else if (result) {
+          const oldAnn = cloneAnnotation(ann);
+          applyAreaCutout(ann, result);
+          if (ann.type === 'measureArea') _recalcMeasureAreaText(ann, ctx);
+          ann.modifiedAt = new Date().toISOString();
+          recordModify(ann.id, oldAnn, ann);
+          void import('../../annotations/geos-area.js').then((mod) => mod.scheduleAreaRefine(ann));
+        }
+      } catch (error) {
+        console.error('Area cutout failed:', error);
+        updateStatusMessage('Could not subtract this hole. The area was kept unchanged.');
       }
-
-      ann.modifiedAt = new Date().toISOString();
-      recordModify(ann.id, oldAnn, ann);
     }
   }
 
@@ -1204,6 +1213,7 @@ function _recalcMeasureAreaText(ann, ctx) {
   ann.measureText = formatMeasurement(area);
   ann.measureValue = area.value;
   ann.measureUnit = area.unit;
+  refreshMeasureExtras(ann);
 }
 
 function _drawAddHolePreview(ctx, cursorX, cursorY) {

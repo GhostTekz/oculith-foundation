@@ -1,3 +1,14 @@
+/* Keep PDF panel preferences mounted while the comparison tab uses the
+   workspace. Returning to a PDF restores the same panels and their sizes. */
+.desktop-workspace { display: contents; }
+.desktop-workspace.comparison-focused > #workflow-bar,
+.desktop-workspace.comparison-focused > .properties-toolbar,
+.desktop-workspace.comparison-focused > [data-host='bottom'],
+.desktop-workspace.comparison-focused > .content > :not(.main-view),
+.desktop-workspace.comparison-focused .main-view > #navigation-bar {
+  display: none;
+}
+
 /* Content Area */
 .content {
   flex: 1;

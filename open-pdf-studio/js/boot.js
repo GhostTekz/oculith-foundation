@@ -203,11 +203,10 @@ async function installEdition(found) {
   setStatus('Starting');
   // The active edition must be composed before a host import evaluates
   // editions/active.js. Full editions and independent add-ons share this order.
-  // The modules load at once: each one imports what its own start-up needs
-  // (the editor's module graph orders their evaluation), and none of them
-  // relies on another host module having run first.
+  // Load interface entries in order. Older WebKit can resolve concurrent
+  // imports into a shared cyclic chunk before its namespace is initialized.
   try {
-    await loadHostModules([...new Set([...(plugin?.requires || []), ...addonModules])], { parallel: true });
+    await loadHostModules([...new Set([...(plugin?.requires || []), ...addonModules])]);
     bootMark('host-modules');
   } catch (error) {
     // Some host modules import active.js, which selects the edition once.

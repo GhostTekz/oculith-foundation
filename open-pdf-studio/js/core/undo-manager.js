@@ -420,10 +420,16 @@ let staleStamps = [];
 
 function restoreAnnotationState(annotation, snapshot) {
   const stale = stampRasterStale(annotation, snapshot);
+  // PDF identity describes the saved bytes, not the earlier editing state.
+  // A snapshot made before the first save must not remove it on Undo/Redo.
+  const identity = annotation.id === snapshot.id
+    ? { nm: annotation.nm, pdfSource: clonePlainValue(annotation.pdfSource) } : null;
   for (const key of Object.keys(annotation)) {
     if (!Object.prototype.hasOwnProperty.call(snapshot, key)) delete annotation[key];
   }
   Object.assign(annotation, cloneAnnotation(snapshot));
+  if (identity?.nm) annotation.nm = identity.nm;
+  if (identity?.pdfSource?.modelId === annotation.id) annotation.pdfSource = identity.pdfSource;
   if (stale) {
     // Direct het oude raster uit de cache halen, zodat er tussendoor niet
     // nog de vorige kleur of dikte getekend wordt.
@@ -519,7 +525,12 @@ function applyUndo(cmd, lookup) {
   switch (cmd.type) {
     case 'addAnnotation': {
       const idx = doc.annotations.findIndex(a => a.id === cmd.annotation.id);
-      if (idx !== -1) doc.annotations.splice(idx, 1);
+      if (idx !== -1) {
+        // Saving can assign PDF identity after this addition was recorded.
+        // Redo must restore the saved markup that Undo actually removes.
+        cmd.annotation = historyClone(doc.annotations[idx]);
+        doc.annotations.splice(idx, 1);
+      }
       lookup.reset();
       break;
     }
@@ -606,6 +617,20 @@ function applyUndo(cmd, lookup) {
       break;
     }
     case 'bulkAdd': {
+      const updates = new Map();
+      for (const item of cmd.items) {
+        const id = item.annotation.id;
+        if (!updates.has(id)) updates.set(id, { items: [], next: 0 });
+        updates.get(id).items.push(item);
+      }
+      // Consume snapshots in removal order, including repeated IDs, just
+      // as removeFirstById consumes the matching live annotations.
+      for (const annotation of doc.annotations) {
+        const queue = updates.get(annotation.id);
+        if (queue && queue.next < queue.items.length) {
+          queue.items[queue.next++].annotation = historyClone(annotation);
+        }
+      }
       removeFirstById(doc, cmd.items.map(item => item.annotation.id));
       lookup.reset();
       break;

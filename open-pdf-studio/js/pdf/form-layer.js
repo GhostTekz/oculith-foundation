@@ -164,8 +164,9 @@ export async function createFormLayer(page, viewport, container, pageNum, isCurr
 
   formLayers.set(pageNum, formLayerDiv);
 
-  // Show the form fields info bar
-  showFormFieldsBar();
+  // Signature widgets have their own status bar. They do not offer the
+  // editable form values described by the fill-in notice.
+  if (widgetAnnotations.some(ann => ann.fieldType !== 'Sig')) showFormFieldsBar();
 
   return formLayerDiv;
 }

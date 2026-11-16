@@ -3715,8 +3715,8 @@ async fn render_pdf_page_region(
             .ok_or("Pixmap cache lock unavailable")?;
         let render_generation = pixmap_cache.generation_for_visibility(&path, &visibility);
 
-        // Try the worker pool first: region tiles are small (fit the 64 MB SHM), so
-        // they render in a SEPARATE process — safe for parallel/pre-cache rendering
+        // Try the worker pool first: large regions are transferred in bounded
+        // pixel tiles, keeping high-zoom rendering in a separate process
         // and off the main thread. Falls back to in-proc PDFium on any failure
         // except a dead worker: that crash must not be repeated in the GUI process.
         if let Some(p) = pool.get() {
