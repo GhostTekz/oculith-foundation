@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Provjera digitalnih potpisa…",
     "barLabel": "Digitalni potpisi",
+    "unsignedFieldsSummary_one": "Nepotpisana polja za potpis: {{count}}",
+    "unsignedFieldsSummary_other": "Nepotpisana polja za potpis: {{count}}",
+    "showUnsignedFields": "Prikaži polja",
+    "hideUnsignedFields": "Sakrij polja",
     "listError": "Potpisi se nisu mogli provjeriti: {{detail}}",
     "documentTimestamp": "Vremenski žig dokumenta",
     "documentTimestampBy": "Vremenski žig dokumenta ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Praznina u rasponu bajtova ne sadrži samo vrijednost potpisa.",
       "subfilter-niet-ondersteund": "Ovaj format potpisa nije podržan.",
       "zoekbudget-op": "Traženje lanca certifikata zaustavljeno je na ograničenju; lanac ipak može postojati.",
+      "hashbudget-op": "Dosegnuto je ograničenje dokumenta za provjeru potpisanih bajtova; ovaj potpis nije provjeren.",
       "gat-wijkt-af-van-contents": "Vrijednost potpisa u datoteci razlikuje se od one u rječniku potpisa.",
       "interne-fout": "Došlo je do interne pogreške pri provjeri ovog potpisa.",
       "unknown": "Provjera je prijavila dodatni problem."

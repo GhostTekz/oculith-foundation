@@ -37,6 +37,7 @@ import { rotateTextDir } from '../annotations/corrections/geometry.js';
 import { isTextAnchored } from '../annotations/corrections/model.js';
 import { stopAlleWielScrollers } from './wiel-scroll.js';
 import { pageCanvasContext } from './page-canvas-context.js';
+import { bindContinuousPageEvents } from './continuous-page-events.js';
 import { clipDektZicht, clipUitDataset, zichtbaarPaginaDeel } from './continuous-clip.js';
 import { continuousPagesToRelease } from './continuous-residency.js';
 import { registerBitmapCache, enforceBitmapBudget } from './bitmap-budget.js';
@@ -397,7 +398,7 @@ async function _renderPageImpl(pageNum) {
   // Markups List and the markups are there while a heavy drawing is still
   // being drawn. ensureAnnotationsForPage below waits for this same load.
   if (_isStaleRender()) return; // user switched tabs while we awaited PDF.js page
-  ensureAnnotationsForPage(pageNum).catch(() => {});
+  ensureAnnotationsForPage(pageNum, undefined, { mayDefer: true }).catch(() => {});
   const extraRotation = getPageRotation(pageNum);
   const viewportOpts = { scale };
   if (extraRotation) {
@@ -863,7 +864,7 @@ async function _renderPageImpl(pageNum) {
 
     const _lf0 = performance.now();
     const linkFormDone = (async () => {
-      await _untilOrAfter([ensureAnnotationsForPage(pageNum, doc)], LAYER_WAIT_MS);
+      await _untilOrAfter([ensureAnnotationsForPage(pageNum, doc, { mayDefer: true })], LAYER_WAIT_MS);
       await _whenIdle(LAYER_IDLE_MS);
       if (!layersCurrent()) return;
       perfRecord('page.linkFormWait', performance.now() - _lf0);
@@ -973,7 +974,7 @@ async function _renderPageImpl(pageNum) {
   if (_markupsNodig) {
     console.log(`[PERF] renderPage(${pageNum}) ensureAnnotations START: ${(performance.now() - _rp0).toFixed(0)}ms`);
     const _wm0 = performance.now();
-    await ensureAnnotationsForPage(pageNum);
+    await ensureAnnotationsForPage(pageNum, undefined, { mayDefer: true });
     if (!_markupsAl) perfRecord('page.waitMarkups', performance.now() - _wm0);
     if (_isStaleRender()) {
       // A newer render of this page (a zoom) went ahead without them.
@@ -1247,7 +1248,7 @@ export async function renderPageOffscreen(pageNum) {
   }
   applyOverlayPointerEvents(container);
 
-  await ensureAnnotationsForPage(pageNum);
+  await ensureAnnotationsForPage(pageNum, undefined, { mayDefer: true });
   if (_isStaleDoc(doc)) return;
   if (state.preferences.snapToPdfContent) prefetchPdfVectorGeometry(pageNum);
   redrawAnnotations();
@@ -2337,19 +2338,11 @@ function setupContinuousPageEvents(canvas, pageNum) {
   // schakelt de afhandeling uit zoals voorheen.
   const cc = canvas.closest('.canvas-container-cont') || canvas;
   cc.dataset.page = pageNum;
-  const magAfhandelen = (e) => {
-    if ((canvas.style.pointerEvents || '') === 'none') return false;
-    const t = e.target;
-    if (t === cc || t === canvas) return true;
-    return !!(t.classList && (t.classList.contains('pdf-canvas') || t.classList.contains('annotation-canvas')));
-  };
+  // Once per container: a released page keeps its container, so binding again
+  // when it returns stacked duplicate handlers (continuous-page-events.js).
   // Import event handlers dynamically to avoid circular dependencies
-  import('../tools/tool-dispatcher.js').then(({ handlePointerDown, handlePointerMove, handlePointerUp, handleDblClick }) => {
-    const wrap = (fn) => (e) => { if (magAfhandelen(e)) fn(e); };
-    cc.addEventListener('pointerdown', wrap(handlePointerDown));
-    cc.addEventListener('pointermove', wrap(handlePointerMove));
-    cc.addEventListener('pointerup', wrap(handlePointerUp));
-    cc.addEventListener('dblclick', wrap(handleDblClick));
+  import('../tools/tool-dispatcher.js').then((handlers) => {
+    bindContinuousPageEvents(cc, handlers);
   });
 }
 

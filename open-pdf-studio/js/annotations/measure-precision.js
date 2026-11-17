@@ -201,3 +201,27 @@ export function otherSystemText(value, unit, shownIn = 'auto', denominator = 16)
   }
   return displayText(value, unit, 'ft-in', denominator);
 }
+
+/**
+ * The measurement-rounding preference ('1', '5', '10': a step in
+ * millimetres) as a step in a length unit, with the decimals that step
+ * needs; null when the reading is not a physical length (areas, volumes,
+ * angles, page points) or the preference is off.
+ * @returns {{step:number, decimals:number} | null}
+ */
+export function roundingStepIn(rounding, unit) {
+  if (!rounding || rounding === 'none') return null;
+  const stepMm = parseFloat(rounding);
+  if (!(stepMm > 0) || !MM_PER[unit]) return null;
+  const step = stepMm / MM_PER[unit];
+  let decimals = 0;
+  while (decimals < 6 && Math.abs(Math.round(step * 10 ** decimals) - step * 10 ** decimals) > 1e-9) decimals++;
+  return { step, decimals };
+}
+
+/** A length rounded to the preference step (see roundingStepIn); other readings unchanged. */
+export function roundToPreferenceStep(value, unit, rounding) {
+  const r = roundingStepIn(rounding, unit);
+  if (!r || !Number.isFinite(value)) return value;
+  return Number((Math.round(value / r.step) * r.step).toFixed(r.decimals + 6));
+}

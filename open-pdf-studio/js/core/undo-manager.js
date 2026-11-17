@@ -4,6 +4,8 @@ import { cloneAnnotation } from '../annotations/factory.js';
 import { stampRasterStale } from '../annotations/stamp-appearance-sync.js';
 import { applyOcrShift } from '../pdf/shift-page-geometry.js';
 import { trimUndoStack } from './undo-byte-budget.js';
+import { withHistoryLock, historyBusy } from './history-lock.js';
+import { paginaOfDocumentSchaal } from '../annotations/schaal-op-punt.js';
 import { unwrap } from 'solid-js/store';
 import {
   rawOf, undoStackOf, redoStackOf, clearRedoStack, historyChanged,
@@ -38,8 +40,7 @@ function plainCommand(cmd) {
 }
 
 // Sync the modified flag based on whether the undo stack matches the saved clean point
-function syncModifiedState() {
-  const doc = getActiveDocument();
+function syncModifiedState(doc = getActiveDocument()) {
   if (!doc) return;
   const isClean = doc.savedUndoStackLength >= 0 &&
                   undoStackOf(doc).length === doc.savedUndoStackLength;
@@ -55,20 +56,18 @@ function getRedoStack() {
   return redoStackOf(getActiveDocument());
 }
 
-function pushUndo(cmd) {
-  const stack = getUndoStack();
+function pushUndo(cmd, doc = getActiveDocument()) {
+  const stack = undoStackOf(doc);
   stack.push(plainCommand(cmd));
   const removed = trimUndoStack(stack, MAX_UNDO_STACK);
   historyChanged();
-  const doc = getActiveDocument();
   if (removed && doc && doc.savedUndoStackLength >= 0) {
     doc.savedUndoStackLength -= removed;
     if (doc.savedUndoStackLength < 0) doc.savedUndoStackLength = -1;
   }
 }
 
-function clearRedo() {
-  const doc = getActiveDocument();
+function clearRedo(doc = getActiveDocument()) {
   if (doc) clearRedoStack(doc);
 }
 
@@ -198,28 +197,41 @@ async function persistMeasureScaleIfNeeded(cmd) {
   saveDocumentScale();
 }
 
-// Execute a command: push to undo, clear redo, sync modified state
-export function execute(cmd) {
+// Execute a command: push to undo, clear redo, sync modified state.
+// `doc` is the document the command changed; by default the active one. A
+// caller that awaited since it started passes the document it captured.
+export function execute(cmd, doc = getActiveDocument()) {
   if (pendingPropertyChange) flushPropertyChange();
   if (undoTransactionDepth > 0) {
-    undoTransactionCommands.push(cmd);
+    // Tagged with its document: a transaction held open across awaits may
+    // see edits of another tab, which belong in that tab's history.
+    undoTransactionCommands.push({ cmd, docId: doc?.id ?? null });
     return;
   }
-  const doc = getActiveDocument();
+  if (!doc || !state.documents.includes(doc)) return;
   // If clean point was beyond current position, it's now unreachable (divergent edit)
-  if (doc && doc.savedUndoStackLength > undoStackOf(doc).length) {
+  if (doc.savedUndoStackLength > undoStackOf(doc).length) {
     doc.savedUndoStackLength = -1;
   }
-  pushUndo(cmd);
-  clearRedo();
-  syncModifiedState();
+  pushUndo(cmd, doc);
+  clearRedo(doc);
+  syncModifiedState(doc);
   updateButtons();
   scheduleThumbnailRefresh(cmd);
 }
 
-// Undo
+// Undo. Refused while a page operation, or the undo or redo of one, still
+// replaces the PDF (history-lock.js); undoing a page operation holds that
+// lock until its PDF is restored. Other steps apply at once and hold nothing.
 export async function undo() {
+  if (historyBusy()) return;
+  if (undoStackOf(getActiveDocument()).at(-1)?.type === 'pageStructure') return withHistoryLock(undoNu);
+  return undoNu();
+}
+
+async function undoNu() {
   flushPropertyChange();
+  const doc = getActiveDocument();
   const undoStack = getUndoStack();
   if (undoStack.length === 0) return;
 
@@ -231,10 +243,11 @@ export async function undo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
-    await restorePageState(cmd.oldBytes, cmd.oldAnnotations, cmd.oldRotations, cmd.oldPage, cmd.readBefore);
-    applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, -1);
+    await restorePageState(cmd.oldBytes, cmd.oldAnnotations, cmd.oldRotations, cmd.oldPage, cmd.readBefore,
+      { doc, pageData: cmd.oldPageData || null });
+    applyOcrShift(doc?.ocrResults, cmd.ocrShift, -1);
     if (cmd.pageChange) await import('../pdf/page-changes.js').then((m) => m.announcePageChangeStep(cmd.pageChange, true));
-    syncModifiedState();
+    syncModifiedState(doc);
     updateButtons();
     return;
   }
@@ -244,7 +257,7 @@ export async function undo() {
   // Without the batch every single write reran every view that watches the
   // annotations (#491).
   batch(() => applyUndo(cmd));
-  if (raaktPaginaRotatie(cmd)) {
+  if (raaktPaginaRotatie(cmd) && getActiveDocument()?.pdfDoc) {
     const { tekenNaPaginaRotatie } = await import('../pdf/renderer.js');
     await tekenNaPaginaRotatie();
   }
@@ -315,9 +328,16 @@ function refineAreasAfterHistory(cmd) {
   void import('../annotations/count-cover.js').then((mod) => mod.scheduleCountCover(areas));
 }
 
-// Redo
+// Redo; refused and locked like undo.
 export async function redo() {
+  if (historyBusy()) return;
+  if (redoStackOf(getActiveDocument()).at(-1)?.type === 'pageStructure') return withHistoryLock(redoNu);
+  return redoNu();
+}
+
+async function redoNu() {
   flushPropertyChange();
+  const doc = getActiveDocument();
   const redoStack = getRedoStack();
   if (redoStack.length === 0) return;
 
@@ -329,16 +349,17 @@ export async function redo() {
 
   if (cmd.type === 'pageStructure') {
     const { restorePageState } = await import('../pdf/page-manager.js');
-    await restorePageState(cmd.newBytes, cmd.newAnnotations, cmd.newRotations, cmd.newPage, cmd.readAfter);
-    applyOcrShift(getActiveDocument()?.ocrResults, cmd.ocrShift, 1);
+    await restorePageState(cmd.newBytes, cmd.newAnnotations, cmd.newRotations, cmd.newPage, cmd.readAfter,
+      { doc, pageData: cmd.newPageData || null });
+    applyOcrShift(doc?.ocrResults, cmd.ocrShift, 1);
     if (cmd.pageChange) await import('../pdf/page-changes.js').then((m) => m.announcePageChangeStep(cmd.pageChange, false));
-    syncModifiedState();
+    syncModifiedState(doc);
     updateButtons();
     return;
   }
 
   batch(() => applyRedo(cmd));
-  if (raaktPaginaRotatie(cmd)) {
+  if (raaktPaginaRotatie(cmd) && getActiveDocument()?.pdfDoc) {
     const { tekenNaPaginaRotatie } = await import('../pdf/renderer.js');
     await tekenNaPaginaRotatie();
   }
@@ -555,7 +576,9 @@ function applyUndo(cmd, lookup) {
       break;
     }
     case 'rotatePage': {
-      setPageRotation(cmd.pageNum, cmd.oldRotation);
+      // Relative: a save may have written the rotation into the file
+      // (/Rotate) and cleared the in-app one since (saver.js).
+      setPageRotation(cmd.pageNum, getPageRotation(cmd.pageNum) + cmd.oldRotation - cmd.newRotation);
       if (cmd.viewports) zetViewports(doc, cmd.pageNum, cmd.viewports.oud);
       break;
     }
@@ -564,7 +587,7 @@ function applyUndo(cmd, lookup) {
       break;
     }
     case 'modifyPageScales': {
-      doc.pageScales = clonePlainValue(cmd.oldState);
+      doc.pageScales = restoredPageScales(doc, cmd.oldState, cmd.followed);
       break;
     }
     case 'modifySpaces': {
@@ -777,7 +800,7 @@ function applyRedo(cmd, lookup) {
       break;
     }
     case 'rotatePage': {
-      setPageRotation(cmd.pageNum, cmd.newRotation);
+      setPageRotation(cmd.pageNum, getPageRotation(cmd.pageNum) + cmd.newRotation - cmd.oldRotation);
       if (cmd.viewports) zetViewports(doc, cmd.pageNum, cmd.viewports.nieuw);
       break;
     }
@@ -1040,13 +1063,36 @@ export function recordMeasureScale(oldState, newState) {
   });
 }
 
+const sameScale = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+// The page scale map Undo returns to. Pages that followed the PDF get no entry
+// again, unless the PDF's own scale has changed since (a save writes the newer
+// calibration into the file): then they keep the earlier one explicitly.
+function restoredPageScales(doc, oldState, followed) {
+  const restored = clonePlainValue(oldState);
+  if (!followed) return restored;
+  // Only what the page scale lookup reads (schaal-op-punt.paginaOfDocumentSchaal).
+  const probe = { pageScales: restored, pdfViewports: doc.pdfViewports, measureScale: doc.measureScale };
+  let map = restored;
+  for (const [page, earlier] of Object.entries(followed)) {
+    if (sameScale(paginaOfDocumentSchaal(probe, Number(page)), earlier)) continue;
+    map = { ...(map || {}) };
+    map[page] = earlier ? { ...earlier, method: earlier.method === 'pdfPage' ? 'ratio' : earlier.method } : null;
+    probe.pageScales = map;
+  }
+  return map;
+}
+
 // Per-page scale map (doc.pageScales) before and after a scale change.
-export function recordPageScales(oldState, newState) {
+// `followed` holds, for pages that had no entry of their own, the scale they
+// took from the PDF at the time ({ [page]: scaleData | null }).
+export function recordPageScales(oldState, newState, followed = null) {
   if (JSON.stringify(oldState) === JSON.stringify(newState)) return;
   execute({
     type: 'modifyPageScales',
     oldState: clonePlainValue(oldState),
     newState: clonePlainValue(newState),
+    followed: followed && Object.keys(followed).length ? clonePlainValue(followed) : null,
   });
 }
 
@@ -1109,18 +1155,31 @@ export function endUndoTransaction() {
   if (undoTransactionDepth === 0) return;
   undoTransactionDepth--;
   if (undoTransactionDepth > 0) return;
-  const commands = undoTransactionCommands || [];
-  const targetDoc = state.documents.find(doc => doc.id === undoTransactionDocumentId);
+  const queued = undoTransactionCommands || [];
+  const startId = undoTransactionDocumentId;
+  const targetDoc = state.documents.find(doc => doc.id === startId);
   const beforeSelectionIds = undoTransactionBeforeSelectionIds || [];
   const afterSelectionIds = (targetDoc?.selectedAnnotations || []).map(annotation => annotation.id);
   undoTransactionCommands = null;
   undoTransactionDocumentId = null;
   undoTransactionBeforeSelectionIds = null;
-  if (commands.length === 0) return;
+  // Edits another tab made meanwhile go onto that tab's history, one step each tab.
+  const perDocument = new Map();
+  for (const { cmd, docId } of queued) {
+    if (docId === startId) continue;
+    if (!perDocument.has(docId)) perDocument.set(docId, []);
+    perDocument.get(docId).push(cmd);
+  }
+  for (const [docId, list] of perDocument) {
+    const other = state.documents.find(doc => doc.id === docId);
+    if (other) execute(list.length === 1 ? list[0] : { type: 'compound', commands: list }, other);
+  }
+  const commands = queued.filter(item => item.docId === startId).map(item => item.cmd);
+  if (commands.length === 0 || !targetDoc) return;
   const selectionChanged = beforeSelectionIds.length !== afterSelectionIds.length ||
     beforeSelectionIds.some((id, index) => id !== afterSelectionIds[index]);
-  if (commands.length === 1 && !selectionChanged) execute(commands[0]);
-  else execute({ type: 'compound', commands, beforeSelectionIds, afterSelectionIds });
+  if (commands.length === 1 && !selectionChanged) execute(commands[0], targetDoc);
+  else execute({ type: 'compound', commands, beforeSelectionIds, afterSelectionIds }, targetDoc);
 }
 
 // Debounced property change recording (for rapid slider/input changes)
@@ -1181,15 +1240,8 @@ export function flushPropertyChange() {
     if (targetDoc.savedUndoStackLength > undoStack.length) {
       targetDoc.savedUndoStackLength = -1;
     }
-    undoStack.push(plainCommand(cmd));
-    if (undoStack.length > MAX_UNDO_STACK) {
-      undoStack.shift();
-      if (targetDoc.savedUndoStackLength >= 0) {
-        targetDoc.savedUndoStackLength--;
-        if (targetDoc.savedUndoStackLength < 0) targetDoc.savedUndoStackLength = -1;
-      }
-    }
-    historyChanged();
+    // The same count and PDF-byte limits as every other command.
+    pushUndo(cmd, targetDoc);
     clearRedoStack(targetDoc);
     scheduleStoredGeometry(current);
     // Sync modified state
@@ -1232,6 +1284,8 @@ export function recordModifyBookmark(id, oldState, newState) {
 // Record a page structure change (insert, delete, reorder) for undo/redo.
 // `extra.ocrShift` ({pages, dx, dy}) is set by Shift Page: the pending OCR word
 // boxes of those pages moved with the content and move back on undo.
+// `extra.doc`: the document changed (default: the active one). `extra.oldPageData`
+// and `extra.newPageData` ({pageScales, spaces}): restored by undo and redo.
 export function recordPageStructure(oldBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, newPage, extra = {}) {
   execute({
     type: 'pageStructure',
@@ -1250,5 +1304,6 @@ export function recordPageStructure(oldBytes, oldAnnotations, oldRotations, oldP
     // redo the other pages are read from the restored file again.
     ...(extra.readBefore ? { readBefore: [...extra.readBefore] } : {}),
     ...(extra.readAfter ? { readAfter: [...extra.readAfter] } : {}),
-  });
+    ...(extra.oldPageData ? { oldPageData: extra.oldPageData, newPageData: extra.newPageData } : {}),
+  }, extra.doc || getActiveDocument());
 }

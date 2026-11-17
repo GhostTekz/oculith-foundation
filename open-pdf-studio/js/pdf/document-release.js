@@ -124,16 +124,26 @@ export function sleutelsMetPad(sleutels, pad) {
 
 /** Haalt alles wat per bestandspad gecachet staat weg, in de webview en in Rust. */
 async function geefPadVrij(pad) {
-  const [loader, vector, bitmaps, progressief] = await Promise.all([
+  const [loader, vector, bitmaps, progressief, renders] = await Promise.all([
     import('./loader.js'),
     import('./vector-renderer.js'),
     import('./page-bitmap-cache.js'),
     import('./progressive-render.js'),
+    import('./render-cache-invalidation.js'),
   ]);
   loader.clearCachedPdfBytes(pad);
   vector.invalidateDocumentCache(pad);
   bitmaps.invalidateDocumentBitmaps(pad);
   progressief.forgetContentBytes(pad);
+  // Tegels, de bitmaps van de doorlopende weergave en de voorvertoningen
+  // dragen geen revisie in hun sleutel: een opnieuw uitgegeven bestand op
+  // hetzelfde pad toonde anders na heropenen de oude tegels. Dezelfde
+  // opruiming als de saver na het herschrijven van een bestand.
+  try {
+    await renders.invalidateRenderCachesForPath?.(pad);
+  } catch (e) {
+    console.warn('[release] render-caches vrijgeven:', e);
+  }
   try {
     const { isTauri, invoke } = await import('../core/platform.js');
     if (isTauri()) await invoke('release_pdf_document', { path: pad });

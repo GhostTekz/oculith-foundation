@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Se verifica semnaturile digitale…",
     "barLabel": "Semnături digitale",
+    "unsignedFieldsSummary_one": "Câmpuri de semnătură nesemnate: {{count}}",
+    "unsignedFieldsSummary_other": "Câmpuri de semnătură nesemnate: {{count}}",
+    "showUnsignedFields": "Afișează câmpurile",
+    "hideUnsignedFields": "Ascunde câmpurile",
     "listError": "Semnaturile nu au putut fi verificate: {{detail}}",
     "documentTimestamp": "Marca temporala a documentului",
     "documentTimestampBy": "Marca temporala a documentului ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Spațiul liber din intervalul de octeți nu conține doar valoarea semnăturii.",
       "subfilter-niet-ondersteund": "Acest format de semnătură nu este acceptat.",
       "zoekbudget-op": "Căutarea unui lanț de certificate s-a oprit la limita sa; totuși, un lanț poate exista.",
+      "hashbudget-op": "S-a atins limita documentului pentru verificarea octeților semnați; această semnătură nu a fost verificată.",
       "gat-wijkt-af-van-contents": "Valoarea semnăturii din fișier diferă de cea din dicționarul semnăturii.",
       "interne-fout": "A apărut o eroare internă la verificarea acestei semnături.",
       "unknown": "Verificarea a raportat o problemă suplimentară."

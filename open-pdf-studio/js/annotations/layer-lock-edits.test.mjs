@@ -106,7 +106,7 @@ test('verwijderen laat markeringen op een vergrendelde laag staan, in één undo
 test('Delete, knippen en pijltjes op het canvas nemen alleen bewerkbare lagen mee', () => {
   const bron = readFileSync(new URL('../tools/keyboard-handlers.js', import.meta.url), 'utf8');
   const del = bron.slice(bron.indexOf("} else if (e.key === 'Delete') {"));
-  assert.match(del.slice(0, 900), /editableOnLayers\(getActiveDocument\(\), \[\.\.\.getActiveDocument\(\)\.selectedAnnotations\]\)/);
+  assert.match(del.slice(0, 1200), /editableOnLayers\(delDoc, \[\.\.\.delDoc\.selectedAnnotations\]\)/);
   assert.match(bron, /const cutKeuze = cutDoc \? editableOnLayers\(cutDoc, /);
   assert.match(bron, /expandCorrectionGroups\(cutDoc\.annotations, cutKeuze\)/);
   const pijl = bron.slice(bron.indexOf('const movable ='));

@@ -149,3 +149,18 @@ for (const rotation of [90, 270]) {
     }
   });
 }
+
+test('a rectangle with a non-integer rotation reopens with the exact angle, twice', async () => {
+  const source = await PDFDocument.create();
+  source.addPage([612, 792]);
+  const original = createAnnotation({ type: 'box', page: 1, x: 150, y: 200,
+    width: 120, height: 60, rotation: 12.5, color: '#275ca1', strokeColor: '#275ca1', lineWidth: 2 });
+  const firstBytes = await save(await source.save(), [original]);
+  const first = await reopen(firstBytes);
+  assert.equal(first.model.type, 'box');
+  assert.ok(Math.abs(first.model.rotation - 12.5) < 1e-6, `rotation ${first.model.rotation}`);
+  closeRect(first.model, original, 'first reopen');
+  const second = await reopen(await save(firstBytes, [first.model]));
+  assert.ok(Math.abs(second.model.rotation - 12.5) < 1e-6, `rotation ${second.model.rotation}`);
+  closeRect(second.model, original, 'second reopen');
+});

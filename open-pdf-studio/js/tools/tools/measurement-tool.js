@@ -1,4 +1,5 @@
 import { state, getActiveDocument, clearSelection } from '../../core/state.js';
+import i18next from '../../i18n/config.js';
 import { cloneAnnotation, createAnnotation } from '../../annotations/factory.js';
 import { recordModify, recordAdd } from '../../core/undo-manager.js';
 import { calculateArea, calculateDistance, formatMeasurement, formatDimensionText, arcControlPoint, expandArcPoints, refreshMeasureExtras } from '../../annotations/measurement.js';
@@ -16,7 +17,7 @@ import {
 } from '../type-length-input.js';
 import { setMeasureReadout, clearMeasureReadout } from '../measure-readout.js';
 import { hergebruikKlikSnap, paintHoverSnap } from '../pointer-snap.js';
-import { subtractAreaCutout, applyAreaCutout } from '../../annotations/area-cutout.js';
+import { subtractAreaCutout, applyAreaCutout, cutoutInsideArea } from '../../annotations/area-cutout.js';
 import { deleteAnnotationsWithUndo } from '../../annotations/mutations.js';
 import { updateStatusMessage } from '../../ui/chrome/status-bar.js';
 
@@ -1175,7 +1176,12 @@ function _finishAddHole(ctx) {
     const ann = doc.annotations.find(a => a.id === targetId);
     if (ann) {
       try {
-        const result = subtractAreaCutout(ann.points, ann.holes, pts);
+        // A hole drawn wholly inside the area is added as drawn: the other
+        // rings keep their arcs, order and parts. Only a hole crossing the
+        // boundary or another hole is clipped into new rings.
+        const result = cutoutInsideArea(ann.points, ann.holes, pts)
+          ? { points: ann.points, holes: [...(ann.holes || []), pts.map(p => ({ ...p }))] }
+          : subtractAreaCutout(ann.points, ann.holes, pts);
         if (result?.empty) {
           deleteAnnotationsWithUndo(doc, [ann]);
           clearSelection();
@@ -1190,7 +1196,7 @@ function _finishAddHole(ctx) {
         }
       } catch (error) {
         console.error('Area cutout failed:', error);
-        updateStatusMessage('Could not subtract this hole. The area was kept unchanged.');
+        updateStatusMessage(i18next.t('areaHoleFailed', { ns: 'statusbar', defaultValue: 'Could not subtract this hole. The area was kept unchanged.' }));
       }
     }
   }

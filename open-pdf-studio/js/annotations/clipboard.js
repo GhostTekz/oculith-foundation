@@ -10,6 +10,7 @@ import { showProperties, showMultiSelectionProperties } from '../ui/panels/prope
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { annotationCanvas, pdfContainer } from '../ui/dom-elements.js';
 import { recordAdd, recordBulkAdd } from '../core/undo-manager.js';
+import { addWithMeasurementRefresh } from './measurement-refresh.js';
 import { getEffectiveScale } from '../tools/effective-scale.js';
 import { plakVerschuivingPt } from './minimummaat.js';
 import { paginaMaat, paginaRectNaarClient, clientNaarPagina, rechtopRotatie } from '../pdf/weergave-ruimte.js';
@@ -74,14 +75,25 @@ export function pasteFromClipboard() {
 }
 
 /**
+ * Is `doc` still the drawing a paste started on: open, active and loaded?
+ * An asynchronous paste (reading the system clipboard, decoding an image)
+ * captures its document first and stops when the user switched or closed the
+ * tab meanwhile, instead of pasting into whichever drawing is active by then.
+ */
+export function pasteTargetCurrent(doc) {
+  return !!doc?.pdfDoc && getActiveDocument() === doc && state.documents.includes(doc);
+}
+
+/**
  * Paste the image on the system clipboard, read natively (Linux: the
  * webview never reads the clipboard for the drawing, system-clipboard.js),
- * or else the markups copied in the app.
+ * or else the markups copied in the app. Into `doc` (the drawing active when
+ * the paste started) only.
  */
-export async function pasteImageOrMarkups() {
-  if (getActiveDocument()?.pdfDoc && pasteRegionIfLatest()) return;
+export async function pasteImageOrMarkups(doc = getActiveDocument()) {
+  if (doc?.pdfDoc && pasteRegionIfLatest()) return;
   const blob = await readClipboardImage();
-  if (!getActiveDocument()?.pdfDoc) return;
+  if (!pasteTargetCurrent(doc)) return;
   // A snapshot (G) is the latest copy: it is placed where it was taken (as
   // Ctrl+V does without leaving the app), unless another image has been
   // copied since. Opening another drawing leaves the app (a file dialog),
@@ -89,11 +101,13 @@ export async function pasteImageOrMarkups() {
   if (state._snapshotAt && !(state._internalCopyAt > state._snapshotAt)) {
     const shot = await import('../tools/screenshot.js');
     if (shot.hasLastCapture() && (!blob || await sameImageSize(blob, shot.lastCaptureSize()))) {
-      await shot.placeLastScreenshotAsOverlay({ opacity: 1, offset: 10 });
+      if (!pasteTargetCurrent(doc)) return;
+      await shot.placeLastScreenshotAsOverlay({ opacity: 1, offset: 10, doc });
       return;
     }
+    if (!pasteTargetCurrent(doc)) return;
   }
-  if (blob) { await pasteImageFromBlob(blob); return; }
+  if (blob) { await pasteImageFromBlob(blob, doc); return; }
   const clips = state.clipboardAnnotations;
   if (clips && clips.length > 1) pasteAnnotations();
   else if ((clips && clips.length === 1) || state.clipboardAnnotation) pasteAnnotation();
@@ -171,8 +185,10 @@ export function visibleCenterOnPage(pageNum) {
   return { x: (cx - cr.left + clipX) / scale, y: (cy - cr.top + clipY) / scale };
 }
 
-// Paste image from blob
-export async function pasteImageFromBlob(blob) {
+// Paste image from blob, into `doc` (the drawing active when the paste
+// started); nothing when that tab is no longer the active one once the image
+// is decoded.
+export async function pasteImageFromBlob(blob, doc = getActiveDocument()) {
   const imageId = generateImageId();
   const url = URL.createObjectURL(blob);
 
@@ -191,6 +207,8 @@ export async function pasteImageFromBlob(blob) {
     reader.onloadend = () => resolve(reader.result);
     reader.readAsDataURL(blob);
   });
+
+  if (!pasteTargetCurrent(doc)) { URL.revokeObjectURL(url); return; }
 
   // Store in cache
   imageCache.set(imageId, img);
@@ -213,7 +231,7 @@ export async function pasteImageFromBlob(blob) {
   }
 
   // Plaats op de pagina die de gebruiker op dat moment bekijkt.
-  const targetPage = getActiveDocument()?.currentPage || 1;
+  const targetPage = doc.currentPage || 1;
   const center = visibleCenterOnPage(targetPage);
   const x = center ? center.x - (width / 2) : 10;
   const y = center ? center.y - (height / 2) : 10;
@@ -246,13 +264,13 @@ export async function pasteImageFromBlob(blob) {
     modifiedAt: new Date().toISOString()
   };
 
-  const _pasteDoc1 = getActiveDocument();
-  if (_pasteDoc1) _pasteDoc1.annotations.push(annotation);
+  doc.annotations.push(annotation);
   recordAdd(annotation);
-  if (_pasteDoc1) { _pasteDoc1.selectedAnnotation = annotation; _pasteDoc1.selectedAnnotations = [annotation]; }
+  doc.selectedAnnotation = annotation;
+  doc.selectedAnnotations = [annotation];
   showProperties(annotation);
 
-  if (getActiveDocument()?.viewMode === 'continuous') {
+  if (doc.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -307,8 +325,9 @@ export function pasteAnnotation() {
   }
 
   const _pasteDoc2 = getActiveDocument();
-  if (_pasteDoc2) _pasteDoc2.annotations.push(newAnnotation);
-  recordAdd(newAnnotation);
+  // A pasted measurement takes the scale of the page it lands on.
+  if (_pasteDoc2) addWithMeasurementRefresh(_pasteDoc2, [newAnnotation], () => recordAdd(newAnnotation));
+  else recordAdd(newAnnotation);
   if (_pasteDoc2) { _pasteDoc2.selectedAnnotation = newAnnotation; _pasteDoc2.selectedAnnotations = [newAnnotation]; }
   showProperties(newAnnotation);
 
@@ -391,9 +410,9 @@ export function pasteAnnotations() {
   // A copied group is a new group, with its name and nesting (markup-groups.js).
   relinkCopiedGroups(state.clipboardAnnotations, newAnnotations);
   const _pasteDocAdd = getActiveDocument();
-  if (_pasteDocAdd) _pasteDocAdd.annotations.push(...newAnnotations);
-
-  recordBulkAdd(newAnnotations);
+  // Pasted measurements take the scale of the page they land on.
+  if (_pasteDocAdd) addWithMeasurementRefresh(_pasteDocAdd, newAnnotations, () => recordBulkAdd(newAnnotations));
+  else recordBulkAdd(newAnnotations);
   const _pasteDoc3 = getActiveDocument();
   if (_pasteDoc3) {
     _pasteDoc3.selectedAnnotations = newAnnotations;
@@ -447,15 +466,14 @@ export function pasteAnnotationsInPlace() {
       if (originalImg) imageCache.set(newImageId, originalImg);
       newAnn.imageId = newImageId;
     }
-    doc.annotations.push(newAnn);
   }
 
-  // Ongedaan maken via het bestaande undo-command-pad.
-  if (newAnnotations.length === 1) {
-    recordAdd(newAnnotations[0]);
-  } else {
-    recordBulkAdd(newAnnotations);
-  }
+  // Ongedaan maken via het bestaande undo-command-pad. Geplakte metingen
+  // krijgen de schaal van de pagina waarop ze landen.
+  addWithMeasurementRefresh(doc, newAnnotations, () => {
+    if (newAnnotations.length === 1) recordAdd(newAnnotations[0]);
+    else recordBulkAdd(newAnnotations);
+  });
 
   doc.selectedAnnotations = newAnnotations;
   doc.selectedAnnotation = newAnnotations[0];

@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "در حال بررسی امضاهای دیجیتال…",
     "barLabel": "امضاهای دیجیتال",
+    "unsignedFieldsSummary_one": "فیلدهای امضای امضانشده: {{count}}",
+    "unsignedFieldsSummary_other": "فیلدهای امضای امضانشده: {{count}}",
+    "showUnsignedFields": "نمایش فیلدها",
+    "hideUnsignedFields": "پنهان کردن فیلدها",
     "listError": "بررسی امضاها ممکن نشد: {{detail}}",
     "documentTimestamp": "مهر زمانی سند",
     "documentTimestampBy": "مهر زمانی سند ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "شکاف در بازه بایتی فقط شامل مقدار امضا نیست.",
       "subfilter-niet-ondersteund": "این قالب امضا پشتیبانی نمی‌شود.",
       "zoekbudget-op": "جستجوی زنجیره گواهی به سقف خود رسید و متوقف شد؛ ممکن است با این حال زنجیره‌ای وجود داشته باشد.",
+      "hashbudget-op": "سقف سند برای بررسی بایت‌های امضاشده رسید؛ این امضا بررسی نشد.",
       "gat-wijkt-af-van-contents": "مقدار امضا در فایل با مقدار موجود در دیکشنری امضا متفاوت است.",
       "interne-fout": "هنگام بررسی این امضا یک خطای داخلی رخ داد.",
       "unknown": "بررسی یک مشکل دیگر را گزارش کرد."

@@ -118,21 +118,30 @@ fn email_impl(path: &str, subject: &str) -> Result<(), String> {
         .map_err(|e| format!("xdg-email is not available: {e}"))
 }
 
+/// The Mail script and its arguments. The subject and path travel as
+/// osascript arguments (`on run argv`), never inside the script text, so no
+/// quote or backslash in them can end a string and run as AppleScript. Each
+/// carries a one-letter prefix so a value that starts with `-` is never read
+/// as an osascript option; the script strips it.
+#[cfg(any(target_os = "macos", test))]
+fn mail_script_args(path: &str, subject: &str) -> Vec<String> {
+    let script = "on run argv\n\
+         set theSubject to \"\"\n\
+         if (length of (item 1 of argv)) > 1 then set theSubject to text 2 thru -1 of (item 1 of argv)\n\
+         set thePath to text 2 thru -1 of (item 2 of argv)\n\
+         tell application \"Mail\"\n\
+         set newMsg to make new outgoing message with properties {subject:theSubject, visible:true}\n\
+         tell newMsg to make new attachment with properties {file name:(POSIX file thePath)}\n\
+         activate\n\
+         end tell\n\
+         end run";
+    vec!["-e".into(), script.into(), format!("s{subject}"), format!("p{path}")]
+}
+
 #[cfg(target_os = "macos")]
 fn email_impl(path: &str, subject: &str) -> Result<(), String> {
-    let safe_subject = subject.replace('"', "'");
-    let safe_path = path.replace('"', "'");
-    let script = format!(
-        "tell application \"Mail\"\n\
-         set newMsg to make new outgoing message with properties {{subject:\"{}\", visible:true}}\n\
-         tell newMsg to make new attachment with properties {{file name:(POSIX file \"{}\")}}\n\
-         activate\n\
-         end tell",
-        safe_subject, safe_path
-    );
     std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(script)
+        .args(mail_script_args(path, subject))
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("Could not open the mail client: {e}"))
@@ -141,4 +150,22 @@ fn email_impl(path: &str, subject: &str) -> Result<(), String> {
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn email_impl(_path: &str, _subject: &str) -> Result<(), String> {
     Err("Email is not supported on this platform.".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mail_script_args;
+
+    #[test]
+    fn mail_values_are_arguments_not_script_text() {
+        let subject = "x\\\" & do shell script \"touch /tmp/pwned\" & \"";
+        let path = "/tmp/a\\\".pdf";
+        let args = mail_script_args(path, subject);
+        assert_eq!(args[0], "-e");
+        assert!(!args[1].contains("pwned") && !args[1].contains("a\\"));
+        assert_eq!(args[2], format!("s{subject}"));
+        assert_eq!(args[3], format!("p{path}"));
+        // Neither value can be taken for an osascript option.
+        assert!(!mail_script_args("-x", "-e").iter().skip(2).any(|a| a.starts_with('-')));
+    }
 }

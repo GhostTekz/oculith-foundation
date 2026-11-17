@@ -243,7 +243,7 @@ async function wachtOpMarkeringen(doc, pagina) {
   try {
     const loader = await import('./loader.js');
     await Promise.race([
-      loader.ensureAnnotationsForPage(pagina, doc),
+      loader.ensureAnnotationsForPage(pagina, doc, { mayDefer: true }),
       new Promise((r) => setTimeout(r, WACHT_OP_MARKERINGEN_MS)),
     ]);
   } catch { /* zonder markeringen: gewoon tekenen */ }

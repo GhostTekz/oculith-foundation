@@ -5,10 +5,24 @@
 
 import { expandArcPoints, hasArcPoints } from './arc-points.js';
 import { writeEngineArea } from './measurement.js';
+import { $RAW } from 'solid-js/store';
+import { state } from '../core/state.js';
 import { ringenIndelen, vlakRingen } from './vlak-ringen.js';
 import { veelhoekGrondvorm } from '../pdf/saver/veelhoek-grondvorm.js';
 
 const TAKEOFF_TYPES = new Set(['filledArea', 'polygon', 'cloudPolyline']);
+
+const raw = (value) => (value && value[$RAW]) || value;
+
+function openDocuments() {
+  return Array.isArray(state.documents) ? state.documents : [];
+}
+
+/** The open document that holds `annotation` when the request is made. */
+function documentHolding(annotation) {
+  const target = raw(annotation);
+  return openDocuments().find((d) => raw(d?.annotations)?.includes?.(target)) || null;
+}
 
 function straight(ring) {
   return hasArcPoints(ring) ? expandArcPoints(ring) : ring;
@@ -52,10 +66,11 @@ export function shapeRings(annotation) {
  * total. `invoke` is the desktop command caller. Returns false when the
  * stored shoelace figure should stay.
  */
-export async function refineMeasureArea(annotation, invoke) {
+export async function refineMeasureArea(annotation, invoke, doc = documentHolding(annotation)) {
   if (!annotation || annotation.type !== 'measureArea' || annotation.extMeasure || typeof invoke !== 'function') return false;
   const rings = classifiedRings(annotation.points, annotation.holes);
   if (rings.parts.length === 0) return false;
+  const asked = JSON.stringify(rings);
   let pixels;
   try {
     pixels = await invoke('geos_net_area', rings);
@@ -63,7 +78,12 @@ export async function refineMeasureArea(annotation, invoke) {
     return false;
   }
   if (typeof pixels !== 'number' || !Number.isFinite(pixels)) return false;
-  return writeEngineArea(annotation, pixels);
+  // The area was edited (or its document closed) while the engine worked:
+  // this total belongs to the old outline. The edit schedules its own.
+  if (JSON.stringify(classifiedRings(annotation.points, annotation.holes)) !== asked) return false;
+  if (doc && !openDocuments().some((d) => raw(d) === raw(doc))) return false;
+  // The scale of the area's own document, not of the tab in front by now.
+  return writeEngineArea(annotation, pixels, doc);
 }
 
 /** Store the engine page-point area on a polygonal takeoff shape. */

@@ -69,3 +69,12 @@ test('outputs never land on a source or an existing file', async () => {
   assert.deepEqual(written, ['/proj/set (2).pdf', '/proj/sum (2).csv']);
   assert.deepEqual(writes, [['/proj/set (2).pdf', 1], ['/proj/sum (2).csv', 2]]);
 });
+
+test('an export named beside its drawing keeps the drawing folder and separator', async () => {
+  const { directoryOf } = await import('../pdf/remote-link.js');
+  const beside = (pdf) => joinOutputPath(directoryOf(pdf), 'E-101-markups.csv');
+  assert.equal(beside('C:\\Jobs\\Barn\\E-101.pdf'), 'C:\\Jobs\\Barn\\E-101-markups.csv');
+  assert.equal(beside('\\\\server\\jobs\\E-101.pdf'), '\\\\server\\jobs\\E-101-markups.csv');
+  assert.equal(beside('/jobs/barn/E-101.pdf'), '/jobs/barn/E-101-markups.csv');
+  assert.equal(beside('E-101.pdf'), 'E-101-markups.csv');
+});

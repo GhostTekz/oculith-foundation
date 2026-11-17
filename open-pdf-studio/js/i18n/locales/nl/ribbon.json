@@ -325,7 +325,12 @@
     "modified": "Gewijzigd",
     "noChanges": "Geen wijzigingen",
     "textTab": "Tekst",
-    "noTextChanges": "Geen tekstverschillen"
+    "noTextChanges": "Geen tekstverschillen",
+    "viewMode": "Vergelijkingsweergave",
+    "reviewTools": "Controlehulpmiddelen · {{count}} bevestigde overeenkomsten",
+    "pairConfirmed": "Huidig paar bevestigd",
+    "pairUnconfirmed": "Huidig paar niet bevestigd",
+    "batchProgress": "Reeks {{completed}}/{{total}}"
   },
   "organize": {
     "pages": "Pagina's",

@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Inakagua sahihi za kidijitali…",
     "barLabel": "Sahihi za kidijitali",
+    "unsignedFieldsSummary_one": "Sehemu {{count}} ya sahihi isiyosainiwa",
+    "unsignedFieldsSummary_other": "Sehemu {{count}} za sahihi zisizosainiwa",
+    "showUnsignedFields": "Onyesha sehemu",
+    "hideUnsignedFields": "Ficha sehemu",
     "listError": "Sahihi hazikuweza kukaguliwa: {{detail}}",
     "documentTimestamp": "Muhuri wa muda wa hati",
     "documentTimestampBy": "Muhuri wa muda wa hati ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Pengo katika masafa ya baiti halina thamani ya sahihi pekee.",
       "subfilter-niet-ondersteund": "Muundo huu wa sahihi hautumiki.",
       "zoekbudget-op": "Utafutaji wa mnyororo wa vyeti ulisimama kwenye kikomo chake; huenda mnyororo bado upo.",
+      "hashbudget-op": "Kikomo cha hati cha kukagua baiti zilizotiwa sahihi kimefikiwa; sahihi hii haikukaguliwa.",
       "gat-wijkt-af-van-contents": "Thamani ya sahihi katika faili inatofautiana na ile iliyo katika kamusi ya sahihi.",
       "interne-fout": "Hitilafu ya ndani ilitokea wakati wa kukagua sahihi hii.",
       "unknown": "Ukaguzi uliripoti tatizo la ziada."

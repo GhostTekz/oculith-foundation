@@ -112,7 +112,7 @@ test('keys: F4, Alt+Left/Right and Ctrl+3 map to commands; handled keys are left
   assert.equal(k('3'), null, 'plain 3 is a My Tools slot');
   assert.equal(k('F8'), null, 'F8 goes through the shortcut table only');
   const src = lees('../../ui/chrome/navigation-commands.js');
-  assert.match(src, /if \(e\.defaultPrevented \|\| isTextEntry\(e\.target\)\) return;/);
+  assert.match(src, /if \(e\.defaultPrevented \|\| isTextEntry\(e\.target\) \|\| !shouldHandleGlobalKey\(e\)\) return;/);
   assert.match(src, /window\.__ocuNavigationKeys/);
   assert.ok(!/'F4'/.test(keys), 'keyboard-handlers.js does not bind F4 (no double binding)');
 });

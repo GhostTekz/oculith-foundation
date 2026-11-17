@@ -544,8 +544,9 @@ function _cropFromScreen(pageNum, appRect, doc) {
   return out;
 }
 
-export async function placeLastScreenshotAsOverlay({ opacity = 0.5, offset = 0 } = {}) {
-  const doc = getActiveDocument();
+// Into `doc` (default: the active drawing) only: a tab switched or closed
+// while the image decodes gets nothing, and neither does the new active tab.
+export async function placeLastScreenshotAsOverlay({ opacity = 0.5, offset = 0, doc = getActiveDocument() } = {}) {
   if (!doc?.pdfDoc) {
     updateStatusMessage('Open a PDF first to place an overlay');
     return;
@@ -559,6 +560,7 @@ export async function placeLastScreenshotAsOverlay({ opacity = 0.5, offset = 0 }
     const img = new Image();
     img.src = _lastCapture.dataUrl;
     await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+    if (getActiveDocument() !== doc || !state.documents.includes(doc)) return;
 
     const imageId = generateImageId();
     imageCache.set(imageId, img);

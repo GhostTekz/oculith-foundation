@@ -75,7 +75,7 @@ const CORE_DIALOG_IDS = new Set(`doc-properties preferences new-doc insert-page
   setScale scaleReview crop-margins straighten-page shift-page ocr-language resize-pages
   compress slipSheet message about shortcuts extensions confirm layer-selection handtekening-detail
   title-block-edit viewport-scale scale-region measured-length hyperlink
-  capture-viewer page-labels batch-link multiply offset undoHistory compare
+  capture-viewer page-labels title-block-template batch-link multiply offset undoHistory compare
   cad-export cad-import annotation-layer-delete batch-summary batch-ops
   set-batch-link manage-tool-sets add-to-tool-chest assemblies copy-to-pages
   markup-name addon-tool-log ai-connections`.split(/\s+/).filter(Boolean));

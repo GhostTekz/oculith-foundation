@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "בודק חתימות דיגיטליות…",
     "barLabel": "חתימות דיגיטליות",
+    "unsignedFieldsSummary_one": "שדות חתימה לא חתומים: {{count}}",
+    "unsignedFieldsSummary_other": "שדות חתימה לא חתומים: {{count}}",
+    "showUnsignedFields": "הצג שדות",
+    "hideUnsignedFields": "הסתר שדות",
     "listError": "לא ניתן היה לבדוק את החתימות: {{detail}}",
     "documentTimestamp": "חותמת זמן של מסמך",
     "documentTimestampBy": "חותמת זמן של מסמך ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "הפער בטווח הבייטים אינו מכיל רק את ערך החתימה.",
       "subfilter-niet-ondersteund": "פורמט חתימה זה אינו נתמך.",
       "zoekbudget-op": "החיפוש אחר שרשרת אישורים נעצר במגבלה שלו; ייתכן שבכל זאת קיימת שרשרת.",
+      "hashbudget-op": "הושגה מגבלת המסמך לבדיקת בתים חתומים; חתימה זו לא נבדקה.",
       "gat-wijkt-af-van-contents": "ערך החתימה בקובץ שונה מהערך שבמילון החתימה.",
       "interne-fout": "אירעה שגיאה פנימית בעת בדיקת החתימה.",
       "unknown": "הבדיקה דיווחה על בעיה נוספת."

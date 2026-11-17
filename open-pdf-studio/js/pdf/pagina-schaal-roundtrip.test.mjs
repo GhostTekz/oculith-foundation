@@ -293,3 +293,29 @@ test('undo restores the per-page scale map and the measurements', async () => {
   await undoManager.redo();
   assert.equal(doc.pageScales[1].unit, 'ft');
 });
+
+test('save, Undo, save: the file returns to the calibration before the change', async () => {
+  // 1:48 ft saved into the PDF; the page has no entry of its own after reopening.
+  openDocument();
+  applyPageScale(FT_48, [1]);
+  const ftBytes = await save(await twoPagePdf());
+  const doc = openDocument({ pdfViewports: (await reopen(ftBytes)).doc.pdfViewports, selectedAnnotations: [] });
+  assert.equal(doc.pageScales, undefined);
+
+  // Without a save in between, Undo leaves the page following the PDF again.
+  applyPageScale(MM_100, [1]);
+  await undoManager.undo();
+  assert.equal(doc.pageScales, null);
+  assert.equal(paginaSchaal(doc, 1).unit, 'ft');
+
+  // 1:100 mm is saved into the file; Undo and save again must put 1:48 ft back.
+  applyPageScale(MM_100, [1]);
+  const mmBytes = await save(ftBytes);
+  await undoManager.undo();
+  assert.equal(paginaSchaal(doc, 1).unit, 'ft');
+  const again = await reopen(await save(mmBytes));
+  const restored = paginaSchaal(again.doc, 1);
+  assert.equal(restored.unit, 'ft');
+  near(restored.pixelsPerUnit, FT_48.pixelsPerUnit);
+  assert.equal(paginaSchaal(again.doc, 2), null, 'page 2 is untouched');
+});

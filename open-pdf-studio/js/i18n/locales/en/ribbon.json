@@ -325,7 +325,12 @@
     "modified": "Modified",
     "noChanges": "No changes",
     "textTab": "Text",
-    "noTextChanges": "No text differences"
+    "noTextChanges": "No text differences",
+    "viewMode": "Comparison view",
+    "reviewTools": "Review tools · {{count}} confirmed matches",
+    "pairConfirmed": "Current pair confirmed",
+    "pairUnconfirmed": "Current pair unconfirmed",
+    "batchProgress": "Batch {{completed}}/{{total}}"
   },
   "organize": {
     "pages": "Pages",

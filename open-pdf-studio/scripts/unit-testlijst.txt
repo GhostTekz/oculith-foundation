@@ -2,6 +2,8 @@
 # Eén pad per regel, relatief aan open-pdf-studio/. Nieuwe tests hier toevoegen,
 # niet in package.json. Regels met # zijn commentaar.
 js/annotations/draw-lookup.test.mjs
+js/annotations/area-cutout.test.mjs
+js/pdf/loader/polygon-vertices.test.mjs
 js/mcp/addon-tools.test.mjs
 js/mcp/addon-tools-undo.test.mjs
 js/mcp/ai-connections.test.mjs
@@ -50,6 +52,8 @@ js/pdf/export-path.test.mjs
 js/pdf/ocr-document.test.mjs
 js/pdf/office-export.test.mjs
 js/pdf/save-document.test.mjs
+js/pdf/rotation-save-twice.test.mjs
+js/pdf/save-target-sources.test.mjs
 js/core/undo-byte-budget.test.mjs
 js/pdf/continuous-residency.test.mjs
 js/pdf/page-user-unit-roundtrip.test.mjs
@@ -115,6 +119,7 @@ js/symbols/templates/wapeningskorf.test.mjs
 js/symbols/templates/staalprofiel-hoeklijn.test.mjs
 js/search/match-rect.test.mjs
 js/search/search-sources.test.mjs
+js/search/find-controller-cache.test.mjs
 js/solid/stores/panels/annotationsStore.test.mjs
 js/solid/stores/print-instellingen.test.mjs
 js/pdf/vector-embed.test.mjs
@@ -162,6 +167,7 @@ js/solid/stores/doc-info-format.test.mjs
 js/pdf/overlay-canvas-size.test.mjs
 js/pdf/device-pixel.test.mjs
 js/pdf/document-release.test.mjs
+js/pdf/render-cache-invalidation.test.mjs
 js/pdf/progressive-view-guard.test.mjs
 js/pdf/print-pagina-instelling.test.mjs
 js/pdf/print-papier.test.mjs
@@ -190,6 +196,8 @@ js/annotations/scale-entry-app.test.mjs
 js/annotations/scale-presets.test.mjs
 js/annotations/page-range.test.mjs
 js/annotations/measure-precision.test.mjs
+js/annotations/measurement-rounding.test.mjs
+js/annotations/measurement-refresh.test.mjs
 js/annotations/imperial-default-display.test.mjs
 js/annotations/measure-display-units.test.mjs
 js/annotations/viewport-scale-form.test.mjs
@@ -206,6 +214,9 @@ js/pdf/shift-page-content.test.mjs
 js/pdf/shift-page-i18n.test.mjs
 js/solid/components/dialogs/ShiftPageDialog.test.mjs
 js/pdf/page-manager-reload.test.mjs
+js/pdf/page-manager-history.test.mjs
+js/pdf/page-operations-history.test.mjs
+js/annotations/clipboard-paste-target.test.mjs
 js/pdf/page-markup-state.test.mjs
 js/pdf/markup-read-hold.test.mjs
 js/pdf/page-loads-after-change.test.mjs
@@ -328,6 +339,7 @@ js/annotations/durable-markup-id.test.mjs
 js/pdf/markup-layer-roundtrip.test.mjs
 js/pdf/extract-pages-layers.test.mjs
 js/compare/change-report.test.mjs
+js/compare/old-pane-changes.test.mjs
 js/compare/compare-annotations.test.mjs
 js/compare/revision-geometry.test.mjs
 js/compare/revision-markup-pdf.test.mjs
@@ -520,6 +532,7 @@ js/sets/set-revision-summary.test.mjs
 js/sets/sheet-metadata-review.test.mjs
 js/sets/sheet-revision-compare.test.mjs
 js/sets/sheet-title-suggest.test.mjs
+js/sets/title-block-template.test.mjs
 scripts/pack-addon-file.test.mjs
 js/pdf/xlsx-workbook.test.mjs
 js/tour/tour-model.test.mjs
@@ -530,3 +543,18 @@ js/tour/tour-i18n.test.mjs
 js/ui/quick-win-styles.test.mjs
 js/ui/panels/panel-popout.test.mjs
 js/pdf/page-readers.test.mjs
+js/annotations/scale-notes-baseline.test.mjs
+js/annotations/vertex-edit-quantities.test.mjs
+js/core/undo-saved-identity.test.mjs
+js/pdf/form-layer-signature-notice.test.mjs
+js/plugin/host-serial-start.test.mjs
+js/pdf/native-page-text.test.mjs
+js/pdf/own-catalog.test.mjs
+js/pdf/large-open-deferred-read.test.mjs
+js/core/document-lifecycle.test.mjs
+js/pdf/continuous-page-events.test.mjs
+js/batch/open-document-paths.test.mjs
+js/tools/modal-keys.test.mjs
+js/ui/chrome/global-key-wiring.test.mjs
+js/ui/panels/thumbnail-doc-current.test.mjs
+js/ui/chrome/commit-focused-field.test.mjs

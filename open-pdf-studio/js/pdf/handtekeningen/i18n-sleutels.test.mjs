@@ -23,7 +23,7 @@ test('39 locales met identieke handtekeningsleutels en plaatshouders', () => {
   const talen = readdirSync(MAP);
   assert.equal(talen.length, 39);
   const en = lees('en');
-  assert.equal(Object.keys(en).length, 90);
+  assert.equal(Object.keys(en).length, 95);
   for (const taal of talen) {
     const t = lees(taal);
     assert.deepEqual(Object.keys(t).sort(), Object.keys(en).sort(), taal);
@@ -39,7 +39,7 @@ test('elk signaal uit Rust heeft een vertaling, en weergave.js kent dezelfde lij
   const rust = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../src-tauri/src/handtekening/status.rs'), 'utf8');
   const blok = rust.slice(rust.indexOf('pub mod signaal'), rust.indexOf('/// Alle codes, voor tests.'));
   const codes = [...blok.matchAll(/pub const \w+: &str = "([a-z-]+)";/g)].map((m) => m[1]);
-  assert.equal(codes.length, 24);
+  assert.equal(codes.length, 25);
   assert.deepEqual([...SIGNALEN].sort(), [...codes].sort());
   const en = lees('en');
   for (const code of [...codes, 'unknown']) {

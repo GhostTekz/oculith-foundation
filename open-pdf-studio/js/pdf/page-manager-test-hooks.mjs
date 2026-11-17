@@ -20,6 +20,7 @@ const STUBS = {
   'js/pdf/vector-renderer.js': ['invalidateDocumentCache'],
   'js/pdf/page-bitmap-cache.js': ['invalidateDocumentBitmaps'],
   'js/pdf/progressive-render.js': ['forgetContentBytes'],
+  'js/pdf/render-cache-invalidation.js': ['invalidateRenderCachesForPath'],
   'js/pdf/renderer.js': ['setViewMode', 'fitPage'],
   'js/pdf/form-layer.js': ['resetAnnotationStorage'],
   'js/ui/panels/left-panel.js': ['generateThumbnails', 'clearThumbnailCache'],
@@ -52,7 +53,10 @@ export async function resolve(specifier, context, nextResolve) {
   }
   for (const [pad, namen] of Object.entries(STUBS)) {
     if (!doel.endsWith(`/${pad}`)) continue;
-    const extra = pad === 'js/core/state.js' ? 'export const state = { get documents() { return globalThis.__pmTest?.documents ?? []; } };' : '';
+    // Without an explicit list, the open documents are the active one.
+    const extra = pad === 'js/core/state.js'
+      ? 'export const state = { get documents() { const t = globalThis.__pmTest; if (t?.documents) return t.documents; const d = t?.impl?.getActiveDocument?.(); return d ? [d] : []; } };'
+      : '';
     return { url: dataUrl(bron(namen, extra)), shortCircuit: true };
   }
   return nextResolve(specifier, context);

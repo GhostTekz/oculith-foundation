@@ -18,6 +18,7 @@ import { goBackView, goForwardView, canGoBackView, canGoForwardView } from '../.
 import { isDimmerOn, toggleDimmer, isDarkContentOn, toggleDarkContent } from '../../solid/stores/contentDisplay.js';
 import { state } from '../../core/state.js';
 import { lucide } from '../../solid/data/lucideIcons.js';
+import { shouldHandleGlobalKey } from './global-key-guard.js';
 
 export const toggleNavigationBar = () => setToolbarVisible('navigation', !isToolbarVisible('navigation'));
 export const toggleStatusBar = () => setToolbarVisible('status', !isToolbarVisible('status'));
@@ -69,7 +70,7 @@ function isTextEntry(target) {
 }
 
 function onKeydown(e) {
-  if (e.defaultPrevented || isTextEntry(e.target)) return;
+  if (e.defaultPrevented || isTextEntry(e.target) || !shouldHandleGlobalKey(e)) return;
   const id = navigationKeyCommand(e);
   if (!id) return;
   e.preventDefault();

@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Kontrollerer digitale signaturer…",
     "barLabel": "Digitale signaturer",
+    "unsignedFieldsSummary_one": "{{count}} usignert signaturfelt",
+    "unsignedFieldsSummary_other": "{{count}} usignerte signaturfelt",
+    "showUnsignedFields": "Vis felt",
+    "hideUnsignedFields": "Skjul felt",
     "listError": "Signaturene kunne ikke kontrolleres: {{detail}}",
     "documentTimestamp": "Dokumenttidsstempel",
     "documentTimestampBy": "Dokumenttidsstempel ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Hullet i byteområdet inneholder ikke bare signaturverdien.",
       "subfilter-niet-ondersteund": "Dette signaturformatet støttes ikke.",
       "zoekbudget-op": "Søket etter en sertifikatkjede stoppet ved grensen; en kjede kan likevel finnes.",
+      "hashbudget-op": "Dokumentets grense for kontroll av signerte byte ble nådd; denne signaturen ble ikke kontrollert.",
       "gat-wijkt-af-van-contents": "Signaturverdien i filen avviker fra den i signaturordboken.",
       "interne-fout": "Det oppstod en intern feil under kontrollen av denne signaturen.",
       "unknown": "Kontrollen rapporterte et ytterligere problem."

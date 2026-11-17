@@ -110,6 +110,8 @@ import { systeemrasterBuildOpts } from '../annotations/systeemraster-scale.js';
 import { computeWallShape, resolveWallMaterial } from '../annotations/rendering/walls.js';
 import { syncTwoPointGeometry } from '../symbols/two-point.js';
 import { holdMarkupReads } from './markup-read-hold.js';
+import { documentPathChanged } from '../core/document-lifecycle.js';
+import { clearRenderCachesForPath } from './render-cache-invalidation.js';
 
 // Tekstvak zoals de WinAnsi-appearance het toont: tekst en runs per teken
 // omgezet met toWinAnsiText, zodat afbreekpunten en regelbreedtes over
@@ -354,6 +356,42 @@ function geldigeBasis(activeDoc, currentPath, bytes) {
   return b && b.path === currentPath && b.bytes?.deref?.() === bytes ? b : null;
 }
 
+/** True when a page of `doc` has an in-app rotation a save writes as /Rotate. */
+function heeftAppRotatie(doc) {
+  return Object.values(doc?.pageRotations || {}).some((r) => (((Number(r) || 0) % 360) + 360) % 360 !== 0);
+}
+
+/**
+ * After Save As (or another save whose output became the document's file),
+ * the next save starts from the bytes just written, which already carry the
+ * in-app page rotations as /Rotate. Reload the document from them with the
+ * rotations cleared, so they are not applied twice.
+ */
+export async function rotationsIntoSavedBase(doc) {
+  if (!heeftAppRotatie(doc) || !state.documents.includes(doc)) return;
+  const bytes = getCachedPdfBytes(doc.filePath);
+  if (!bytes) return;
+  const { reloadFromBytes } = await import('./page-manager.js');
+  await reloadFromBytes(bytes, doc.annotations, {}, doc.currentPage, null, doc);
+  if (state.documents.includes(doc)) markDocumentSaved(doc);
+}
+
+/** True when an open document other than `except` goes by `path` or saves to it. */
+function pathInUse(path, except = null) {
+  return !!path && state.documents.some((d) => d !== except && (d.filePath === path || d.saveTargetPath === path));
+}
+
+/**
+ * Release the app's lock on `path` once no open document uses it any more
+ * (after Save As moved a tab to another file, or when a tab closes). The lock
+ * is one per path, not per tab: a path another tab still shows stays locked.
+ * `except` is a document that no longer counts (the tab being closed).
+ */
+export async function unlockIfUnused(path, except = null) {
+  if (!path || pathInUse(path, except)) return;
+  await unlockFile(path);
+}
+
 function refreshVisibleSource(renderer, doc) {
   try {
     const pending = doc.viewMode === 'continuous'
@@ -415,7 +453,9 @@ async function savePDFNow(saveAsPath = null, opties = {}, activeDoc = getActiveD
   }
   if (!state.documents.includes(activeDoc)) return false;
   const doel = saveAsPath || activeDoc?.saveTargetPath || currentPath;
-  _saveBezig = _savePDFNu(saveAsPath, activeDoc, null, { nativeOcgDefault: opties.nativeOcgDefault })
+  _saveBezig = _savePDFNu(saveAsPath, activeDoc, null, {
+    nativeOcgDefault: opties.nativeOcgDefault, becomesFile: !!opties.becomesFile,
+  })
     .finally(() => { _saveBezig = null; });
   const gelukt = await _saveBezig;
   if (gelukt && activeDoc) {
@@ -454,7 +494,9 @@ export async function savedPdfBytes(activeDoc = getActiveDocument(), refs = new 
   return bytes instanceof Uint8Array ? bytes : null;
 }
 
-async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcgDefault = null } = {}) {
+// `becomesFile`: the caller makes the output the document's file after the
+// save (Save As), so the next save starts from the bytes written here.
+async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcgDefault = null, becomesFile = false } = {}) {
   const currentPath = activeDoc?.filePath;
   const sourcePdf = activeDoc?.pdfDoc;
   const stillCurrent = () => state.documents.includes(activeDoc)
@@ -3622,18 +3664,16 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
         if (!stillCurrent() || !editsUnchanged()) throw changedDuringSave();
         rendererForRefresh = renderer;
         finishSourceWrite = beginSourceWrite(outputPath);
-        bitmaps.invalidateDocumentBitmaps(outputPath);
-        tiles.tileCacheClearForFile(outputPath);
-        progressive.cancelProgressiveRenderForFile(outputPath);
-        orchestrator.cancelBitmapRendersForFile(outputPath);
-        renderer.clearBitmapJSCacheForFile(outputPath);
-        renderer.clearLowResCache();
+        // The same clears as closing a tab on this path (render-cache-invalidation.js).
+        clearRenderCachesForPath(outputPath, { bitmaps, tiles, progressive, orchestrator, renderer });
         // Render workers read the source file on demand and keep it open.
         // Close those handles before the atomic replace: a volume without
         // POSIX rename semantics refuses to replace an open file.
         try { await invoke('release_pdf_worker_files', { path: outputPath }); }
         catch (error) { console.warn('[saver] render workers kept the file open:', error); }
       }
+      const houdtSlot = () => pathInUse(outputPath)
+        || (becomesFile && state.documents.includes(activeDoc));
       await unlockFile(outputPath);
       try {
         if (!stillCurrent() || !editsUnchanged()) throw changedDuringSave();
@@ -3655,14 +3695,16 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
         _svAfter = performance.now();
       } catch (writeErr) {
         // Re-lock before reporting error
-        await lockFile(outputPath);
+        if (houdtSlot()) await lockFile(outputPath);
         const msg = writeErr?.message || String(writeErr);
         if (msg.includes('denied') || msg.includes('locked') || msg.includes('sharing') || msg.includes('used by another')) {
           throw new Error(i18next.t('fileLocked', { defaultValue: 'The file is being used by another application. Please close it and try again.' }));
         }
         throw writeErr;
       }
-      await lockFile(outputPath);
+      // Lock the file again only for a tab that still has it: not for a tab
+      // closed during the write, nor for a copy written elsewhere.
+      if (houdtSlot()) await lockFile(outputPath);
 
       // De paginaschalen staan nu in de PDF: de oude localStorage-schaal van
       // dit bestand zou ze bij de volgende opening anders weer aanvullen.
@@ -3697,11 +3739,21 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
     // A close/reload during the atomic write cannot be undone here. Keep the
     // new live document dirty, and never publish the old save as its state.
     if (!stillCurrent() || !editsUnchanged()) throw changedDuringSave();
-
-    // The next save reads the bytes just written. A rewritten annotation now
-    // has a new PDF reference; keep its provenance aligned with those bytes.
-    for (const { model, ref, nm } of rewrittenSources) {
-      model.pdfSource = { ref, modelId: model.id, nm };
+    // The file now carries the page scales just written (/VP). Read them back
+    // as a reopen would, so the document's view of "the PDF's scale" (used
+    // where a page has no entry of its own, and by Undo of a scale change)
+    // matches the bytes on disk rather than the file as it was opened. Only
+    // for a save that stands, and never over a viewport read still running
+    // (a page change reads the new page order's viewports itself).
+    if (activeDoc) {
+      try {
+        const vp = await import('./pdf-viewports.js');
+        if (!vp.viewportLezingLoopt(activeDoc)) {
+          vp.rondViewportLezingAf(activeDoc, vp.beginViewportLezing(activeDoc), vp.leesPdfViewports(pdfDocLib));
+        }
+      } catch (error) {
+        console.warn('[saver] page scales not re-read after save:', error);
+      }
     }
 
     if (activeDoc.pdfaCompliance) {
@@ -3755,7 +3807,24 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
     // Written: markups read meanwhile may enter the model (the refresh
     // below renders pages, which waits for their markups).
     releaseMarkupReads?.();
-    if (textEditsGebakken && !saveAsPath && activeDoc) {
+    // The bytes just written carry the in-app page rotations as /Rotate. When
+    // they are the base of the next save (same-path save), or the reload
+    // below makes them the base, the rotations are part of the file now: the
+    // document reloads from them with no in-app rotation left, or the next
+    // save would add each rotation a second time.
+    const rotatiesInBestand = heeftAppRotatie(activeDoc) && outputPath === currentPath;
+    const herladen = !saveAsPath && activeDoc && (textEditsGebakken || rotatiesInBestand);
+    // A rewritten annotation has a new PDF reference in the bytes just
+    // written. Its provenance follows those bytes only when they are the base
+    // of the next save: written to the document's own path, the file the
+    // caller makes it (Save As), or reloaded below. A save to the original
+    // file of a working copy keeps saving from that copy, whose references
+    // still hold.
+    const bronnenVolgen = () => {
+      for (const { model, ref, nm } of rewrittenSources) model.pdfSource = { ref, modelId: model.id, nm };
+    };
+    if (outputPath === currentPath || becomesFile) bronnenVolgen();
+    if (herladen) {
       const refreshSnapshot = saveEditSnapshot(activeDoc);
       try {
         const { reloadFromBytes } = await import('./page-manager.js');
@@ -3776,7 +3845,7 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
           await reloadFromBytes(
             savedBytes,
             activeDoc.annotations,
-            activeDoc.pageRotations,
+            {},
             activeDoc.currentPage,
             null,
             activeDoc,
@@ -3784,6 +3853,7 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
         } finally {
           vervolg?.dropViewContinuation();
         }
+        if (outputPath !== currentPath && !becomesFile) bronnenVolgen();
         const unchangedDuringReload = saveEditSnapshot(activeDoc) === refreshSnapshot;
         // De herlaad zet het document op een verse werkkopie met deze bytes
         // als basis: daar staan de vastgezette knipsels dus ook in.
@@ -3794,7 +3864,7 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
         // van dat de bewerking uit beeld verdwijnt terwijl ze wél in het
         // bestand staat. (#345)
         if (unchangedDuringReload) {
-          activeDoc.textEdits = [];
+          if (textEditsGebakken) activeDoc.textEdits = [];
           // reloadFromBytes is voor structurele edits en markeert het document
           // als gewijzigd; deze save heeft alles net weggeschreven.
           markDocumentSaved(activeDoc);
@@ -3814,7 +3884,7 @@ async function _savePDFNu(saveAsPath, activeDoc, alleenBytes = null, { nativeOcg
       showMessage(i18next.t('savedViewRefreshFailed', {
         defaultValue: 'PDF saved, but the view could not refresh. Reopen the document to see the latest version.',
       }));
-    } else if (rewrittenSource && !textEditsGebakken && stillCurrent()
+    } else if (rewrittenSource && !herladen && stillCurrent()
         && getActiveDocument() === activeDoc && rendererForRefresh) {
       refreshVisibleSource(rendererForRefresh, activeDoc);
     }
@@ -3858,7 +3928,8 @@ export async function savePDFAs(doc = getActiveDocument()) {
   if (savePath) {
     const wasUntitled = !!doc?.isUntitled || !currentPath;
     const tempPath = (doc?.isUntitled || doc?._renderTemp) ? currentPath : null;
-    const success = await savePDF(savePath, {}, doc);
+    const oldTarget = doc?.saveTargetPath || null;
+    const success = await savePDF(savePath, { becomesFile: true }, doc);
 
     // If saved to a new path, update the current path and UI
     if (success && savePath !== currentPath) {
@@ -3875,6 +3946,14 @@ export async function savePDFAs(doc = getActiveDocument()) {
         doc.isUntitled = false; // now a real, user-chosen file
         doc.saveTargetPath = null; // lives at its real path now; no separate save target
         doc._renderTemp = false;
+        documentPathChanged(doc, currentPath, savePath);
+        // The tab left its old file: release it unless another tab has it.
+        for (const old of new Set([currentPath, oldTarget])) {
+          if (old && old !== savePath) await unlockIfUnused(old);
+        }
+        // The new file is the base of the next save and holds the rotations.
+        try { await rotationsIntoSavedBase(doc); }
+        catch (e) { console.warn('[save-as] reload after rotated save failed:', e); }
       }
       updateWindowTitle();
       // Session now contains the new path (debounced persist).

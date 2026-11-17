@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Comprobando las firmas digitales…",
     "barLabel": "Firmas digitales",
+    "unsignedFieldsSummary_one": "{{count}} campo de firma sin firmar",
+    "unsignedFieldsSummary_other": "{{count}} campos de firma sin firmar",
+    "showUnsignedFields": "Mostrar campos",
+    "hideUnsignedFields": "Ocultar campos",
     "listError": "No se pudieron comprobar las firmas: {{detail}}",
     "documentTimestamp": "Sello de tiempo del documento",
     "documentTimestampBy": "Sello de tiempo del documento ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "El hueco del intervalo de bytes no contiene solo el valor de la firma.",
       "subfilter-niet-ondersteund": "Este formato de firma no es compatible.",
       "zoekbudget-op": "La búsqueda de una cadena de certificados se detuvo en su límite; aun así, puede existir una cadena.",
+      "hashbudget-op": "Se alcanzó el límite del documento para comprobar bytes firmados; esta firma no se ha comprobado.",
       "gat-wijkt-af-van-contents": "El valor de la firma en el archivo difiere del del diccionario de firma.",
       "interne-fout": "Se ha producido un error interno al comprobar esta firma.",
       "unknown": "La comprobación ha notificado un problema adicional."

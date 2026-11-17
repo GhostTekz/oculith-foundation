@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "デジタル署名を確認しています…",
     "barLabel": "デジタル署名",
+    "unsignedFieldsSummary_one": "未署名の署名フィールド: {{count}}",
+    "unsignedFieldsSummary_other": "未署名の署名フィールド: {{count}}",
+    "showUnsignedFields": "フィールドを表示",
+    "hideUnsignedFields": "フィールドを非表示",
     "listError": "署名を確認できませんでした: {{detail}}",
     "documentTimestamp": "文書タイムスタンプ",
     "documentTimestampBy": "文書タイムスタンプ（{{tsa}}）",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "バイト範囲の隙間に署名値以外のデータが含まれています。",
       "subfilter-niet-ondersteund": "この署名形式はサポートされていません。",
       "zoekbudget-op": "証明書チェーンの検索が上限に達して停止しました。チェーンが存在する可能性はあります。",
+      "hashbudget-op": "署名済みバイトを確認する文書の上限に達しました。この署名は確認されていません。",
       "gat-wijkt-af-van-contents": "ファイル内の署名値が署名辞書内の署名値と異なります。",
       "interne-fout": "この署名の確認中に内部エラーが発生しました。",
       "unknown": "確認で追加の問題が報告されました。"

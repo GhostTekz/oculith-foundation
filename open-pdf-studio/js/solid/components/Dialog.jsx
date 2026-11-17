@@ -1,5 +1,6 @@
 import { onMount, onCleanup } from 'solid-js';
 import { nudgeOntoDevicePixels, snapDevice } from '../snap-device.js';
+import { isTopmostDialog } from './dialog-stack.js';
 
 // Track when the window last gained focus (shared across all Dialog instances)
 let lastFocusTime = 0;
@@ -83,7 +84,10 @@ export default function Dialog(props) {
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Escape') {
+    // Only the topmost of stacked dialogs closes; the others and the
+    // document-wide handlers after it do not see this Escape.
+    if (e.key === 'Escape' && isTopmostDialog(dialogRef, document)) {
+      e.stopImmediatePropagation();
       props.onClose?.();
     }
   }

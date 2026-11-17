@@ -129,10 +129,14 @@
       "readOnlyHint": false,
       "title": "Click"
     },
-    "description": "Dispatch a synthetic mouse click at (x, y). Sequence: mousemove -> mousedown -> mouseup -> click (or contextmenu for right). button: 'left' (default) | 'middle' | 'right'.",
+    "description": "Dispatch a synthetic mouse click at (x, y). Sequence: mousemove -> mousedown -> mouseup -> click (or contextmenu for right). button: 'left' (default) | 'middle' | 'right'. Use ctrl, shift or alt for modified clicks; double=true also dispatches dblclick.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "alt": {
+          "default": false,
+          "type": "boolean"
+        },
         "button": {
           "default": "left",
           "enum": [
@@ -141,6 +145,18 @@
             "right"
           ],
           "type": "string"
+        },
+        "ctrl": {
+          "default": false,
+          "type": "boolean"
+        },
+        "double": {
+          "default": false,
+          "type": "boolean"
+        },
+        "shift": {
+          "default": false,
+          "type": "boolean"
         },
         "x": {
           "type": "integer"

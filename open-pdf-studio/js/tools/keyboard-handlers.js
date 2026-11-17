@@ -39,7 +39,8 @@ import { gevelPreset } from '../gevelelement/herkenning.js';
 import { isTextAnchored, expandCorrectionGroups, replaceParentOf } from '../annotations/corrections/model.js';
 import { deleteAnnotationsWithUndo } from '../annotations/mutations.js';
 import { editableOnLayers } from '../annotations/annotatie-lagen.js';
-import { resolveShortcut, resolveRegistryShortcut, singleLetterEntry, MEASURE_TOOL_NAMES, eventKeys, myToolsSlotForKey } from './shortcut-table.js';
+import { resolveShortcut, resolveRegistryShortcut, singleLetterEntry, MEASURE_TOOL_NAMES, eventKeys, myToolsSlotForKey, isTextEntryTarget } from './shortcut-table.js';
+import { shouldHandleGlobalKey } from '../ui/chrome/global-key-guard.js';
 import { getCommand, runCommand } from '../solid/commands/registry.js';
 import { useMyToolsSlot } from './tool-chest-use.js';
 import { pickAndAddImage } from '../annotations/image-drop.js';
@@ -254,16 +255,9 @@ function _cadChordTry(letter, provisional) {
 }
 
 // Handle keydown events
-// Typt de gebruiker in een tekstinvoer? Naast INPUT/TEXTAREA tellen ook
-// contenteditable-editors mee (o.a. de PDF-tekst-editor, die geen textarea
-// meer is). Losse letter-/cijfer-sneltoetsen en spatie mogen een lopende
-// tekstbewerking nooit onderbreken — een toolwissel sluit de editor.
-function isTextEntryTarget(t) {
-  if (!t) return false;
-  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return true;
-  if (t.isContentEditable) return true;
-  return typeof t.closest === 'function' && !!t.closest('[contenteditable="true"]');
-}
+// Typing in a text entry (input, textarea, select, contenteditable such as the
+// PDF text editor): isTextEntryTarget in shortcut-table.js. Single-key
+// shortcuts and Space never interrupt it; a focused <select> keeps its arrows.
 
 // Lock / unlock the selection in one undo step: lock all when any is
 // unlocked, otherwise unlock all (the external editor Ctrl+Shift+L).
@@ -311,6 +305,10 @@ export async function handleKeydown(e) {
   const ctrl = e.ctrlKey || e.metaKey;
   const shift = e.shiftKey;
   const shortcutKey = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+
+  // An open modal dialog owns the keyboard: nothing acts on the drawing
+  // behind it. Escape has its own ladder below, which also yields to modals.
+  if (e.key !== 'Escape' && !shouldHandleGlobalKey(e, { modalOpen: isModalOpen })) return;
 
   // Allow certain shortcuts even when in input fields
   const isInInput = isTextEntryTarget(e.target);
@@ -564,10 +562,14 @@ export async function handleKeydown(e) {
     e.preventDefault();
     if (isPdfAReadOnly()) { /* block */ }
     else if ((getActiveDocument()?.selectedAnnotations || []).length > 0) {
+      // The document this Delete is for; after each await below the user may
+      // have switched or closed tabs, and then nothing is deleted.
+      const delDoc = getActiveDocument();
+      const stillActive = () => getActiveDocument() === delDoc && state.documents.includes(delDoc);
       // Een vervanging (#508) telt met beide helften, ook in de vraag.
       // Markeringen op een verborgen of vergrendelde laag (#468) blijven staan.
-      const selected = expandCorrectionGroups(getActiveDocument().annotations,
-        editableOnLayers(getActiveDocument(), [...getActiveDocument().selectedAnnotations]));
+      const selected = expandCorrectionGroups(delDoc.annotations,
+        editableOnLayers(delDoc, [...delDoc.selectedAnnotations]));
       if (selected.length === 0) return;
       // Gevelelement met een geselecteerd onderdeel: Delete verwijdert de
       // STIJL (velden samengevoegd) of zet het standaardpaneel terug — nooit
@@ -588,6 +590,7 @@ export async function handleKeydown(e) {
         if (!subAnn.locked) {
           const { setPaneelType, setRandProfiel, removeSparing } =
             await import('../annotations/systeemraster.js');
+          if (!stillActive()) return;
           const before = cloneAnnotation(subAnn);
           if (sub.kind === 'paneel') setPaneelType(subAnn, sub.ix, sub.iy, 'tegel');
           else if (sub.kind === 'rand') setRandProfiel(subAnn, sub.seg, null);
@@ -605,7 +608,7 @@ export async function handleKeydown(e) {
       }
       // Single locked check. Een vervanging (#508) telt als één annotatie:
       // vergrendeld als een van beide helften vergrendeld is.
-      if ((selected.length === 1 || replaceParentOf(selected, getActiveDocument().annotations)) && selected.some(a => a.locked)) return;
+      if ((selected.length === 1 || replaceParentOf(selected, delDoc.annotations)) && selected.some(a => a.locked)) return;
 
       // Confirmation dialog
       {
@@ -615,11 +618,11 @@ export async function handleKeydown(e) {
           : 'Delete this annotation?';
         const title = selected.length > 1 ? 'Delete Annotations' : 'Delete Annotation';
         const confirmed = await showConfirm({ title, message: msg, preferenceKey: 'confirmBeforeDelete' });
-        if (!confirmed) return;
+        if (!confirmed || !stillActive()) return;
       }
 
       // Een vervanging (#508) gaat in haar geheel, met één ongedaan-stap.
-      deleteAnnotationsWithUndo(getActiveDocument(), selected);
+      deleteAnnotationsWithUndo(delDoc, selected);
       clearSelection();
       hideProperties();
       redraw();
@@ -721,9 +724,12 @@ export async function handleKeydown(e) {
     // preventDefault mag hier wél — dit pad gebruikt alleen het interne
     // annotatie-clipboard, geen native paste-event.
     e.preventDefault();
-    if (!getActiveDocument()?.pdfDoc) return;
+    const pasteDoc = getActiveDocument();
+    if (!pasteDoc?.pdfDoc) return;
     if (isPdfAReadOnly()) return;
-    import('../annotations/clipboard.js').then(({ pasteAnnotationsInPlace }) => pasteAnnotationsInPlace());
+    import('../annotations/clipboard.js').then(({ pasteAnnotationsInPlace, pasteTargetCurrent }) => {
+      if (pasteTargetCurrent(pasteDoc)) pasteAnnotationsInPlace();
+    });
   } else if (ctrl && !shift && e.key === 'v') {
     // Een geknipt gebied (selectiegebied, Ctrl+X/C) dat de laatste kopie is,
     // ook als het knippen nog loopt: plakken wacht daarop.
@@ -747,8 +753,9 @@ export async function handleKeydown(e) {
     if (state._snapshotAt && !(state._internalCopyAt > state._snapshotAt)
         && !(state._appBlurAt > state._snapshotAt)) {
       e.preventDefault();
-      if (!getActiveDocument()?.pdfDoc || isPdfAReadOnly()) return;
-      import('./screenshot.js').then(m => m.placeLastScreenshotAsOverlay({ opacity: 1, offset: 10 }));
+      const pasteDoc = getActiveDocument();
+      if (!pasteDoc?.pdfDoc || isPdfAReadOnly()) return;
+      import('./screenshot.js').then(m => m.placeLastScreenshotAsOverlay({ opacity: 1, offset: 10, doc: pasteDoc }));
       return;
     }
     const internalClips = state.clipboardAnnotations;
@@ -767,8 +774,9 @@ export async function handleKeydown(e) {
     // natively instead; no paste event, no second read.
     if (useNativeClipboard() && !isInInput) {
       e.preventDefault();
-      if (!getActiveDocument()?.pdfDoc || isPdfAReadOnly()) return;
-      import('../annotations/clipboard.js').then(({ pasteImageOrMarkups }) => pasteImageOrMarkups());
+      const pasteDoc = getActiveDocument();
+      if (!pasteDoc?.pdfDoc || isPdfAReadOnly()) return;
+      import('../annotations/clipboard.js').then(({ pasteImageOrMarkups }) => pasteImageOrMarkups(pasteDoc));
       return;
     }
     // Don't preventDefault — let native paste event fire so handlePaste can
@@ -778,12 +786,15 @@ export async function handleKeydown(e) {
     // not fire when no editable element has focus (canvas focused, or no focus
     // at all). Schedule a deferred check — if the native handler did not run,
     // try the async Clipboard API for image data, then fall back to the
-    // internal annotation clipboard.
+    // internal annotation clipboard. All of it into the drawing active at the
+    // key press: a tab switched or closed meanwhile gets nothing, and neither
+    // does the tab active by then.
     const beforeMark = state._lastNativePasteAt || 0;
+    const pasteDoc = getActiveDocument();
     setTimeout(async () => {
       const afterMark = state._lastNativePasteAt || 0;
       if (afterMark > beforeMark) return; // native paste already handled
-      if (!getActiveDocument()?.pdfDoc) return;
+      if (!pasteDoc?.pdfDoc || getActiveDocument() !== pasteDoc) return;
       if (isPdfAReadOnly()) return;
       // Try async Clipboard API for image data
       let handledImage = false;
@@ -795,7 +806,7 @@ export async function handleKeydown(e) {
             if (imgType) {
               const blob = await it.getType(imgType);
               const { pasteImageFromBlob } = await import('../annotations/clipboard.js');
-              await pasteImageFromBlob(blob);
+              await pasteImageFromBlob(blob, pasteDoc);
               handledImage = true;
               break;
             }
@@ -804,7 +815,8 @@ export async function handleKeydown(e) {
       } catch (_) { /* permission denied or no focus — fall through */ }
       if (handledImage) return;
       // No image — fall back to internal annotation clipboard
-      const { pasteAnnotation, pasteAnnotations } = await import('../annotations/clipboard.js');
+      const { pasteAnnotation, pasteAnnotations, pasteTargetCurrent } = await import('../annotations/clipboard.js');
+      if (!pasteTargetCurrent(pasteDoc)) return;
       const clips = state.clipboardAnnotations;
       if (clips && clips.length > 1) pasteAnnotations();
       else if ((clips && clips.length === 1) || state.clipboardAnnotation) pasteAnnotation();
@@ -1020,10 +1032,14 @@ export async function handleKeydown(e) {
 
 // Handle native paste event — works reliably on all platforms including Linux/WebKitGTK
 function handlePaste(e) {
-  if (!getActiveDocument()?.pdfDoc) return;
+  // The drawing the paste lands in, whatever is active once the clipboard
+  // module and the image are loaded (clipboard.js pasteTargetCurrent).
+  const pasteDoc = getActiveDocument();
+  if (!pasteDoc?.pdfDoc) return;
   if (isPdfAReadOnly()) return;
   const isInInput = isTextEntryTarget(e.target);
   if (isInInput) return;
+  if (!shouldHandleGlobalKey(e, { modalOpen: isModalOpen })) return;
 
   // Mark that the native paste fired so the Ctrl+V keydown fallback skips itself.
   state._lastNativePasteAt = Date.now();
@@ -1039,7 +1055,7 @@ function handlePaste(e) {
         const blob = item.getAsFile();
         if (blob) {
           import('../annotations/clipboard.js').then(({ pasteImageFromBlob }) => {
-            pasteImageFromBlob(blob);
+            pasteImageFromBlob(blob, pasteDoc);
           });
         }
         return;
@@ -1048,7 +1064,8 @@ function handlePaste(e) {
   }
 
   // No image found — paste from internal annotation clipboard
-  import('../annotations/clipboard.js').then(({ pasteAnnotation, pasteAnnotations }) => {
+  import('../annotations/clipboard.js').then(({ pasteAnnotation, pasteAnnotations, pasteTargetCurrent }) => {
+    if (!pasteTargetCurrent(pasteDoc)) return;
     const clips = state.clipboardAnnotations;
     if (clips && clips.length > 1) {
       pasteAnnotations();

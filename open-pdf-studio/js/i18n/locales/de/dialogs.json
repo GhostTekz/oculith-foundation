@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Digitale Signaturen werden geprüft…",
     "barLabel": "Digitale Signaturen",
+    "unsignedFieldsSummary_one": "{{count}} unsigniertes Signaturfeld",
+    "unsignedFieldsSummary_other": "{{count}} unsignierte Signaturfelder",
+    "showUnsignedFields": "Felder anzeigen",
+    "hideUnsignedFields": "Felder ausblenden",
     "listError": "Die Signaturen konnten nicht geprüft werden: {{detail}}",
     "documentTimestamp": "Dokumentzeitstempel",
     "documentTimestampBy": "Dokumentzeitstempel ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Die Lücke im Bytebereich enthält nicht nur den Signaturwert.",
       "subfilter-niet-ondersteund": "Dieses Signaturformat wird nicht unterstützt.",
       "zoekbudget-op": "Die Suche nach einer Zertifikatskette wurde an ihrer Grenze abgebrochen; eine Kette kann dennoch existieren.",
+      "hashbudget-op": "Die Grenze des Dokuments für die Prüfung signierter Bytes wurde erreicht; diese Signatur wurde nicht geprüft.",
       "gat-wijkt-af-van-contents": "Der Signaturwert in der Datei weicht von dem im Signaturverzeichnis ab.",
       "interne-fout": "Bei der Prüfung dieser Signatur ist ein interner Fehler aufgetreten.",
       "unknown": "Die Prüfung hat ein weiteres Problem gemeldet."

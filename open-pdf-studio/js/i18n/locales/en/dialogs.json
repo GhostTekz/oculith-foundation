@@ -629,6 +629,7 @@
       "bytebereik-gat-geen-hex-string": "The gap in the byte range does not contain only the signature value.",
       "subfilter-niet-ondersteund": "This signature format is not supported.",
       "zoekbudget-op": "The search for a certificate chain stopped at its limit; a chain may still exist.",
+      "hashbudget-op": "The document's limit for checking signed bytes was reached; this signature was not checked.",
       "gat-wijkt-af-van-contents": "The signature value in the file differs from the one in the signature dictionary.",
       "interne-fout": "An internal error occurred while checking this signature.",
       "unknown": "The check reported an additional issue."

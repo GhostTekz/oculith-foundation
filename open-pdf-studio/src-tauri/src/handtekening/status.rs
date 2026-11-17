@@ -51,11 +51,14 @@ pub mod signaal {
     pub const ZOEKBUDGET_OP: &str = "zoekbudget-op";
     /// De hex-string in het gat van het bytebereik is niet de `/Contents`.
     pub const GAT_WIJKT_AF_VAN_CONTENTS: &str = "gat-wijkt-af-van-contents";
+    /// Het document vroeg meer hashwerk dan zijn budget (een veelvoud van de
+    /// bestandsgrootte); deze handtekening is niet gecontroleerd.
+    pub const HASHBUDGET_OP: &str = "hashbudget-op";
     pub const INTERNE_FOUT: &str = "interne-fout";
 
     /// Alle codes, voor tests.
     #[cfg(test)]
-    pub const ALLE: [&str; 24] = [
+    pub const ALLE: [&str; 25] = [
         DIGESTALGORITME_NIET_ONDERSTEUND,
         HANDTEKENINGALGORITME_NIET_ONDERSTEUND,
         IMPRINTALGORITME_NIET_ONDERSTEUND,
@@ -79,6 +82,7 @@ pub mod signaal {
         SUBFILTER_NIET_ONDERSTEUND,
         ZOEKBUDGET_OP,
         GAT_WIJKT_AF_VAN_CONTENTS,
+        HASHBUDGET_OP,
         INTERNE_FOUT,
     ];
 }

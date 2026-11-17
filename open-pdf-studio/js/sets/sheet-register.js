@@ -1,3 +1,5 @@
+import { parseTitleBlockTemplates } from './title-block-template.js';
+
 const VERSION = 1;
 
 function clean(value) {
@@ -46,6 +48,28 @@ function validPage(page) {
   return number;
 }
 
+// The sheet's date as its title block prints it (a title block template reads it); kept only when set.
+function withDate(value) {
+  const date = clean(value);
+  return date ? { date } : {};
+}
+
+function withoutDate(sheet) {
+  const { date: _date, ...rest } = sheet;
+  return rest;
+}
+
+// The id of the title block template that last read the sheet: its number
+// and title come from its title block. A new revision is not read yet.
+function withTemplateRead(value) {
+  return typeof value === 'string' && value && value.length <= 200 ? { titleBlockTemplate: value } : {};
+}
+
+function withoutTitleBlockRead(sheet) {
+  const { date: _date, titleBlockTemplate: _template, ...rest } = sheet;
+  return rest;
+}
+
 function requireText(value, field) {
   const result = clean(value);
   if (!result) throw new Error(`${field} is required.`);
@@ -87,8 +111,9 @@ export function updateSheet(register, id, changes) {
   return {
     ...register,
     sheets: register.sheets.map(sheet => sheet.id === id
-      ? { ...sheet, label, page, title: 'title' in changes ? clean(changes.title) : sheet.title,
-          revision: 'revision' in changes ? clean(changes.revision) : sheet.revision }
+      ? { ...withoutDate(sheet), label, page, title: 'title' in changes ? clean(changes.title) : sheet.title,
+          revision: 'revision' in changes ? clean(changes.revision) : sheet.revision,
+          ...withDate('date' in changes ? changes.date : sheet.date) }
       : sheet),
   };
 }
@@ -112,7 +137,7 @@ export function replaceSheet(register, id, filePath, revision, changedAt = new D
   return {
     ...register,
     sheets: register.sheets.map(sheet => sheet.id === id
-      ? withSourceFingerprint({ ...sheet, filePath: path, page: nextPage, revision: nextRevision,
+      ? withSourceFingerprint({ ...withoutTitleBlockRead(sheet), filePath: path, page: nextPage, revision: nextRevision,
           history: [...sheet.history, {
             filePath: sheet.filePath, page: sheet.page, revision: sheet.revision,
             replacedAt: changedAt,
@@ -143,6 +168,13 @@ export function relinkSheet(register, id, filePath, page, fingerprint) {
             && aliases.findIndex(other => key(other.filePath) === key(item.filePath) && other.page === item.page) === index) },
       nextFingerprint)
     : sheet) };
+}
+
+/** The register with its title block templates set (none removes them). */
+export function setTitleBlockTemplates(register, templates) {
+  const checked = parseTitleBlockTemplates(templates);
+  const { titleBlockTemplates: _old, ...rest } = register;
+  return checked.length ? { ...rest, titleBlockTemplates: checked } : rest;
 }
 
 /** Move one earlier revision to an identical PDF at a new path. */
@@ -206,6 +238,8 @@ export function parseSheetRegister(json) {
     throw new Error('This is not a supported drawing set manifest.');
   }
   const register = createSheetRegister(value.name);
+  const templates = parseTitleBlockTemplates(value.titleBlockTemplates);
+  if (templates.length) register.titleBlockTemplates = templates;
   const ids = new Set();
   for (const source of value.sheets) {
     if (!source || typeof source.id !== 'string' || !source.id || ids.has(source.id)
@@ -236,7 +270,9 @@ export function parseSheetRegister(json) {
     });
     const fingerprint = sourceSha256(source.sourceSha256);
     const sheet = { id: source.id, label: clean(source.label), title: clean(source.title),
-      revision: clean(source.revision), filePath: source.filePath, page: validPage(source.page), history, sourceAliases,
+      revision: clean(source.revision), ...withDate(typeof source.date === 'string' ? source.date : ''),
+      ...withTemplateRead(source.titleBlockTemplate),
+      filePath: source.filePath, page: validPage(source.page), history, sourceAliases,
       ...(fingerprint ? { sourceSha256: fingerprint } : {}) };
     const lineage = [sheet, ...sheet.history, ...sheet.sourceAliases];
     if (lineage.some(item => sourceOwner(register, item.filePath, item.page))) {
@@ -254,12 +290,12 @@ function csvCell(value) {
 }
 
 export function drawingLogCsv(register, availability = {}) {
-  const columns = ['Stable sheet ID', 'Sheet ID', 'Title', 'Source', 'Revision', 'Page', 'PDF file', 'File status', 'Replaced at', 'Recorded PDF SHA-256'];
+  const columns = ['Stable sheet ID', 'Sheet ID', 'Title', 'Source', 'Revision', 'Page', 'PDF file', 'File status', 'Replaced at', 'Recorded PDF SHA-256', 'Sheet date'];
   const rows = register.sheets.flatMap(sheet => [
     [sheet.id, sheet.label, sheet.title, 'Current', sheet.revision, sheet.page,
-      sheet.filePath, availability[sheet.id] || 'Unknown', '', sheet.sourceSha256 || ''],
+      sheet.filePath, availability[sheet.id] || 'Unknown', '', sheet.sourceSha256 || '', sheet.date || ''],
     ...[...sheet.history].reverse().map(item => [sheet.id, sheet.label, sheet.title, 'Prior',
-      item.revision, item.page, item.filePath, '', item.replacedAt, item.sourceSha256 || '']),
+      item.revision, item.page, item.filePath, '', item.replacedAt, item.sourceSha256 || '', '']),
   ]);
   return '\uFEFF' + [columns, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

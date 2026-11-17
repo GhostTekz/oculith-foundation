@@ -8,7 +8,7 @@ import { redrawAnnotations, redrawContinuous, updateQuickAccessButtons } from '.
 import { updateAllStatus } from './status-bar.js';
 import { generateThumbnails, clearThumbnails, clearThumbnailCache, refreshActiveTab, refreshAllTabs, saveThumbnailScrollPosition } from '../panels/left-panel.js';
 import { cancelAnnotationLoading, hidePdfABar } from '../../pdf/loader.js';
-import { savePDF } from '../../pdf/saver.js';
+import { savePDF, unlockIfUnused } from '../../pdf/saver.js';
 import { unlockFile, lockFile, renameFile, fileExists, setWindowTitle } from '../../core/platform.js';
 import { cancelPendingZoom } from '../setup/navigation-events.js';
 import { closeAllPopups } from '../../bridge.js';
@@ -16,6 +16,8 @@ import { persistReaderPosition, restoreReaderPosition } from '../../pdf/reader-m
 import { hasPendingRestore } from '../../core/reader-mode-tracking.js';
 import { actiefNaSluiten } from '../../pdf/handtekeningen/opslaan.js';
 import { clearRegionSelection } from '../../tools/region-selection.js';
+import { documentClosed, documentPathChanged } from '../../core/document-lifecycle.js';
+import { commitFocusedPropertyField } from './commit-focused-field.js';
 
 /**
  * Create a new tab for a document
@@ -61,6 +63,9 @@ export function createTab(filePath = null, autoSwitch = true) {
  */
 export function switchToTab(index) {
   if (index < 0 || index >= state.documents.length) return;
+
+  // Commit a pending Properties field edit to the document it belongs to.
+  if (index !== state.activeDocumentIndex) commitFocusedPropertyField();
 
   // Save scroll position of current document
   const currentDoc = getActiveDocument();
@@ -270,16 +275,14 @@ export async function closeTab(index, force = false, dialogAction = null) {
   clearSelection();
   import('../../solid/stores/ribbonStore.js').then(m => m.setContextualTabsVisible(false));
 
-  // Release file lock so other apps can write to it again
-  if (doc.filePath) {
-    await unlockFile(doc.filePath);
-  }
+  // Release file lock so other apps can write to it again, unless another
+  // open document still uses the path (one lock per path, not per tab).
   // Na een save met text-edits rendert het document uit een tijdelijke
   // werkkopie (reloadFromBytes) terwijl de lock op het ECHTE bestand staat
   // (saveTargetPath). Die lock ook loslaten, en de werkkopie opruimen —
   // anders blijft het bestand vergrendeld tot de app afsluit. (#345)
-  if (doc.saveTargetPath && doc.saveTargetPath !== doc.filePath) {
-    await unlockFile(doc.saveTargetPath);
+  for (const pad of new Set([doc.filePath, doc.saveTargetPath])) {
+    if (pad) await unlockIfUnused(pad, doc);
   }
   if (doc._renderTemp && doc.filePath && !doc.isUntitled) {
     try {
@@ -299,6 +302,8 @@ export async function closeTab(index, force = false, dialogAction = null) {
 
   // Remove the document
   state.documents.splice(index, 1);
+  // Listeners drop what they kept for this document (core/document-lifecycle.js).
+  documentClosed(doc, state.documents);
 
   // Geef vrij wat dit document in het geheugen vasthield: de PDF.js-instantie,
   // de ruwe bestandsbytes, vector-commandobuffers, bitmaps en de documentcaches
@@ -470,6 +475,7 @@ export async function renameDocument(index, newName) {
     if (doc) {
       doc.filePath = newPath;
       doc.fileName = newPath ? newPath.split(/[\\/]/).pop() : 'Untitled';
+      documentPathChanged(doc, oldPath, newPath);
     }
     updateWindowTitle();
     return true;

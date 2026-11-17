@@ -153,6 +153,7 @@ test('slip sheet planning keeps an unmatched sheet and applies only the matched 
   assert.deepEqual(errors, []);
   assert.deepEqual(plan, {
     conflicts: [],
+    collisions: [],
     rows: [{
       key: `${revisedPath}#1`, filePath: revisedPath, page: 1, pageLabel: 'A-101',
       sheetId: addedA.sheet.id, reason: 'label', include: true,

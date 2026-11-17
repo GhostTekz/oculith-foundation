@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "S'estan comprovant les signatures digitals…",
     "barLabel": "Signatures digitals",
+    "unsignedFieldsSummary_one": "{{count}} camp de signatura sense signar",
+    "unsignedFieldsSummary_other": "{{count}} camps de signatura sense signar",
+    "showUnsignedFields": "Mostra els camps",
+    "hideUnsignedFields": "Amaga els camps",
     "listError": "No s'han pogut comprovar les signatures: {{detail}}",
     "documentTimestamp": "Segell de temps del document",
     "documentTimestampBy": "Segell de temps del document ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "El buit de l'interval de bytes no conté només el valor de la signatura.",
       "subfilter-niet-ondersteund": "Aquest format de signatura no és compatible.",
       "zoekbudget-op": "La cerca d'una cadena de certificats s'ha aturat al seu límit; tot i així, pot existir una cadena.",
+      "hashbudget-op": "S'ha arribat al límit del document per comprovar bytes signats; aquesta signatura no s'ha comprovat.",
       "gat-wijkt-af-van-contents": "El valor de la signatura del fitxer és diferent del del diccionari de signatura.",
       "interne-fout": "S'ha produït un error intern en comprovar aquesta signatura.",
       "unknown": "La comprovació ha informat d'un problema addicional."

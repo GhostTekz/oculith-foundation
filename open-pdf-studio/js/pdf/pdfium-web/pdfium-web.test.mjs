@@ -111,3 +111,130 @@ test('the detail layer asks the rasterizer for the visible area first, PDF.js on
     globalThis.document = oldDocument;
   }
 });
+
+test('UserUnit1 retains the historical matrix coefficients exactly', () => {
+  const cases = [
+    [0, [2.5, 0, 0, 2.5, -26, -14]],
+    [90, [0, 2.5, -2.5, 0, 774, -14]],
+    [180, [-2.5, 0, 0, -2.5, 374, 786]],
+    [270, [0, -2.5, 2.5, 0, -26, 386]],
+  ];
+  for (const [rotatie, expected] of cases) {
+    const args = { W: 160, H: 320, rotatie, schaal: 1.25, k: 2, minX: 13, minY: 7 };
+    assert.deepEqual(pdfiumMatrix(args), expected);
+    assert.deepEqual(pdfiumMatrix({ ...args, userUnit: 1 }), expected);
+  }
+});
+
+test('cropped intrinsic rotation and UserUnit2 agree with hand-authored page markers', () => {
+  // CropBox [-20,0,140,80], intrinsic /Rotate90: PDFium display point is
+  // [rawY, rawX+20]. The scale-one PDF.js frame includes UserUnit2 already.
+  const matrix = pdfiumMatrix({ W: 160, H: 320, schaal: 1, k: 1, userUnit: 2,
+    rotatie: extraRotatie(90, 90) });
+  assert.deepEqual(matrix, [2, 0, 0, 2, 0, 0]);
+  assert.deepEqual(pasToe(matrix, 10, 10), [20, 20], 'black marker after crop and intrinsic rotation');
+  assert.deepEqual(pasToe(matrix, 60, 130), [120, 260], 'far blue marker');
+  assert.deepEqual(pasToe(matrix, -10, -10), [-20, -20], 'outside-crop source stays outside');
+  assert.deepEqual(pasToe(matrix, 80, 160), [160, 320], 'raw frame fills effective bitmap');
+});
+
+test('UserUnit2 extra rotations use effective translation once', () => {
+  const cases = [
+    [90, [300, 20], [60, 120]],
+    [180, [140, 300], [40, 60]],
+    [270, [20, 140], [260, 40]],
+  ];
+  for (const [rotatie, black, blue] of cases) {
+    const matrix = pdfiumMatrix({ W: 160, H: 320, rotatie, schaal: 1, k: 1, userUnit: 2 });
+    assert.deepEqual(pasToe(matrix, 10, 10), black);
+    assert.deepEqual(pasToe(matrix, 60, 130), blue);
+  }
+});
+
+test('UserUnit2 regions retain CSS crop offsets and device-pixel density', () => {
+  const matrix = pdfiumMatrix({ W: 160, H: 320, schaal: 1.5, k: 2, userUnit: 2, minX: 30, minY: 30 });
+  assert.deepEqual(matrix, [6, 0, 0, 6, -60, -60]);
+  assert.deepEqual(pasToe(matrix, 10, 10), [0, 0], 'effective crop corner');
+  assert.deepEqual(pasToe(matrix, 11, 10), [6, 0], 'one raw unit is two effective points');
+  const rotated = pdfiumMatrix({ W: 160, H: 320, rotatie: 90, schaal: 1.5, k: 2,
+    userUnit: 2, minX: 450, minY: 30 });
+  assert.deepEqual(pasToe(rotated, 10, 10), [0, 0], 'rotated CSS crop corner');
+  assert.deepEqual(pasToe(rotated, 10, 11), [-6, 0], 'rotated local scale');
+});
+
+test('fractional UserUnit works without changing effective frame translations', () => {
+  const matrix = pdfiumMatrix({ W: 40, H: 80, rotatie: 90, schaal: 1, k: 2, userUnit: 0.5 });
+  assert.deepEqual(pasToe(matrix, 0, 0), [160, 0]);
+  assert.deepEqual(pasToe(matrix, 80, 160), [0, 80]);
+});
+
+test('invalid UserUnit and unrepresentable new scale cannot reach a PDFium matrix', () => {
+  for (const userUnit of [null, '2', 0, -1, NaN, Infinity]) {
+    assert.throws(() => pdfiumMatrix({ W: 160, H: 320, schaal: 1, k: 1, userUnit }), /UserUnit/);
+  }
+  for (const userUnit of [1e308, Number.MIN_VALUE]) {
+    assert.throws(() => pdfiumMatrix({ W: 160, H: 320, schaal: 2, k: 2, userUnit }), /represented/);
+  }
+});
+
+test('actual web rasterizer supplies page UserUnit to full and region worker requests', async () => {
+  // Worker transport and canvas I/O are controlled; the actual rasterizer and
+  // matrix helpers execute. This is not a WebAssembly or rendered-pixel test.
+  const saved = { Worker: globalThis.Worker, document: globalThis.document, ImageData: globalThis.ImageData };
+  const calls = [];
+  globalThis.Worker = class {
+    postMessage(message) {
+      calls.push(message);
+      const answer = message.type === 'render'
+        ? { width: message.width, height: message.height, rgba: new Uint8Array(message.width * message.height * 4).buffer, ms: 0 }
+        : {};
+      queueMicrotask(() => this.onmessage({ data: { id: message.id, ok: true, ...answer } }));
+    }
+  };
+  globalThis.ImageData = class { constructor(data, width, height) { Object.assign(this, { data, width, height }); } };
+  globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ({ putImageData() {} }) }) };
+  try {
+    const { pdfiumWebRasterizer: create } = await import(`./pdfium-web-rasterizer.js?unit-requests`);
+    const rasterizer = create({ bytes: new Uint8Array([1, 2, 3]), inTauri: false, ocgAfwijkend: false, toonNms: () => null });
+    const page = { pageNumber: 5, rotate: 90, userUnit: 2,
+      getViewport: (args) => { assert.deepEqual(args, { scale: 1, rotation: 90 }); return { width: 160, height: 320 }; } };
+    const viewport = { scale: 1, rotation: 90 };
+    const full = await rasterizer.renderPagina({ page, viewport, k: 1, breedte: 160, hoogte: 320 });
+    assert.deepEqual([full.width, full.height], [160, 320]);
+    assert.deepEqual(calls.filter(c => c.type === 'render').at(-1).matrix, [2, 0, 0, 2, 0, 0]);
+    const region = await rasterizer.renderUitsnede({ page, viewport, dpr: 1, breedte: 20, hoogte: 40,
+      uitsnede: { minX: 30, minY: 30 } });
+    assert.deepEqual([region.width, region.height], [20, 40]);
+    const request = calls.filter(c => c.type === 'render').at(-1);
+    assert.equal(request.pageIndex, 4);
+    assert.deepEqual(request.matrix, [2, 0, 0, 2, -30, -30]);
+    await rasterizer.renderPagina({ page, viewport: { scale: 1, rotation: 180 }, k: 1, breedte: 320, hoogte: 160 });
+    assert.deepEqual(calls.filter(c => c.type === 'render').at(-1).matrix, [0, 2, -2, 0, 320, 0]);
+    const defaultPage = { ...page, pageNumber: 1, rotate: 0, userUnit: 1,
+      getViewport: () => ({ width: 200, height: 160 }) };
+    await rasterizer.renderPagina({ page: defaultPage, viewport: { scale: 1, rotation: 0 }, k: 1, breedte: 200, hoogte: 160 });
+    assert.deepEqual(calls.filter(c => c.type === 'render').at(-1).matrix, [1, 0, 0, 1, 0, 0]);
+    assert.equal(calls.filter(c => c.type === 'open').length, 1, 'existing document reuse remains');
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete globalThis[key]; else globalThis[key] = value;
+    }
+  }
+});
+
+test('actual web rasterizer leaves missing or invalid page units to PDF.js without worker I/O', async () => {
+  const saved = globalThis.Worker;
+  let workerCalls = 0;
+  globalThis.Worker = class { constructor() { workerCalls++; throw new Error('unexpected worker'); } };
+  try {
+    const { pdfiumWebRasterizer: create } = await import(`./pdfium-web-rasterizer.js?invalid-unit-requests`);
+    const rasterizer = create({ bytes: new Uint8Array([1]), inTauri: false, ocgAfwijkend: false, toonNms: () => null });
+    for (const userUnit of [undefined, null, '1', 0, -1, NaN, Infinity]) {
+      const page = { userUnit, getViewport: () => { throw new Error('metadata was not verified'); } };
+      assert.equal(await rasterizer.renderPagina({ page, viewport: { scale: 1 }, k: 1, breedte: 1, hoogte: 1 }), null);
+    }
+    assert.equal(workerCalls, 0);
+  } finally {
+    if (saved === undefined) delete globalThis.Worker; else globalThis.Worker = saved;
+  }
+});

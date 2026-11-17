@@ -152,6 +152,11 @@ tauri-plugin-global-shortcut = "2"
 # config names an update channel (tauri.community.conf.json).
 tauri-plugin-updater = "~2.10"  # same minor as @tauri-apps/plugin-updater
 
+# flock for the open-file lock and kill(pid, 0) for a stale add-on lock.
+# Already in Cargo.lock; no new crate.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # Rootarchief van het besturingssysteem als DER buiten Windows (macOS-sleutelhanger,
 # OpenSSL-paden op Linux). Staat al in Cargo.lock; geen eigen X.509-lijn.
 [target.'cfg(not(windows))'.dependencies]
@@ -163,7 +168,7 @@ rustls-native-certs = "0.8"
 # Win32_Security (met Win32_Graphics_Gdi): `PRINTER_INFO_2W`, voor de
 # printerlijst uit de spooler (print_lijst.rs, #524).
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Storage_Xps", "Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Registry"] }
+windows-sys = { version = "0.59", features = ["Win32_Graphics_Printing", "Win32_Graphics_Gdi", "Win32_Storage_Xps", "Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Registry", "Win32_System_Threading"] }
 
 # De mock-runtime van Tauri, zodat een test een AppHandle kan maken zonder
 # venster (logboek::registreer schrijft daarmee echt een logbestand). Alleen

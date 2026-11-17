@@ -76,7 +76,9 @@ export default function CommandPalette() {
       out.push({
         key: `doc:${index}`, kind: 'document', section: 'documents', label: name, id: name,
         path: [t('menu.palette.switchTo')], keywords: ['tab', 'document'], icon: lucide('file-text'),
-        run: () => import('../../ui/chrome/tabs.js').then((m) => m.switchToTab(index)),
+        // Like a tab click: leave the comparison (it stays on its own tab).
+        run: () => Promise.all([import('../../compare/compare-store.js'), import('../../ui/chrome/tabs.js')])
+          .then(([compare, m]) => { compare.blurCompareTab(); m.switchToTab(index); }),
       });
     });
     try {

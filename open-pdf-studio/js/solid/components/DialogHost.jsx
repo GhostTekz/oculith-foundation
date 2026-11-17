@@ -77,6 +77,7 @@ import CopyToPagesDialog from './dialogs/CopyToPagesDialog.jsx';
 const PrintDialog = lazy(() => import('./dialogs/PrintDialog.jsx'));
 const CadExportDialog = lazy(() => import('./dialogs/CadExportDialog.jsx'));
 const CadImportDialog = lazy(() => import('./dialogs/CadImportDialog.jsx'));
+const TitleBlockTemplateDialog = lazy(() => import('./dialogs/TitleBlockTemplateDialog.jsx'));
 const BatchOpsDialog = lazy(() => import('./dialogs/BatchOpsDialog.jsx'));
 const AiConnectionsDialog = lazy(() => import('./dialogs/AiConnectionsDialog.jsx'));
 
@@ -131,6 +132,7 @@ const DIALOG_MAP = {
   'hyperlink': HyperlinkDialog,
   'capture-viewer': CaptureViewerDialog,
   'page-labels': PageLabelsDialog,
+  'title-block-template': TitleBlockTemplateDialog,
   'batch-link': BatchLinkDialog,
   'multiply': MultiplyDialog,
   'offset': OffsetDialog,

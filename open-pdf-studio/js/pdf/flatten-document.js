@@ -11,11 +11,12 @@
 // as annotations; they are read into the model with the loader's own
 // conversion (flatten-models.js), so they come back with their IDs, values
 // and Markups List columns.
-import { getActiveDocument } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { PDFDocument } from 'pdf-lib';
 import { $RAW } from 'solid-js/store';
 import { getPdfBytes, ensureAnnotationsForPage } from './loader.js';
-import { getCacheKey, reloadFromBytes } from './page-manager.js';
+import { getCacheKey, reloadFromBytes, pageDataOf, pageDataChange } from './page-manager.js';
+import { withHistoryLock } from '../core/history-lock.js';
 import { recordPageStructure } from '../core/undo-manager.js';
 import { cloneAnnotation } from '../annotations/factory.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
@@ -70,7 +71,11 @@ const pdfjsAssets = () => ({
  *   reason: 'none' (nothing matched), 'loading' (markups still loading),
  *   'failed' (the document could not be serialized)
  */
-export async function flattenDocument({ pages = null, types = null, ids = null, allowUnflatten = true } = {}) {
+export function flattenDocument(options = {}) {
+  return withHistoryLock(() => flattenDocumentNu(options), { flattened: 0, skipped: 0, reason: 'failed' });
+}
+
+async function flattenDocumentNu({ pages = null, types = null, ids = null, allowUnflatten = true } = {}) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return { flattened: 0, skipped: 0, reason: 'none' };
   if (!(await allPagesLoaded(doc))) return { flattened: 0, skipped: 0, reason: 'loading' };
@@ -82,10 +87,11 @@ export async function flattenDocument({ pages = null, types = null, ids = null, 
     .map(c => c.annotation);
   if (!chosen.length) return { flattened: 0, skipped: 0, reason: 'none' };
 
-  const oldBytes = await getPdfBytes(getCacheKey());
+  const oldBytes = await getPdfBytes(getCacheKey(doc));
   const oldAnnotations = raw(doc.annotations).map(a => cloneAnnotation(a));
   const oldRotations = { ...(doc.pageRotations || {}) };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
   const sourcePdf = doc.pdfDoc;
 
   const refs = new Map();
@@ -109,13 +115,15 @@ export async function flattenDocument({ pages = null, types = null, ids = null, 
     const newBytes = new Uint8Array(await lib.save());
     // The serializer applied the in-app page rotations to /Rotate.
     const newRotations = {};
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return { flattened: 0, skipped: 0, reason: 'failed' };
     await reloadFromBytes(newBytes, remaining, newRotations, oldPage, null, doc);
     // Fixed vector snippets were drawn into these bytes as well.
     const { markeerGebakken } = await import('./saver/vector-snippet.js');
     markeerGebakken(doc.annotations, doc.filePath);
     if (oldBytes) {
       recordPageStructure(oldBytes, oldAnnotations, oldRotations, oldPage,
-        newBytes, remaining, newRotations, doc.currentPage);
+        newBytes, remaining, newRotations, doc.currentPage, { doc, ...pageDataChange(dataBefore, doc) });
     }
     refreshLists();
     return { flattened: flattenedModels.length, skipped: result.skipped.length };
@@ -129,11 +137,15 @@ export async function flattenDocument({ pages = null, types = null, ids = null, 
  * @param {{ pages?: number[]|null }} [options]
  * @returns {Promise<{ restored: number, reason?: string }>}
  */
-export async function unflattenDocument({ pages = null } = {}) {
+export function unflattenDocument(options = {}) {
+  return withHistoryLock(() => unflattenDocumentNu(options), { restored: 0, reason: 'none' });
+}
+
+async function unflattenDocumentNu({ pages = null } = {}) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return { restored: 0, reason: 'none' };
   if (!(await allPagesLoaded(doc))) return { restored: 0, reason: 'loading' };
-  const bytes = await getPdfBytes(getCacheKey());
+  const bytes = await getPdfBytes(getCacheKey(doc));
   if (!bytes || getActiveDocument() !== doc) return { restored: 0, reason: 'none' };
 
   showLoading(i18next.t('flattenMarkups.working', { ns: 'common' }));
@@ -154,9 +166,11 @@ export async function unflattenDocument({ pages = null } = {}) {
     const oldAnnotations = raw(doc.annotations).map(a => cloneAnnotation(a));
     const rotations = { ...(doc.pageRotations || {}) };
     const page = doc.currentPage;
+    const dataBefore = pageDataOf(doc);
     const newAnnotations = [...oldAnnotations.map(a => cloneAnnotation(a)), ...models];
     await reloadFromBytes(newBytes, newAnnotations, rotations, page, null, doc);
-    recordPageStructure(bytes, oldAnnotations, rotations, page, newBytes, newAnnotations, rotations, doc.currentPage);
+    recordPageStructure(bytes, oldAnnotations, rotations, page, newBytes, newAnnotations, rotations, doc.currentPage,
+      { doc, ...pageDataChange(dataBefore, doc) });
     refreshLists();
     return { restored: models.length };
   } finally {

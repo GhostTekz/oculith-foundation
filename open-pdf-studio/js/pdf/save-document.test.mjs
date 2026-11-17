@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
+import { clearRenderCachesForPath } from './render-cache-invalidation.js';
 
 // Execute the production save functions with controlled I/O. The app imports
 // require a webview; only those dependencies and dynamic imports are replaced.
@@ -44,6 +45,7 @@ function harness() {
     i18next: { t: x => x }, showMessage() {}, window: {},
     console: { error() {}, warn() {} },
     saveFileDialog: async () => 'copy.pdf',
+    clearRenderCachesForPath,
     loadModule: async path => {
       if (path.includes('verificatie')) return { bevestigOpslaanMetHandtekeningen: async () => true, verifieerHandtekeningen: async () => {} };
       if (path.includes('opslaan')) return { moetOpnieuwVerifieren: () => false, opslaanAlsStandaardPad: doc => doc.filePath };
@@ -194,6 +196,9 @@ test('same-path save blocks old paint before write and releases after native inv
   assert.ok(phases.indexOf('write') < phases.indexOf('native-invalidate'));
   assert.ok(phases.indexOf('native-invalidate') < phases.indexOf('finish'));
   assert.ok(phases.indexOf('finish') < phases.indexOf('fresh-render'));
+  for (const clear of ['bitmap-clear', 'tile-clear', 'progressive-cancel', 'orchestrator-cancel', 'js-cache-clear', 'preview-clear']) {
+    assert.ok(phases.indexOf('begin') < phases.indexOf(clear) && phases.indexOf(clear) < phases.indexOf('write'), clear);
+  }
 });
 
 test('native invalidation failure is reported after disk save and releases the paint gate', async () => {
@@ -287,4 +292,46 @@ test('saving aborts before writing when a page has model annotations but is not 
   assert.equal(await h.api.savePDF(null, { zonderHandtekeningVraag: true }), false);
   assert.deepEqual(h.writes, []);
   assert.equal(h.a.modified, true);
+});
+
+// File locks: one per path in the shell, not per tab.
+function trackLocks(h, held = ['a.pdf', 'b.pdf']) {
+  const locked = new Set(held);
+  h.deps.lockFile = async path => { locked.add(path); };
+  h.deps.unlockFile = async path => { locked.delete(path); };
+  return locked;
+}
+
+test('Save As releases the lock on the file the tab left', async () => {
+  const h = harness(); const locked = trackLocks(h);
+  assert.equal(await h.api.savePDFAs(h.a), true);
+  assert.equal(h.a.filePath, 'copy.pdf');
+  assert.deepEqual([...locked].sort(), ['b.pdf', 'copy.pdf']);
+});
+
+test('Save As keeps the old file locked while another tab shows it', async () => {
+  const h = harness(); const locked = trackLocks(h, ['a.pdf']);
+  h.b.filePath = 'a.pdf';
+  assert.equal(await h.api.savePDFAs(h.a), true);
+  assert.deepEqual([...locked].sort(), ['a.pdf', 'copy.pdf']);
+});
+
+test('Save As from a working copy releases the original it saved to before', async () => {
+  const h = harness(); const locked = trackLocks(h, ['real-a.pdf', 'b.pdf']);
+  h.a.saveTargetPath = 'real-a.pdf';
+  assert.equal(await h.api.savePDFAs(h.a), true);
+  assert.deepEqual([...locked].sort(), ['b.pdf', 'copy.pdf']);
+});
+
+test('a tab closed during the disk write does not get its lock back', async () => {
+  const h = harness(); const locked = trackLocks(h);
+  h.deps.writeBinaryFileAtomic = async () => { h.deps.state.documents = [h.b]; };
+  await h.api.savePDF(null, { zonderHandtekeningVraag: true });
+  assert.equal(locked.has('a.pdf'), false);
+});
+
+test('a copy written to another path (no tab goes by it) is not left locked', async () => {
+  const h = harness(); const locked = trackLocks(h);
+  assert.equal(await h.api.savePDF('export.pdf', { zonderHandtekeningVraag: true }), true);
+  assert.deepEqual([...locked].sort(), ['a.pdf', 'b.pdf']);
 });

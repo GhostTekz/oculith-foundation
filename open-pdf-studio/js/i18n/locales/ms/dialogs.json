@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Menyemak tandatangan digital…",
     "barLabel": "Tandatangan digital",
+    "unsignedFieldsSummary_one": "{{count}} medan tandatangan belum ditandatangani",
+    "unsignedFieldsSummary_other": "{{count}} medan tandatangan belum ditandatangani",
+    "showUnsignedFields": "Tunjukkan medan",
+    "hideUnsignedFields": "Sembunyikan medan",
     "listError": "Tandatangan tidak dapat disemak: {{detail}}",
     "documentTimestamp": "Cap masa dokumen",
     "documentTimestampBy": "Cap masa dokumen ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Jurang dalam julat bait bukan hanya mengandungi nilai tandatangan.",
       "subfilter-niet-ondersteund": "Format tandatangan ini tidak disokong.",
       "zoekbudget-op": "Carian rantaian sijil berhenti pada hadnya; rantaian mungkin masih wujud.",
+      "hashbudget-op": "Had dokumen untuk menyemak bait yang ditandatangani telah dicapai; tandatangan ini tidak disemak.",
       "gat-wijkt-af-van-contents": "Nilai tandatangan dalam fail berbeza daripada nilai dalam kamus tandatangan.",
       "interne-fout": "Ralat dalaman berlaku semasa menyemak tandatangan ini.",
       "unknown": "Semakan melaporkan isu tambahan."

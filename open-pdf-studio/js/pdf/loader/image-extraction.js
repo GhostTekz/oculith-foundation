@@ -54,10 +54,14 @@ async function decodeEncodedImage(blob) {
 // (stamp-sheet.js), resolving with a Map of the entries it made (or null);
 // the stamps it leaves out go to the sheet render.
 // `opts.onStep(name, ms)` gets the timings of the passes.
+// `opts.renderPage()`: resolves with the same page of another PDF.js
+// document of the same file to render the leftovers on (or null: `page`),
+// so the document `page` belongs to does not keep what that render read;
+// it is cleaned up after the render.
 // The rendered pictures are kept per PDF.js document and page: a page read
 // again (its colors after all, a flatten) does not render them again.
 export async function extractStampImagesHybrid(page, viewport, stampAnnots, pageNum, pdfLibDoc, opts = {}) {
-  const { images = null, onStep = null, stampSheet = null } = opts;
+  const { images = null, onStep = null, stampSheet = null, renderPage = null } = opts;
   if (stampAnnots.length === 0 && !pdfLibDoc && !images) return new Map();
 
   // First pass: pdf-lib extraction (clean, no bake-in)
@@ -121,7 +125,12 @@ export async function extractStampImagesHybrid(page, viewport, stampAnnots, page
   if (toRender.length > 0) {
     const t0 = performance.now();
     try {
-      keep(await extractStampImagesViaPdfJs(page, viewport, toRender));
+      const other = renderPage ? await renderPage().catch(() => null) : null;
+      try {
+        keep(await extractStampImagesViaPdfJs(other || page, viewport, toRender));
+      } finally {
+        other?.cleanup?.();
+      }
     } catch (e) {
       console.warn('[image-extraction] PDF.js fallback failed:', e);
     }

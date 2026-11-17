@@ -14,7 +14,7 @@ import {
 } from '../symbols/two-point.js';
 import { isPointPolygon, rotatePointPolygon } from './polygon-transform.js';
 import { herrekenExtMaat } from './ext-measure.js';
-import { subtractAreaCutout, applyAreaCutout } from './area-cutout.js';
+import { subtractAreaCutout, applyAreaCutout, cutoutInsideArea } from './area-cutout.js';
 import { vlakRingen, ringenIndelen } from './vlak-ringen.js';
 import {
   MIN_GEBIED_PX, schaalRechthoekMetGreep, schermPxNaarPt, veiligeVerhouding,
@@ -756,21 +756,31 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
             const ringIndex = rings.indexOf(originalAnn.holes[holeIdx]);
             if (ringIndex >= 0 && ringenIndelen(rings)[ringIndex] === false) {
               const otherHoles = originalAnn.holes.filter((_, index) => index !== holeIdx);
-              let result;
+              let result = null;
               try {
-                result = subtractAreaCutout(originalAnn.points, otherHoles, annotation.holes[holeIdx]);
+                // A corner moved within the area keeps every ring as it is,
+                // arcs and ring order included. Only a hole pushed across the
+                // boundary or into another hole is clipped into new rings.
+                if (!cutoutInsideArea(originalAnn.points, otherHoles, annotation.holes[holeIdx])) {
+                  result = subtractAreaCutout(originalAnn.points, otherHoles, annotation.holes[holeIdx]);
+                  // Grips keep an area and its hole present: a hole dragged
+                  // fully outside, or over the whole area, is not applied.
+                  if (!result || result.empty) {
+                    Object.assign(annotation, originalAnn);
+                    return;
+                  }
+                }
               } catch (error) {
                 console.error('Area cutout grip failed:', error);
                 Object.assign(annotation, originalAnn);
                 return;
               }
-              // Grips keep an area present. A whole-area cutout is removed
-              // by the Add Hole operation, with its normal delete history.
-              if (result?.empty) {
-                Object.assign(annotation, originalAnn);
-                return;
-              }
-              applyAreaCutout(annotation, result || { points: originalAnn.points, holes: otherHoles });
+              // Each move starts from the area as it was before the drag: an
+              // earlier move that clipped the outline must not stay applied.
+              applyAreaCutout(annotation, result || {
+                points: originalAnn.points.map(p => keepArc(p, p.x, p.y)),
+                holes: annotation.holes,
+              });
             }
             delete annotation.enginePixels;
             // Recalculate measurement text with holes

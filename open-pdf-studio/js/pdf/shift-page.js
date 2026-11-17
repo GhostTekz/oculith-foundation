@@ -4,9 +4,10 @@
 // express directly via a `cm` transform, so the page keeps its own object
 // and only its content is wrapped in that transform (shift-page-content.js)
 // — nothing is rasterized and nothing on the page dictionary is lost.
-import { getActiveDocument } from "../core/state.js";
+import { state, getActiveDocument } from "../core/state.js";
 import { getPdfBytes } from "./loader.js";
-import { getCacheKey, reloadFromBytes } from "./page-manager.js";
+import { getCacheKey, reloadFromBytes, pageDataOf, pageDataChange } from "./page-manager.js";
+import { withHistoryLock } from "../core/history-lock.js";
 import { recordPageStructure } from "../core/undo-manager.js";
 import { showLoading, hideLoading } from "../ui/chrome/dialogs.js";
 import { cloneAnnotation } from "../annotations/factory.js";
@@ -32,7 +33,11 @@ export { resolveTargetPages };
  *   matched the selection / the matching pages are empty. Failures (an
  *   encrypted document, a file pdf-lib cannot read) are thrown to the caller.
  */
-export async function shiftPages(dxMm, dyMm, applyTo, fromPage = 1) {
+export function shiftPages(dxMm, dyMm, applyTo, fromPage = 1) {
+  return withHistoryLock(() => shiftPagesNu(dxMm, dyMm, applyTo, fromPage), { shifted: 0, reason: "no-pages" });
+}
+
+async function shiftPagesNu(dxMm, dyMm, applyTo, fromPage) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return { shifted: 0, reason: "no-pages" };
 
@@ -41,13 +46,14 @@ export async function shiftPages(dxMm, dyMm, applyTo, fromPage = 1) {
   if (!offset) return { shifted: 0, reason: "no-shift" };
   const { dx, dy } = offset;
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = await getPdfBytes(cacheKey);
   if (!currentBytes) return { shifted: 0, reason: "no-pages" };
 
   const oldAnnotations = doc.annotations.map((a) => cloneAnnotation(a));
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   const totalPages = doc.pdfDoc.numPages;
   const pageNumbers = resolveTargetPages(applyTo, fromPage, doc.currentPage, totalPages);
@@ -105,7 +111,9 @@ export async function shiftPages(dxMm, dyMm, applyTo, fromPage = 1) {
     // move with the content now, and back again on undo.
     const ocrShift = { pages: [...shiftedPages], dx, dy };
 
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage);
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return { shifted: 0, reason: "no-pages" };
+    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, null, doc);
     applyOcrShift(doc.ocrResults, ocrShift, 1);
     recordPageStructure(
       currentBytes,
@@ -116,7 +124,7 @@ export async function shiftPages(dxMm, dyMm, applyTo, fromPage = 1) {
       newAnnotations,
       newRotations,
       targetPage,
-      { ocrShift }
+      { ocrShift, doc, ...pageDataChange(dataBefore, doc) }
     );
 
     return { shifted: shiftedPages.size };

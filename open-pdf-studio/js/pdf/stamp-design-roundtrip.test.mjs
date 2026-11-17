@@ -271,3 +271,25 @@ test('Lock and Check from the context menu save with the PDF', async () => {
   assert.deepEqual(models.map(m => isMarkupChecked(m)), [true, true]);
   assert.deepEqual(models.map(m => m.locked), [false, true]);
 });
+
+test('a stamp keeps its /NM across two consecutive saves', async () => {
+  const nms = async (bytes) => (await rawStamps(bytes)).map(r => decodePdfTextObject(r.dict.get(PDFName.of('NM'))));
+  const source = await PDFDocument.create();
+  source.addPage([612, 792]);
+  const placed = [stamp('ct:approvedAsNoted', { x: 80, y: 90 }), stamp('ct:fieldVerified', { x: 300, y: 400 })];
+  const first = await save(await source.save(), placed);
+  const firstNames = await nms(first);
+  assert.equal(firstNames.length, 2);
+  assert.ok(firstNames.every(n => typeof n === 'string' && n.length > 0), 'each stamp has an /NM');
+  assert.notEqual(firstNames[0], firstNames[1]);
+
+  // The live models saved again (the in-app Save, Save sequence).
+  const second = await save(first, placed);
+  assert.deepEqual(await nms(second), firstNames);
+
+  // Reopened models saved again keep the same identity too.
+  const reopened = (await reopen(second)).filter(m => m.type === 'stamp');
+  assert.deepEqual(reopened.map(m => m.nm), firstNames);
+  const third = await save(second, reopened);
+  assert.deepEqual(await nms(third), firstNames);
+});

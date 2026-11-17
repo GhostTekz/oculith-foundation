@@ -16,7 +16,8 @@ import { cacheWebFile, extractFileName, fileExists, invoke, isTauri, readBinaryF
 import { createTab, updateTabBar, updateWindowTitle } from '../ui/chrome/tabs.js';
 import { ensureAnnotationsForPage, getPdfBytes, loadPDFIfNeeded } from '../pdf/loader.js';
 import { goToPage } from '../pdf/renderer.js';
-import { savePDF } from '../pdf/saver.js';
+import { savePDF, rotationsIntoSavedBase, unlockIfUnused } from '../pdf/saver.js';
+import { documentPathChanged } from '../core/document-lifecycle.js';
 import { outputPathMatchesSource } from '../compare/revision-markup-pdf.js';
 import { fingerprintPdfBytes } from './pdf-page-import.js';
 import { sheetKey, titleBlockText } from './slip-sheet-match.js';
@@ -165,15 +166,22 @@ export async function runSlipSheet({ register, rows, pageCounts, revision, align
     const { index } = createTab(filePath);
     if (state.documents[index] !== target) throw new Error(`${extractFileName(filePath)} was closed.`);
     target.annotations.push(...added);
-    const saved = await savePDF(output, { zonderHandtekeningVraag: true }, target);
+    const saved = await savePDF(output, { zonderHandtekeningVraag: true, becomesFile: true }, target);
     if (!saved) {
       target.annotations = target.annotations.filter(annotation => !added.includes(annotation));
       throw new Error(`Could not write ${extractFileName(output)}.`);
     }
     // As Save As does: the tab now shows the copy that holds the carried markups.
+    const targetPath = target.filePath;
+    const targetSaveTarget = target.saveTargetPath || null;
     target.filePath = output;
     target.fileName = extractFileName(output);
     target.saveTargetPath = null;
+    documentPathChanged(target, targetPath, output);
+    for (const old of new Set([targetPath, targetSaveTarget])) {
+      if (old && old !== output) await unlockIfUnused(old);
+    }
+    await rotationsIntoSavedBase(target);
     updateTabBar();
     updateWindowTitle();
     const bytes = await getPdfBytes(output);

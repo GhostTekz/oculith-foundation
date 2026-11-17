@@ -2,6 +2,7 @@ import { cloneAnnotation } from './factory.js';
 import { recordModify, recordDelete, recordBulkDelete } from '../core/undo-manager.js';
 import { expandCorrectionGroups } from './corrections/model.js';
 import { isLayerLocked } from './annotatie-lagen.js';
+import { isScaleSource, withMeasurementRefresh } from './measurement-refresh.js';
 
 export function commitAnnotationMutation(annotation, mutate) {
   if (!annotation?.id || typeof mutate !== 'function') return false;
@@ -30,9 +31,15 @@ export function deleteAnnotationsWithUndo(doc, selection) {
   const gekozen = new Set(vrij);
   if (weg.some(a => a.locked && !gekozen.has(a))) return [];
   if (weg.length === 0) return [];
-  if (weg.length === 1) recordDelete(weg[0], doc.annotations.indexOf(weg[0]));
-  else recordBulkDelete(weg);
-  const set = new Set(weg);
-  doc.annotations = doc.annotations.filter(a => !set.has(a));
-  return weg;
+  const remove = () => {
+    if (weg.length === 1) recordDelete(weg[0], doc.annotations.indexOf(weg[0]));
+    else recordBulkDelete(weg);
+    const set = new Set(weg);
+    doc.annotations = doc.annotations.filter(a => !set.has(a));
+    return weg;
+  };
+  // A deleted viewport, scale bar or scale region changes the scale of the
+  // measurements it covered: recompute them in the same undo step.
+  if (!weg.some(isScaleSource)) return remove();
+  return withMeasurementRefresh(doc, remove, () => true);
 }

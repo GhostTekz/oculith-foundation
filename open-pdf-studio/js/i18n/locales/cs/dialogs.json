@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Kontrola digitálních podpisů…",
     "barLabel": "Digitální podpisy",
+    "unsignedFieldsSummary_one": "Nepodepsaná pole podpisu: {{count}}",
+    "unsignedFieldsSummary_other": "Nepodepsaná pole podpisu: {{count}}",
+    "showUnsignedFields": "Zobrazit pole",
+    "hideUnsignedFields": "Skrýt pole",
     "listError": "Podpisy se nepodařilo zkontrolovat: {{detail}}",
     "documentTimestamp": "Časové razítko dokumentu",
     "documentTimestampBy": "Časové razítko dokumentu ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Mezera v rozsahu bajtů neobsahuje pouze hodnotu podpisu.",
       "subfilter-niet-ondersteund": "Tento formát podpisu není podporován.",
       "zoekbudget-op": "Hledání řetězce certifikátů se zastavilo na svém limitu; řetězec přesto může existovat.",
+      "hashbudget-op": "Byl dosažen limit dokumentu pro kontrolu podepsaných bajtů; tento podpis nebyl zkontrolován.",
       "gat-wijkt-af-van-contents": "Hodnota podpisu v souboru se liší od hodnoty ve slovníku podpisu.",
       "interne-fout": "Při kontrole tohoto podpisu došlo k vnitřní chybě.",
       "unknown": "Kontrola ohlásila další problém."

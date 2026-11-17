@@ -111,9 +111,24 @@ export async function ensureBitmapForCurrentView() {
         return;
     }
 
+    // The generation is taken before the first await: a call made while this
+    // one waits for the page size checks is newer and wins. The view (zoom,
+    // page size) is read after those awaits, so this call never renders or
+    // shows a page or zoom the viewer has already left.
+    const myGen = ++_bitmapGen;
+    const filePath = viewport.filePath;
+    const askedPage = viewport.pageNum;
+    const sourceRevision = sourceRenderRevision(filePath);
+
     // Additief pad: een ZWARE raster-pagina (grote content-stream) met de voorkeur
     // aan, vullen we progressief tegel-voor-tegel in i.p.v. één trage whole-page
     // render. Niet-zware pagina's of voorkeur uit → exact het bestaande pad hieronder.
+    const _prefOn = !!(state.preferences && state.preferences.progressiveRender);
+    const _heavy = _prefOn ? await isHeavyPage(filePath, askedPage) : false;
+    const _extreme = _heavy ? await isExtremePage(filePath, askedPage) : false;
+    if (myGen !== _bitmapGen || viewport.filePath !== filePath || viewport.pageNum !== askedPage
+        || !viewport.active || viewport.pageType !== 'raster') return;
+
     const dpr = window.devicePixelRatio || 1;
     const targetScale = viewport.zoom * dpr;
     const maxAxisPt = Math.max(viewport.pageW, viewport.pageH);
@@ -124,11 +139,6 @@ export async function ensureBitmapForCurrentView() {
     }
     const capScale = MAX_BITMAP_AXIS_PX / maxAxisPt;
 
-    const filePath = viewport.filePath;
-    const sourceRevision = sourceRenderRevision(filePath);
-    const _prefOn = !!(state.preferences && state.preferences.progressiveRender);
-    const _heavy = _prefOn ? await isHeavyPage(viewport.filePath, viewport.pageNum) : false;
-    const _extreme = _heavy ? await isExtremePage(viewport.filePath, viewport.pageNum) : false;
     if (_prefOn && _heavy && (!_extreme || !needsVisibleTile(viewport.zoom, dpr, capScale))) {
         console.log(`[prog-guard] zware pagina p${viewport.pageNum} → progressief pad`);
         _bitmapGen++; // maak een eventuele in-flight gewone render stale
@@ -149,8 +159,6 @@ export async function ensureBitmapForCurrentView() {
         }
         return;
     }
-
-    const myGen = ++_bitmapGen;
 
     // One render per settle, at the exact zoom * dpr, clamped AFTER rounding
     // so the frame stays within the 4096 px axis cap (and the worker's

@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "جارٍ التحقق من التوقيعات الرقمية…",
     "barLabel": "التوقيعات الرقمية",
+    "unsignedFieldsSummary_one": "حقول توقيع غير موقعة: {{count}}",
+    "unsignedFieldsSummary_other": "حقول توقيع غير موقعة: {{count}}",
+    "showUnsignedFields": "إظهار الحقول",
+    "hideUnsignedFields": "إخفاء الحقول",
     "listError": "تعذّر التحقق من التوقيعات: {{detail}}",
     "documentTimestamp": "طابع زمني للمستند",
     "documentTimestampBy": "طابع زمني للمستند ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "لا تحتوي الفجوة في نطاق البايتات على قيمة التوقيع فقط.",
       "subfilter-niet-ondersteund": "تنسيق التوقيع هذا غير مدعوم.",
       "zoekbudget-op": "توقف البحث عن سلسلة شهادات عند حده الأقصى؛ وقد توجد سلسلة رغم ذلك.",
+      "hashbudget-op": "تم بلوغ حد المستند لفحص البايتات الموقّعة؛ لم يتم فحص هذا التوقيع.",
       "gat-wijkt-af-van-contents": "تختلف قيمة التوقيع في الملف عن القيمة الموجودة في قاموس التوقيع.",
       "interne-fout": "حدث خطأ داخلي أثناء التحقق من هذا التوقيع.",
       "unknown": "أبلغ التحقق عن مشكلة إضافية."

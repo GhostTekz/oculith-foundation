@@ -18,9 +18,12 @@ test('add-ons see a frozen drawing-set copy without a write method or store refe
   const snapshot = module.drawingSetSnapshot();
   assert.equal(snapshot.sheets[0].current.sourceSha256, 'a'.repeat(64));
   assert.equal(snapshot.sheets[0].current.page, 2);
+  assert.equal(snapshot.sheets[0].fromTitleBlockTemplate, false);
   assert.equal(Object.isFrozen(snapshot.sheets[0].current), true);
   assert.throws(() => { snapshot.sheets[0].label = 'altered'; }, TypeError);
   assert.equal(sheetRegister().sheets[0].label, 'M-101');
+  saveSheetRegister({ ...register, sheets: [{ ...register.sheets[0], titleBlockTemplate: 't1' }] });
+  assert.equal(module.drawingSetSnapshot().sheets[0].fromTitleBlockTemplate, true);
   saveSheetRegister(createSheetRegister('Replacement'));
   assert.equal(snapshot.sheets.length, 1);
   assert.equal(module.drawingSetSnapshot().sheets.length, 0);

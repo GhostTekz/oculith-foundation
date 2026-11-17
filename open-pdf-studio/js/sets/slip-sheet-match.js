@@ -69,7 +69,7 @@ export function titleBlockText(items, viewport) {
 /**
  * @param {{sheets: Array<{id: string, label: string}>}} register
  * @param {Array<{filePath: string, pageCount: number, pageLabels?: Array<string|null>|null, titleBlockTexts?: Array<string>}>} files
- * @returns {{rows: Array<{key: string, filePath: string, page: number, pageLabel: string, sheetId: string|null, reason: string|null, include: boolean}>, conflicts: Array<{sheetId: string, keys: string[]}>}}
+ * @returns {{rows: Array<{key: string, filePath: string, page: number, pageLabel: string, sheetId: string|null, reason: string|null, include: boolean}>, conflicts: Array<{sheetId: string, keys: string[]}>, collisions: Array<{key: string, sheetIds: string[], labels: string[]}>}}
  */
 export function planSlipSheet(register, files) {
   if (!register || !Array.isArray(register.sheets)) throw new Error('A drawing set is required.');
@@ -85,11 +85,22 @@ export function planSlipSheet(register, files) {
         _file: file });
     }
   }
+  // The register tells sheets apart by their trimmed, lower-case ID; matching
+  // also folds spacing and Unicode normalization. Sheets whose IDs differ only
+  // there ("A 101" and "A  101") share one match key: none of them is matched
+  // and the plan reports them, instead of the last one silently winning.
   const byKey = new Map();
+  const sameKey = new Map(); // key -> sheets that share it
   for (const sheet of register.sheets) {
     const key = usableLabel(sheet.label);
-    if (key) byKey.set(key, sheet);
+    if (!key) continue;
+    if (sameKey.has(key)) sameKey.get(key).push(sheet);
+    else if (byKey.has(key)) { sameKey.set(key, [byKey.get(key), sheet]); byKey.delete(key); }
+    else byKey.set(key, sheet);
   }
+  const collisions = [...sameKey].map(([key, sheets]) => ({ key,
+    sheetIds: sheets.map(sheet => sheet.id), labels: sheets.map(sheet => sheet.label) }));
+  const ambiguous = new Set(collisions.flatMap(collision => collision.sheetIds));
   const claimed = new Map(); // sheetId -> row keys
   const conflicts = [];
   const claim = (candidates) => {
@@ -110,7 +121,7 @@ export function planSlipSheet(register, files) {
     }
   };
   const open = () => rows.filter(row => !row.sheetId);
-  const free = () => register.sheets.filter(sheet => !claimed.has(sheet.id));
+  const free = () => register.sheets.filter(sheet => !claimed.has(sheet.id) && !ambiguous.has(sheet.id));
   const already = (row, sheet) => sheetKey(sheet.filePath) === sheetKey(row.filePath) && sheet.page === row.page;
 
   // 1. Embedded page label.
@@ -142,7 +153,14 @@ export function planSlipSheet(register, files) {
   for (const { row } of titled) if (row.sheetId) row.reason ??= 'titleBlock';
 
   for (const row of rows) delete row._file;
-  return { rows, conflicts };
+  return { rows, conflicts, collisions };
+}
+
+/** A reviewer-facing line for sheet IDs that collapse to one match key, or ''. */
+export function slipSheetCollisionText(collisions) {
+  if (!Array.isArray(collisions) || !collisions.length) return '';
+  const groups = collisions.map(c => c.labels.map(label => `"${label}"`).join(' / '));
+  return `Sheet IDs that differ only in spacing or character form are not matched automatically: ${groups.join('; ')}. Assign these pages by hand.`;
 }
 
 /** Rows that would replace the same sheet twice, or replace a sheet that no longer exists. */

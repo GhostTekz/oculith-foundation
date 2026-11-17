@@ -83,7 +83,7 @@ test('select-tool: een vervanging selecteert als geheel en toont het invoegteken
 
 test('verwijderen en knippen nemen de hele vervanging mee, met één ongedaan-stap', () => {
   const toetsen = bron('../../tools/keyboard-handlers.js');
-  assert.match(toetsen, /deleteAnnotationsWithUndo\(getActiveDocument\(\), selected\)/, 'Delete');
+  assert.match(toetsen, /deleteAnnotationsWithUndo\(delDoc, selected\)/, 'Delete');
   assert.match(toetsen, /expandCorrectionGroups\(cutDoc\.annotations, /, 'Ctrl+X knipt beide helften');
   assert.match(toetsen, /deleteAnnotationsWithUndo\(cutDoc, cutSel\)/);
 
@@ -132,7 +132,7 @@ test('verwijderen en knippen: een vervanging met een vergrendelde helft telt als
   const toetsen = bron('../../tools/keyboard-handlers.js');
   assert.match(toetsen, /import \{[^}]*replaceParentOf[^}]*\} from '\.\.\/annotations\/corrections\/model\.js'/);
   assert.match(toetsen,
-    /if \(\(selected\.length === 1 \|\| replaceParentOf\(selected, getActiveDocument\(\)\.annotations\)\) && selected\.some\(a => a\.locked\)\) return;/,
+    /if \(\(selected\.length === 1 \|\| replaceParentOf\(selected, delDoc\.annotations\)\) && selected\.some\(a => a\.locked\)\) return;/,
     'Delete-toets: het paar als één annotatie');
   const menu = bron('../../solid/components/ContextMenu.jsx');
   assert.match(menu,

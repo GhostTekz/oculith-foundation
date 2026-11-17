@@ -92,17 +92,23 @@ function inside(box, rect) {
   return cx >= rect.x && cx <= rect.x + rect.width && cy >= rect.y && cy <= rect.y + rect.height;
 }
 
-/**
- * The text whose runs have their centre inside `rect`, in reading order
- * (top to bottom, left to right), runs joined by one space.
- */
-export function textInRegion(items, viewport, rect) {
-  const hits = [];
+/** The non-blank text items of a page as runs `{ str, box }` in model space. */
+export function textRuns(items, viewport) {
+  const runs = [];
   for (const item of items || []) {
     if (!item?.str || !item.str.trim()) continue;
     const box = textItemBox(item, viewport);
-    if (box && inside(box, rect)) hits.push({ str: item.str, box });
+    if (box) runs.push({ str: item.str, box });
   }
+  return runs;
+}
+
+/**
+ * The text of the runs (`{ str, box }`) whose centre is inside `rect`, in
+ * reading order (top to bottom, left to right), runs joined by one space.
+ */
+export function textOfRuns(runs, rect) {
+  const hits = (runs || []).filter(run => run?.box && String(run.str ?? '').trim() && inside(run.box, rect));
   hits.sort((a, b) => (a.box.y + a.box.height / 2) - (b.box.y + b.box.height / 2));
   const lines = [];
   for (const hit of hits) {
@@ -112,10 +118,18 @@ export function textInRegion(items, viewport, rect) {
     else lines.push({ cy, h: hit.box.height, items: [hit] });
   }
   return lines
-    .map(line => line.items.sort((a, b) => a.box.x - b.box.x).map(h => h.str.trim()).join(' '))
+    .map(line => line.items.sort((a, b) => a.box.x - b.box.x).map(h => String(h.str).trim()).join(' '))
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * The text whose runs have their centre inside `rect`, in reading order
+ * (top to bottom, left to right), runs joined by one space.
+ */
+export function textInRegion(items, viewport, rect) {
+  return textOfRuns(textRuns(items, viewport), rect);
 }
 
 /**

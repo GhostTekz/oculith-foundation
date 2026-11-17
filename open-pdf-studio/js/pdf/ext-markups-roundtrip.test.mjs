@@ -207,7 +207,7 @@ test('tools, list names and snapshot wiring', () => {
   const shot = lees('../tools/screenshot.js');
   assert.match(shot, /export async function snapshotRegion\(pageNum, rect\)/);
   assert.match(shot, /canvas = await _renderRegionHighRes\(pageNum, appRect\)/, 'same high-res region render');
-  assert.match(lees('../tools/keyboard-handlers.js'), /placeLastScreenshotAsOverlay\(\{ opacity: 1, offset: 10 \}\)/, 'Ctrl+V places the snapshot');
+  assert.match(lees('../tools/keyboard-handlers.js'), /placeLastScreenshotAsOverlay\(\{ opacity: 1, offset: 10(, doc: pasteDoc)? \}\)/, 'Ctrl+V places the snapshot');
   // Tools > Markup runs the registry commands, which select the tool.
   const ribbon = lees('../solid/commands/menus.js');
   const tools = lees('../solid/commands/tools.js');

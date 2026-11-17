@@ -129,5 +129,5 @@ test('ongedaan maken van een paginarotatie zet de meetschalen terug en tekent de
   const undo = readFileSync(new URL('../core/undo-manager.js', import.meta.url), 'utf8');
   assert.match(undo, /zetViewports\(doc, cmd\.pageNum, cmd\.viewports\.oud\)/);
   assert.match(undo, /zetViewports\(doc, cmd\.pageNum, cmd\.viewports\.nieuw\)/);
-  assert.equal((undo.match(/if \(raaktPaginaRotatie\(cmd\)\)/g) || []).length, 2);
+  assert.equal((undo.match(/if \(raaktPaginaRotatie\(cmd\)( && getActiveDocument\(\)\?\.pdfDoc)?\)/g) || []).length, 2);
 });

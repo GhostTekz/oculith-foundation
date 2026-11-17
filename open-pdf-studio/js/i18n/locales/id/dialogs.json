@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Memeriksa tanda tangan digital…",
     "barLabel": "Tanda tangan digital",
+    "unsignedFieldsSummary_one": "{{count}} kolom tanda tangan belum ditandatangani",
+    "unsignedFieldsSummary_other": "{{count}} kolom tanda tangan belum ditandatangani",
+    "showUnsignedFields": "Tampilkan kolom",
+    "hideUnsignedFields": "Sembunyikan kolom",
     "listError": "Tanda tangan tidak dapat diperiksa: {{detail}}",
     "documentTimestamp": "Stempel waktu dokumen",
     "documentTimestampBy": "Stempel waktu dokumen ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Celah dalam rentang byte tidak hanya berisi nilai tanda tangan.",
       "subfilter-niet-ondersteund": "Format tanda tangan ini tidak didukung.",
       "zoekbudget-op": "Pencarian rantai sertifikat berhenti pada batasnya; rantai mungkin tetap ada.",
+      "hashbudget-op": "Batas dokumen untuk memeriksa byte yang ditandatangani tercapai; tanda tangan ini tidak diperiksa.",
       "gat-wijkt-af-van-contents": "Nilai tanda tangan dalam berkas berbeda dari nilai dalam kamus tanda tangan.",
       "interne-fout": "Terjadi kesalahan internal saat memeriksa tanda tangan ini.",
       "unknown": "Pemeriksaan melaporkan masalah tambahan."

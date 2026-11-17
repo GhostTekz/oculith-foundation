@@ -26,7 +26,7 @@ const { commentReplyFromPdfAnnotation, applyCommentReplies } = await import('../
 const { statusReplyFromPdfAnnotation } = await import('../pdf/loader/status-replies.js');
 const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
-const { planSlipSheet, containsSheetId, titleBlockText } = await import('./slip-sheet-match.js');
+const { planSlipSheet, containsSheetId, titleBlockText, slipSheetCollisionText } = await import('./slip-sheet-match.js');
 const { pageAlignTransform, twoPointTransform, compareOffsetTransform, applyPoint, similarityParts, transformMarkupGeometry, isIdentity } = await import('./slip-sheet-transform.js');
 const { carryMarkups, carryableMarkups, applySlipSheet, appendedSheetLabel } = await import('./slip-sheet-carry.js');
 const { createSheetRegister, updateSheet, parseSheetRegister } = await import('./sheet-register.js');
@@ -265,6 +265,41 @@ test('carry-forward: markups land within 1 pt, get new durable IDs with carriedF
   assert.deepEqual(reopened.models.map(m => m.id).sort(), original.models.map(m => m.id).sort());
   assert.equal(reopened.models.length, 2);
   assert.ok(reopened.models.every(m => !m.carriedFrom), 'the old revision is not modified');
+});
+
+test('sheet IDs that differ only in spacing or Unicode form are reported, not silently merged', () => {
+  const sheet = (id, label, page) => ({ id, label, filePath: OLD, page });
+  const set = { sheets: [sheet('s1', 'A 101', 1), sheet('s2', 'A  101', 2), sheet('s3', 'A-102', 3),
+    sheet('s4', 'É-1', 4), sheet('s5', 'É-1', 5)] };
+  const plan = planSlipSheet(set, [{ filePath: NEW, pageCount: 3, pageLabels: ['A 101', 'A-102', 'É-1'],
+    titleBlockTexts: ['Sheet A 101', '', 'Sheet É-1'] }]);
+  assert.deepEqual(plan.collisions.map(c => c.sheetIds), [['s1', 's2'], ['s4', 's5']]);
+  assert.deepEqual(plan.rows.map(row => row.sheetId), [null, 's3', null], 'neither colliding sheet is guessed');
+  assert.match(slipSheetCollisionText(plan.collisions), /"A 101" \/ "A {2}101"/);
+  assert.equal(slipSheetCollisionText([]), '');
+  assert.deepEqual(planSlipSheet({ sheets: [sheet('s3', 'A-102', 3)] }, [{ filePath: NEW, pageCount: 1 }]).collisions, []);
+});
+
+test('carried markups keep their links: a Replace stays paired and a reply to a markup left behind is dropped', () => {
+  const caret = { id: 'c1', type: 'caret', intent: 'Replace', page: 1, x: 10, y: 10, width: 6, height: 6, groupId: 'c1' };
+  const strike = { id: 's1', type: 'textStrikethrough', page: 1, inReplyTo: 'c1', replyType: 'group', groupId: 'c1',
+    rects: [{ x: 20, y: 10, width: 40, height: 8 }] };
+  const reply = { id: 'n1', type: 'comment', page: 1, x: 70, y: 10, width: 10, height: 10, inReplyTo: 'gone', replyType: 'reply' };
+  const carried = carryMarkups([caret, strike, reply], { matrix: [1, 0, 0, 1, 5, 5], targetPage: 3,
+    source: { filePath: OLD, page: 1, revision: 'A' } });
+  const [newCaret, newStrike, newReply] = carried;
+  assert.notEqual(newCaret.id, 'c1');
+  assert.equal(newStrike.inReplyTo, newCaret.id, 'the strikeout follows its carried caret');
+  assert.equal(newStrike.groupId, newCaret.id);
+  assert.equal(newCaret.groupId, newCaret.id);
+  assert.equal(newCaret.intent, 'Replace');
+  assert.equal(newReply.inReplyTo, undefined, 'no /IRT to a markup that was not carried');
+  assert.equal(newReply.replyType, undefined);
+  assert.equal(strike.inReplyTo, 'c1', 'the old revision is not modified');
+
+  const [lone] = carryMarkups([caret], { matrix: [1, 0, 0, 1, 0, 0], targetPage: 1,
+    source: { filePath: OLD, page: 1, revision: 'A' } });
+  assert.equal(lone.intent, undefined, 'a caret carried without its strikeout is a plain insert');
 });
 
 test('carriedFrom text is bounded and validated; appended labels stay unique', () => {

@@ -11,7 +11,9 @@
 //               { id, op: 'colors', page, withList }
 //               { id, op: 'stampSheet', page, ids }
 // Messages out: { id, result } or { id, error }
-//   open   → { catalog, parseMs, catalogMs }
+//   open   → { catalog, parseMs, catalogMs, ownCatalog }
+//            ownCatalog: the file's own catalog entries as a small PDF
+//            (own-catalog.js) { bytes, keys }, or null
 //   colors → { colors: Map, snippets: Uint8Array[], imageSources, images, ms, imagesMs }
 //            images: the page's stamp and image-markup pictures
 //            (loader/image-extraction.js extractStampImages) as [key, entry]
@@ -27,6 +29,7 @@ import { extractAnnotationColors } from './loader/color-extraction.js';
 import { findImageAnnotationSources } from './loader/annotation-image-sources.mjs';
 import { extractStampImages, imageDecodeAvailable } from './loader/image-extraction.js';
 import { readCatalogFields } from './pdf-lib-catalog.js';
+import { ownCatalogBytes } from './own-catalog.js';
 import { toCloneable } from './pdf-lib-clone.js';
 import { ownMarkupList } from './loader/own-markup-list.js';
 import { buildStampSheet } from './loader/stamp-sheet.js';
@@ -47,7 +50,10 @@ async function open(bytes) {
   const parseMs = performance.now() - t0;
   const t1 = performance.now();
   const catalog = toCloneable(readCatalogFields(pdf), 'catalog');
-  return { catalog, parseMs, catalogMs: performance.now() - t1 };
+  const catalogMs = performance.now() - t1;
+  let ownCatalog = null;
+  try { ownCatalog = await ownCatalogBytes(pdf); } catch { ownCatalog = null; }
+  return { catalog, parseMs, catalogMs, ownCatalog };
 }
 
 async function colors(page, withList, annotationKeys) {

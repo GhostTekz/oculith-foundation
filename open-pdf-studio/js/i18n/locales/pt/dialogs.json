@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Verificando assinaturas digitais…",
     "barLabel": "Assinaturas digitais",
+    "unsignedFieldsSummary_one": "{{count}} campo de assinatura não assinado",
+    "unsignedFieldsSummary_other": "{{count}} campos de assinatura não assinados",
+    "showUnsignedFields": "Mostrar campos",
+    "hideUnsignedFields": "Ocultar campos",
     "listError": "Não foi possível verificar as assinaturas: {{detail}}",
     "documentTimestamp": "Carimbo de tempo do documento",
     "documentTimestampBy": "Carimbo de tempo do documento ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "A lacuna no intervalo de bytes não contém apenas o valor da assinatura.",
       "subfilter-niet-ondersteund": "Este formato de assinatura não é suportado.",
       "zoekbudget-op": "A busca por uma cadeia de certificados parou no seu limite; ainda assim, pode existir uma cadeia.",
+      "hashbudget-op": "O limite do documento para verificar bytes assinados foi atingido; esta assinatura não foi verificada.",
       "gat-wijkt-af-van-contents": "O valor da assinatura no arquivo difere do valor no dicionário de assinatura.",
       "interne-fout": "Ocorreu um erro interno ao verificar esta assinatura.",
       "unknown": "A verificação relatou um problema adicional."
