@@ -1319,12 +1319,15 @@ export async function selectAnnotationItem(id, page, ctrlKey = false) {
     } else {
       if (annotation.page !== selDocPage) {
         await goToPage(annotation.page);
+        // Another tab became active during the page change: leave it alone.
+        if (getActiveDocument() !== selDoc) return;
       }
       for (const lid of leden) addToSelection(lid);
     }
   } else {
     if (annotation.page !== selDocPage) {
       await goToPage(annotation.page);
+      if (getActiveDocument() !== selDoc) return;
     }
     const _selListDoc = getActiveDocument();
     const ouder = leden.length > 1 ? replaceParentOf(leden, _selListDoc?.annotations) : null;
@@ -1430,7 +1433,7 @@ export async function selectMarkupRange(anchorKey, clickedKey, page) {
   const focusPage = focus?.page ?? page;
   if (focusPage && doc.currentPage !== focusPage) await goToPage(focusPage);
   const live = getActiveDocument();
-  if (!live) return;
+  if (!live || live !== doc) return;
   const ouder = leden.length > 1 ? replaceParentOf(leden, live.annotations) : null;
   live.selectedAnnotations = leden;
   live.selectedAnnotation = ouder || focus || leden[0] || null;
@@ -1461,6 +1464,7 @@ export async function selectMarkupGroupItem(groupId, ctrlKey = false) {
   } else {
     if (dom.page !== doc.currentPage) await goToPage(dom.page);
     const d = getActiveDocument();
+    if (d !== doc) return;
     d.selectedAnnotations = [...leden];
     d.selectedAnnotation = dom;
   }

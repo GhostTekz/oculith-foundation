@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Tarkistetaan digitaalisia allekirjoituksia…",
     "barLabel": "Digitaaliset allekirjoitukset",
+    "unsignedFieldsSummary_one": "{{count}} allekirjoittamaton allekirjoituskenttä",
+    "unsignedFieldsSummary_other": "{{count}} allekirjoittamatonta allekirjoituskenttää",
+    "showUnsignedFields": "Näytä kentät",
+    "hideUnsignedFields": "Piilota kentät",
     "listError": "Allekirjoituksia ei voitu tarkistaa: {{detail}}",
     "documentTimestamp": "Asiakirjan aikaleima",
     "documentTimestampBy": "Asiakirjan aikaleima ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Tavualueen aukko ei sisällä pelkkää allekirjoituksen arvoa.",
       "subfilter-niet-ondersteund": "Tätä allekirjoitusmuotoa ei tueta.",
       "zoekbudget-op": "Varmenneketjun haku pysähtyi rajaansa; ketju voi silti olla olemassa.",
+      "hashbudget-op": "Asiakirjan raja allekirjoitettujen tavujen tarkistukselle saavutettiin; tätä allekirjoitusta ei tarkistettu.",
       "gat-wijkt-af-van-contents": "Tiedostossa oleva allekirjoituksen arvo poikkeaa allekirjoitussanakirjan arvosta.",
       "interne-fout": "Allekirjoitusta tarkistettaessa tapahtui sisäinen virhe.",
       "unknown": "Tarkistus ilmoitti lisäongelmasta."

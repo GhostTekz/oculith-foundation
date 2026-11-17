@@ -87,14 +87,86 @@ fn ensure_directory(path: &Path) -> Result<(), String> {
     }
 }
 
+/// How long a lock file without a process number may be in the middle of
+/// being written by its owner before it counts as left over.
+const UNWRITTEN_LOCK_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The lock is a file created exclusively that holds its owner's process
+/// number (the command-line installers use the same file). One left by a
+/// process that is gone, after a crash mid-install, is removed and taken over.
 fn lock(addons: &Path) -> Result<Lock, String> {
     let path = addons.join(".install.lock");
-    let mut file = OpenOptions::new().write(true).create_new(true).open(&path)
-        .map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists {
-            "Another add-on operation is running. Close the editor and retry after checking the stale lock.".to_string()
-        } else { e.to_string() })?;
-    writeln!(file, "{}", std::process::id()).map_err(|e| e.to_string())?;
-    Ok(Lock { path, file: Some(file) })
+    let busy = || "Another add-on operation is running. Close the editor and retry after checking the stale lock.".to_string();
+    for _ in 0..2 {
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                let written = writeln!(file, "{}", std::process::id()).and_then(|()| file.sync_all());
+                let lock = Lock { path, file: Some(file) };
+                written.map_err(|e| e.to_string())?;
+                return Ok(lock);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let Some(stale) = stale_lock_contents(&path) else { return Err(busy()) };
+                // Remove only the lock that was judged stale, not one another
+                // process has just put in its place.
+                if fs::read(&path).ok().as_deref() != Some(stale.as_slice()) {
+                    return Err(busy());
+                }
+                match fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.to_string()),
+                }
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Err(busy())
+}
+
+/// The contents of a lock file whose owner is gone; None while it may be in use.
+fn stale_lock_contents(path: &Path) -> Option<Vec<u8>> {
+    let contents = fs::read(path).ok()?;
+    let pid = std::str::from_utf8(&contents).ok().and_then(|s| s.trim().parse::<u32>().ok());
+    match pid {
+        Some(pid) if pid != 0 && !process_alive(pid) => Some(contents),
+        Some(_) => None,
+        // Empty or unreadable: an owner may still be writing its number.
+        None => {
+            let age = fs::metadata(path).ok()?.modified().ok()?.elapsed().ok()?;
+            (age >= UNWRITTEN_LOCK_GRACE).then_some(contents)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn process_alive(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else { return false };
+    // Signal 0 only checks: EPERM means it exists under another user.
+    let signalled = unsafe { libc::kill(pid, 0) } == 0;
+    signalled || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED, STILL_ACTIVE};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            // A process we may not query still exists.
+            return GetLastError() == ERROR_ACCESS_DENIED;
+        }
+        let mut code = 0u32;
+        let ok = GetExitCodeProcess(handle, &mut code) != 0;
+        CloseHandle(handle);
+        !ok || code == STILL_ACTIVE as u32
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn process_alive(_pid: u32) -> bool {
+    true
 }
 
 fn read_index(addons: &Path) -> Result<Vec<String>, String> {
@@ -873,6 +945,44 @@ mod tests {
         with_lock(&data, |_, _| Ok(())).unwrap();
         assert!(edition_at(&data, "2026.68.0").unwrap().unwrap().valid);
         assert!(addons_residue(&data).is_empty(), "{:?}", addons_residue(&data));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_lock_of_a_running_process_blocks_and_a_fresh_empty_one_too() {
+        let (data, _) = fixture();
+        let root = data.parent().unwrap().to_path_buf();
+        let (addons, _) = checked_paths(&data).unwrap();
+        let lock_path = addons.join(".install.lock");
+        fs::write(&lock_path, format!("{}\n", std::process::id())).unwrap();
+        assert!(with_lock(&data, |_, _| Ok(())).is_err());
+        fs::write(&lock_path, b"").unwrap();
+        assert!(with_lock(&data, |_, _| Ok(())).is_err());
+        assert!(lock_path.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_lock_left_by_a_process_that_is_gone_is_taken_over() {
+        let (data, _) = fixture();
+        let root = data.parent().unwrap().to_path_buf();
+        let (addons, _) = checked_paths(&data).unwrap();
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let gone = child.id();
+        child.wait().unwrap();
+        let lock_path = addons.join(".install.lock");
+        fs::write(&lock_path, format!("{gone}\n")).unwrap();
+        with_lock(&data, |_, _| {
+            assert_eq!(fs::read_to_string(&lock_path).unwrap().trim(), std::process::id().to_string());
+            Ok(())
+        }).unwrap();
+        assert!(!lock_path.exists());
+        // An old lock without a process number is left over as well.
+        fs::write(&lock_path, b"").unwrap();
+        let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        OpenOptions::new().write(true).open(&lock_path).unwrap().set_modified(long_ago).unwrap();
+        with_lock(&data, |_, _| Ok(())).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 

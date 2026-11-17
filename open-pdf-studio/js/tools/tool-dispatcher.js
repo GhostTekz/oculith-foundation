@@ -38,7 +38,8 @@ import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 import { getTemplate } from '../symbols/registry.js';
 import { hideMenu } from '../bridge.js';
 import { syncDocScale } from '../annotations/scale-bar.js';
-import { recalculateAllMeasurements, getMeasureScale } from '../annotations/measurement.js';
+import { isMeasurement, isScaleSource, recordMeasurementRefresh, snapshotMeasurements } from '../annotations/measurement-refresh.js';
+import { getMeasureScale } from '../annotations/measurement.js';
 import { parseCoordBuffer } from './coord-invoer.js';
 import { eventWithHeldModifiers, heldModifiers, queuedModifiers } from './measure-axis.js';
 import {
@@ -1160,7 +1161,11 @@ function _finishDragResize(ctx, e, coords) {
   } else {
     const modifiedScaleBars = _fSel.filter(a => a.type === 'scaleBar');
     const hasScaleBarChange = modifiedScaleBars.length > 0;
-    if (hasScaleBarChange) beginUndoTransaction();
+    // Moving a viewport, scale bar or scale region (or a measurement into
+    // another one) changes measured values: recompute them in this undo step.
+    const scaleMoved = hasScaleBarChange || _fSel.some(a => isScaleSource(a) || isMeasurement(a));
+    const measureSnapshot = scaleMoved ? snapshotMeasurements(_fDoc) : null;
+    if (scaleMoved) beginUndoTransaction();
     const upAnn = _fSel.length === 1 ? _fSel[0] : null;
     if (_fSel.length > 1 && state.originalAnnotations.length > 0) {
       // Only record if at least one annotation actually changed
@@ -1186,25 +1191,20 @@ function _finishDragResize(ctx, e, coords) {
       }
     }
 
-    // If a scaleBar was modified, recalculate pixelsPerUnit from the new width,
-    // sync doc.measureScale, and recalculate all measurement annotations.
-    if (hasScaleBarChange) {
+    // If a scaleBar was modified, recalculate pixelsPerUnit from the new width
+    // and sync doc.measureScale; then recalculate the measurements.
+    if (scaleMoved) {
       const oldMeasureScale = _fDoc.measureScale == null
         ? _fDoc.measureScale
         : JSON.parse(JSON.stringify(_fDoc.measureScale));
-      const measurements = _fDoc.annotations.filter(annotation =>
-        ['measureDistance', 'measureArea', 'measurePerimeter', 'measureAngle'].includes(annotation.type)
-      );
-      const measurementOriginals = measurements.map(annotation => cloneAnnotation(annotation));
       for (const sb of modifiedScaleBars) {
         if (sb.totalUnits > 0) {
           sb.pixelsPerUnit = sb.width / sb.totalUnits;
         }
         syncDocScale(sb);
       }
-      recalculateAllMeasurements();
-      recordBulkModify(measurements, measurementOriginals);
-      recordMeasureScale(oldMeasureScale, _fDoc.measureScale);
+      recordMeasurementRefresh(_fDoc, measureSnapshot);
+      if (hasScaleBarChange) recordMeasureScale(oldMeasureScale, _fDoc.measureScale);
       endUndoTransaction();
     }
   }

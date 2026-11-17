@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Dijital imzalar denetleniyor…",
     "barLabel": "Dijital imzalar",
+    "unsignedFieldsSummary_one": "{{count}} imzalanmamış imza alanı",
+    "unsignedFieldsSummary_other": "{{count}} imzalanmamış imza alanı",
+    "showUnsignedFields": "Alanları göster",
+    "hideUnsignedFields": "Alanları gizle",
     "listError": "İmzalar denetlenemedi: {{detail}}",
     "documentTimestamp": "Belge zaman damgası",
     "documentTimestampBy": "Belge zaman damgası ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Bayt aralığındaki boşluk yalnızca imza değerini içermiyor.",
       "subfilter-niet-ondersteund": "Bu imza biçimi desteklenmiyor.",
       "zoekbudget-op": "Sertifika zinciri araması sınırına ulaşınca durdu; yine de bir zincir olabilir.",
+      "hashbudget-op": "İmzalı baytları denetleme için belge sınırına ulaşıldı; bu imza denetlenmedi.",
       "gat-wijkt-af-van-contents": "Dosyadaki imza değeri, imza sözlüğündekinden farklı.",
       "interne-fout": "Bu imza denetlenirken dahili bir hata oluştu.",
       "unknown": "Denetim ek bir sorun bildirdi."

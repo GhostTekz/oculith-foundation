@@ -195,5 +195,6 @@
     "activePane": "Actieve helft",
     "openDocuments": "Open documenten in deze helft",
     "moveHint": "Zet neer op de andere helft om het document daarheen te verplaatsen"
-  }
+  },
+  "areaHoleFailed": "Dit gat kon niet worden afgetrokken. Het vlak is ongewijzigd gebleven."
 }

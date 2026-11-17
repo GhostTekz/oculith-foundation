@@ -88,3 +88,12 @@ test('CSV quotes what needs quoting and ends lines with CRLF', () => {
   assert.equal(csvText([['a', 'b,c', 'say "hi"', 1.5, null], [' x', 'line\nbreak', Infinity]]),
     'a,"b,c","say ""hi""",1.5,\r\n" x","line\nbreak",\r\n');
 });
+
+test('CSV text that would open as a formula is written as text; numbers stay numbers', () => {
+  const lines = csvText([
+    ['=HYPERLINK("http://x","y")', '+1+2', '-2+3', '@SUM(A1)', '\tx', 'a=b'],
+    [-12.5, '-12.5', '+3', '1e-3', -0, '-'],
+  ]).split('\r\n');
+  assert.equal(lines[0], `"'=HYPERLINK(""http://x"",""y"")",'+1+2,'-2+3,'@SUM(A1),'\tx,a=b`);
+  assert.equal(lines[1], "-12.5,-12.5,+3,1e-3,0,'-");
+});

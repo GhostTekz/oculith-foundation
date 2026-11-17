@@ -85,7 +85,11 @@ export function getScaleRegionAt(pageNum, x, y) {
  * Returns { pixelsPerUnit, unit, source: 'scaleRegion', regionId } or null.
  */
 export function getScaleFromRegion(pageNum, x, y) {
-  const doc = getActiveDocument();
+  return getScaleFromRegionIn(getActiveDocument(), pageNum, x, y);
+}
+
+/** getScaleFromRegion for a given document (an annotation's own tab). */
+export function getScaleFromRegionIn(doc, pageNum, x, y) {
   if (!doc || pageNum == null || x == null || y == null) return null;
   // An imported/edited region with missing scale metadata is still a drawn
   // rectangle, but it is not a calibration. Continue to a valid outer region

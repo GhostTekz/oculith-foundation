@@ -310,3 +310,57 @@ test('annotation layer creation joins object acceptance in one undo transaction'
   assert.deepEqual(kloon(doc.annotationLayers), after);
   assert.equal(doc.annotations[0].id, 'plug-1');
 });
+
+test('undo of a page rotation after a save wrote it into the file (/Rotate) turns the page back', async () => {
+  const doc = openen([]);
+  doc.pdfDoc = null; // nothing to draw
+  undo.recordPageRotation(1, 0, 90);
+  // The save moved the 90 degrees into /Rotate and cleared the in-app rotation.
+  doc.pageRotations = {};
+  await undo.undo();
+  assert.equal(doc.pageRotations[1], 270, 'file 90 + 270: upright again');
+  await undo.redo();
+  assert.equal(doc.pageRotations[1], 0, 'redo: the file\'s 90 again');
+});
+
+test('an undo group held open across a tab switch keeps each tab\'s edits in that tab\'s history', async () => {
+  const a = openen([]);
+  const b = { ...kloon(a), id: 'doc-b', annotations: [], undoStack: [], redoStack: [] };
+  state.documents = [a, b];
+  state.activeDocumentIndex = 0;
+  const docA = state.documents[0];
+  const docB = state.documents[1];
+  undo.beginUndoTransaction();
+  const one = vak('a-1');
+  docA.annotations.push(one);
+  undo.recordBulkAdd([one]);
+  state.activeDocumentIndex = 1; // the user switches tabs while the group is open
+  const other = vak('b-1');
+  docB.annotations.push(other);
+  undo.recordBulkAdd([other]);
+  const two = vak('a-2');
+  undo.execute({ type: 'bulkAdd', items: [{ annotation: two }] }, docA);
+  undo.endUndoTransaction();
+  assert.equal(docA.undoStack.length, 1, 'the group lands on the tab where it started');
+  assert.deepEqual(docA.undoStack[0].commands.map((c) => c.items[0].annotation.id), ['a-1', 'a-2']);
+  assert.equal(docB.undoStack.length, 1, 'the other tab\'s edit is its own step');
+  assert.equal(docB.undoStack[0].items[0].annotation.id, 'b-1');
+});
+
+test('a debounced property change obeys the PDF-byte limit of the history', () => {
+  const doc = openen([vak('p-1')]);
+  // Page-structure steps of 200 MB each (fake buffers: only the size counts).
+  const big = () => {
+    const buffer = Object.create(ArrayBuffer.prototype);
+    Object.defineProperty(buffer, 'byteLength', { value: 200 * 1024 * 1024 });
+    return { type: 'pageStructure', oldBytes: buffer, newBytes: null };
+  };
+  doc.undoStack = [big(), big()];
+  doc.savedUndoStackLength = 2;
+  undo.recordPropertyChange(doc.annotations[0]);
+  doc.annotations[0].x = 9;
+  undo.flushPropertyChange();
+  assert.deepEqual(doc.undoStack.map((c) => c.type), ['pageStructure', 'modifyAnnotation'],
+    'the oldest step over the 256 MB limit went');
+  assert.equal(doc.savedUndoStackLength, 1, 'the clean point moved with it');
+});

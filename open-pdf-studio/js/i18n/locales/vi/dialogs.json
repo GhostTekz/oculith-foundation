@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Đang kiểm tra chữ ký số…",
     "barLabel": "Chữ ký số",
+    "unsignedFieldsSummary_one": "{{count}} trường chữ ký chưa ký",
+    "unsignedFieldsSummary_other": "{{count}} trường chữ ký chưa ký",
+    "showUnsignedFields": "Hiện các trường",
+    "hideUnsignedFields": "Ẩn các trường",
     "listError": "Không thể kiểm tra chữ ký: {{detail}}",
     "documentTimestamp": "Dấu thời gian tài liệu",
     "documentTimestampBy": "Dấu thời gian tài liệu ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Khoảng trống trong phạm vi byte không chỉ chứa giá trị chữ ký.",
       "subfilter-niet-ondersteund": "Định dạng chữ ký này không được hỗ trợ.",
       "zoekbudget-op": "Việc tìm chuỗi chứng chỉ đã dừng ở giới hạn; có thể vẫn tồn tại một chuỗi.",
+      "hashbudget-op": "Đã đạt giới hạn của tài liệu cho việc kiểm tra các byte đã ký; chữ ký này chưa được kiểm tra.",
       "gat-wijkt-af-van-contents": "Giá trị chữ ký trong tệp khác với giá trị trong từ điển chữ ký.",
       "interne-fout": "Đã xảy ra lỗi nội bộ khi kiểm tra chữ ký này.",
       "unknown": "Quá trình kiểm tra báo cáo thêm một vấn đề."

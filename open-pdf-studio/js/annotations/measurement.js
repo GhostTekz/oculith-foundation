@@ -4,12 +4,12 @@ import { state, getActiveDocument } from '../core/state.js';
 import { openDialog } from '../solid/stores/dialogStore.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { getScaleForPoint } from './scale-bar.js';
-import { getScaleFromRegion } from './scale-region.js';
+import { getScaleFromRegion, getScaleFromRegionIn } from './scale-region.js';
 import { schaalBronnen, metSchaalBronnen } from './schaal-bronnen.js';
-import { geldigeDocumentSchaal, geldigeSchaal, paginaSchaal, paginaOfDocumentSchaal, paginaGewist } from './schaal-op-punt.js';
+import { geldigeDocumentSchaal, geldigeSchaal, paginaSchaal, paginaOfDocumentSchaal, paginaGewist, schaalOpPunt } from './schaal-op-punt.js';
 import { paginasVoorSchaal, metPaginaSchaal, migreerLegacySchaal, leesLegacySchaal, legacySchaalSleutel } from './pagina-schaal.js';
 import { cloneAnnotation } from './factory.js';
-import { displayDenominator, displayText, formatLengthWithPrecision, implicitPrecision, otherSystemText } from './measure-precision.js';
+import { displayDenominator, displayText, formatLengthWithPrecision, implicitPrecision, otherSystemText, roundingStepIn, roundToPreferenceStep } from './measure-precision.js';
 import { nettoVlakOppervlak } from './vlak-ringen.js';
 import { computeMeasureExtras, hasMeasureExtras, MEASURE_EXTRA_OUTPUTS } from './measure-extras.js';
 import { herrekenExtMaat } from './ext-measure.js';
@@ -72,6 +72,22 @@ export function getMeasureScale(pageNum, x, y) {
   }
   // One page-view unit is one PDF point at the displayed page scale. This is
   // useful geometry, but it is not an architectural drawing calibration.
+  return { pixelsPerUnit: 1, unit: 'pt', calibrated: false };
+}
+
+// getMeasureScale at a point of a given document: the active one goes through
+// getMeasureScale; another tab (an engine result that arrives after the user
+// switched tabs, a background load) is looked up in its own sources, in the
+// same order, instead of in the active tab's.
+export function getMeasureScaleIn(doc, pageNum, x, y) {
+  if (!doc || doc === getActiveDocument()) return getMeasureScale(pageNum, x, y);
+  const regionScale = getScaleFromRegionIn(doc, pageNum, x, y);
+  if (regionScale) return { ...regionScale, calibrated: true };
+  const pointScale = schaalOpPunt(doc, pageNum, x, y);
+  if (pointScale) return { ...pointScale, calibrated: true };
+  if (paginaGewist(doc, pageNum)) return { pixelsPerUnit: 1, unit: 'pt', calibrated: false };
+  const ms = geldigeDocumentSchaal(state.preferences.measureScale);
+  if (ms) return { ...ms, calibrated: true };
   return { pixelsPerUnit: 1, unit: 'pt', calibrated: false };
 }
 
@@ -183,13 +199,11 @@ export function calculatePerimeter(points, pageNum) {
   };
 }
 
-// Apply measurement rounding based on preference
+// Apply the measurement rounding preference: a step in millimetres,
+// converted to the measurement's own unit (10 mm is 0.01 m or 0.0328 ft).
+// Areas, volumes, angles and page points are not rounded by it.
 function applyRounding(value, unit) {
-  const rounding = state.preferences.measureRounding;
-  if (!rounding || rounding === 'none' || unit === 'px') return value;
-  const step = parseFloat(rounding);
-  if (!step || step <= 0) return value;
-  return Math.round(value / step) * step;
+  return roundToPreferenceStep(value, unit, state.preferences.measureRounding);
 }
 
 // Dimension-label formatter (maatlijnen): same as formatMeasurement, but in
@@ -235,13 +249,7 @@ function formatMeasurementIn(measurement) {
   // Keep mm as mm — common architectural/CAD convention. Whole numbers only
   // (no decimals) — millimeters are already the smallest practical unit.
   if (unit === 'mm') {
-    const suffix = ` ${unit}`;
-    const rounding = state.preferences.measureRounding;
-    if (rounding && rounding !== 'none') {
-      const step = parseFloat(rounding);
-      if (step >= 1) return `${Math.round(val / step) * step}${suffix}`;
-    }
-    return `${Math.round(val)}${suffix}`;
+    return `${Math.round(val)} ${unit}`;
   }
 
   // Always convert mm² areas to m²
@@ -257,12 +265,9 @@ function formatMeasurementIn(measurement) {
 
   // Recalculate suffix after unit conversion
   const suffix = unit === 'px' ? '' : ` ${unit}`;
-  const rounding = state.preferences.measureRounding;
-  if (rounding && rounding !== 'none' && unit !== 'px') {
-    const step = parseFloat(rounding);
-    if (step >= 1) return `${Math.round(val)}${suffix}`;
-    return `${val.toFixed(2)}${suffix}`;
-  }
+  // A rounded length shows the decimals its step needs (10 mm in m: 2).
+  const rounded = roundingStepIn(state.preferences.measureRounding, unit);
+  if (rounded) return `${val.toFixed(rounded.decimals)}${suffix}`;
   // Default formatting per unit
   if (unit === 'm\u00B2') return `${val.toFixed(2)}${suffix}`;
   if (unit === 'm') return `${val.toFixed(2)}${suffix}`;
@@ -332,16 +337,14 @@ export function applyPageScale(scaleData, pages = 'current') {
   if (!doc) return;
   const targets = paginasVoorSchaal(pages, doc);
   if (!targets.length) return;
-  const oldPageScales = JSON.parse(JSON.stringify(doc.pageScales || {}));
-  // A save replaces the PDF's scale. History must keep the previous physical
-  // calibration, including an explicit unset value, rather than falling back
-  // to the now changed PDF when an earlier override key was absent.
+  const oldPageScales = doc.pageScales == null ? null : JSON.parse(JSON.stringify(doc.pageScales));
+  // A target page without its own entry follows the PDF. Remember what that
+  // was, so Undo can keep the earlier calibration if a save has since
+  // replaced the PDF's scale (see undo-manager modifyPageScales).
+  const followed = {};
   for (const page of targets) {
-    if (Object.prototype.hasOwnProperty.call(oldPageScales, page)) continue;
-    const previous = paginaOfDocumentSchaal(doc, page);
-    oldPageScales[page] = previous
-      ? { ...previous, method: previous.method === 'pdfPage' ? 'ratio' : previous.method }
-      : null;
+    if (oldPageScales && Object.prototype.hasOwnProperty.call(oldPageScales, page)) continue;
+    followed[page] = paginaOfDocumentSchaal(doc, page);
   }
   const measurements = doc.annotations.filter(annotation => MEASUREMENT_TYPES.includes(annotation.type));
   const originals = measurements.map(annotation => cloneAnnotation(annotation));
@@ -349,7 +352,7 @@ export function applyPageScale(scaleData, pages = 'current') {
   recalculateAllMeasurements();
   beginUndoTransaction();
   recordBulkModify(measurements, originals);
-  recordPageScales(oldPageScales, doc.pageScales);
+  recordPageScales(oldPageScales, doc.pageScales, followed);
   endUndoTransaction();
 }
 
@@ -490,39 +493,33 @@ function storeProxy(object) {
   return object;
 }
 
-function pageScaleSquared(ann) {
-  const points = Array.isArray(ann?.points) ? ann.points : [];
-  let scale = getMeasureScale();
-  if (ann?.page != null && points.length > 0) {
-    const cx = points.reduce((sum, point) => sum + point.x, 0) / points.length;
-    const cy = points.reduce((sum, point) => sum + point.y, 0) / points.length;
-    scale = getMeasureScale(ann.page, cx, cy);
-  }
-  const perUnit = scale?.pixelsPerUnit;
-  return perUnit > 0 ? perUnit * perUnit : 1;
+/** The open document that holds `ann`, or null. */
+function documentOf(ann) {
+  return (state.documents || []).find((d) => d?.annotations?.includes?.(ann)) || null;
 }
 
 /**
  * Replace a stored area with the engine's page-point total. Slope, depth and
  * volume captions are rebuilt from that total. Returns false when the
  * shoelace figure should stay, including an external-file measurement.
+ * The scale is the one at the area in its OWN document (`doc`, else the
+ * document that holds it), not the tab in front when the result arrives.
  */
-export function writeEngineArea(ann, pixels) {
+export function writeEngineArea(ann, pixels, doc = null) {
   if (!ann || ann.type !== 'measureArea' || typeof pixels !== 'number' || !Number.isFinite(pixels)) return false;
+  const owner = doc || documentOf(ann) || documentOf(storeProxy(ann)) || getActiveDocument();
   ann = storeProxy(ann);
   if (herrekenExtMaat(ann)) return false;
-  const current = calculateArea(ann.points, ann.holes, ann.page);
-  if (Math.abs(current.pixels - pixels) <= 1e-6) return false;
+  if (!Array.isArray(ann.points) || ann.points.length < 3) return false;
+  const shoelace = nettoVlakOppervlak(ann.points, ann.holes);
+  if (Math.abs(shoelace - pixels) <= 1e-6) return false;
+  const pt = getAnnotationPoint(ann);
+  const scale = getMeasureScaleIn(owner, pt.page, pt.x, pt.y);
   if (hasMeasureExtras(ann)) {
-    const pt = getAnnotationPoint(ann);
-    applyMeasureExtras(ann, getMeasureScale(pt.page, pt.x, pt.y), documentAnnotationsOf(ann), pixels);
+    applyMeasureExtras(ann, scale, owner?.annotations || documentAnnotationsOf(ann), pixels);
   } else {
-    // A self-crossing ring has shoelace 0, so the scale ratio is unavailable.
-    // Divide the engine page points by the same scale the caption uses.
-    const value = current.pixels > 0
-      ? current.value * (pixels / current.pixels)
-      : pixels / pageScaleSquared(ann);
-    const area = { ...current, value, pixels };
+    const perUnit = scale.pixelsPerUnit > 0 ? scale.pixelsPerUnit : 1;
+    const area = { value: pixels / (perUnit * perUnit), unit: scale.unit + '\u00B2', pixels, calibrated: scale.calibrated };
     ann.measureValue = area.value;
     ann.measureUnit = area.unit;
     ann.measureText = formatMeasurement(area);

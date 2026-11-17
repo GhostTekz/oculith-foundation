@@ -56,6 +56,7 @@
 .sheets-history-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 5px; margin: 4px 0; color: var(--theme-panel-tab-text); overflow-wrap: anywhere; }
 .sheets-history-item small { display: block; margin: 2px 0 6px; }
 .sheets-export { border-top: 1px solid var(--theme-panel-border); margin-top: 12px; padding-top: 8px; }
+.sheets-templates { border-top: 1px solid var(--theme-panel-border); margin-top: 12px; padding-top: 8px; }
 
 /* Slip Sheet confirmation (SlipSheetDialog.jsx) */
 .slip-sheet-dialog { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 48px); display: flex; flex-direction: column; }

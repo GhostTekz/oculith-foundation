@@ -35,6 +35,8 @@ import { openPanelMenu } from '../../panels/PanelMenu.jsx';
 import { toolIcon } from '../../../data/oculithToolIcons.js';
 import { addSavedFilter, readSavedFilters, writeSavedFilters } from '../../../../ui/panels/markup-saved-filters.js';
 import { isTauri, saveFileDialog, writeBinaryFile } from '../../../../core/platform.js';
+import { directoryOf } from '../../../../pdf/remote-link.js';
+import { joinOutputPath } from '../../../../batch/runner.js';
 import { buildVirtualRows, virtualRowKey, virtualRowWindow } from '../../../../ui/panels/markup-virtual-rows.js';
 import {
   cutIcon, copyIcon, deleteIcon, flattenIcon, exportIcon, deselectIcon, propertiesIcon
@@ -97,11 +99,10 @@ function storedFilterList() {
   try { return globalThis.localStorage?.getItem(FILTER_LIST_KEY) === '1'; } catch { return false; }
 }
 
+/** A markup export's default path: beside its saved source drawing. */
 function markupExportPath(doc, name) {
   if (!isTauri() || doc?.isUntitled || doc?._renderTemp) return name;
-  const source = doc?.filePath || doc?.currentPdfPath || '';
-  const separator = Math.max(source.lastIndexOf('/'), source.lastIndexOf('\\'));
-  return separator < 0 ? name : source.slice(0, separator + 1) + name;
+  return joinOutputPath(directoryOf(doc?.filePath || doc?.currentPdfPath), name);
 }
 
 export default function AnnotationsPanel() {

@@ -10,6 +10,8 @@
 import { hasDurableMarkupId, uniqueDurableMarkupId } from '../annotations/durable-markup-id.js';
 import { replyId } from '../annotations/markup-replies.js';
 import { normalizeCarriedFrom } from '../annotations/carried-from.js';
+import { relinkPastedCorrections } from '../annotations/corrections/model.js';
+import { relinkCopiedGroups } from '../annotations/markup-groups.js';
 import { transformMarkupGeometry } from './slip-sheet-transform.js';
 import { addSheet, replaceSheet } from './sheet-register.js';
 import { baseName, sheetKey } from './slip-sheet-match.js';
@@ -69,7 +71,7 @@ export function carryMarkups(sources, { matrix, targetPage, source, usedIds = ne
   if (!source?.filePath || !Number.isSafeInteger(source.page)) throw new Error('The source sheet is required.');
   const createdAt = new Date(now).toISOString();
   const text = carriedLabel(source.revision);
-  return sources.map(original => {
+  const carried = sources.map(original => {
     const annotation = plainClone(original);
     transformMarkupGeometry(annotation, matrix);
     const durable = hasDurableMarkupId(annotation.type);
@@ -93,6 +95,13 @@ export function carryMarkups(sources, { matrix, targetPage, source, usedIds = ne
     annotation.replies = [...replies, { id: replyId(), author, text, createdAt }];
     return annotation;
   });
+  // References between carried markups follow the new ids, as on a paste: a
+  // Replace keeps its caret and strikeout together, a reply (/IRT) points at
+  // the carried parent, and a reference to a markup that was not carried is
+  // dropped instead of dangling. A group carried whole becomes a new group.
+  relinkPastedCorrections(sources, carried);
+  relinkCopiedGroups(sources, carried);
+  return carried;
 }
 
 const COLUMN_SETTINGS = ['markupTextColumnName', 'markupTextColumn2Name', 'markupChoiceColumn', 'markupChoiceColumn2',

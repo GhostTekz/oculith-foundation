@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "กำลังตรวจสอบลายเซ็นดิจิทัล…",
     "barLabel": "ลายเซ็นดิจิทัล",
+    "unsignedFieldsSummary_one": "ช่องลายเซ็นที่ยังไม่ได้ลงนาม: {{count}}",
+    "unsignedFieldsSummary_other": "ช่องลายเซ็นที่ยังไม่ได้ลงนาม: {{count}}",
+    "showUnsignedFields": "แสดงช่อง",
+    "hideUnsignedFields": "ซ่อนช่อง",
     "listError": "ไม่สามารถตรวจสอบลายเซ็นได้: {{detail}}",
     "documentTimestamp": "การประทับเวลาเอกสาร",
     "documentTimestampBy": "การประทับเวลาเอกสาร ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "ช่องว่างในช่วงไบต์มีข้อมูลอื่นนอกเหนือจากค่าลายเซ็น",
       "subfilter-niet-ondersteund": "ไม่รองรับรูปแบบลายเซ็นนี้",
       "zoekbudget-op": "การค้นหาสายโยงใบรับรองหยุดลงเมื่อถึงขีดจำกัด อาจยังมีสายโยงอยู่",
+      "hashbudget-op": "ถึงขีดจำกัดของเอกสารสำหรับการตรวจสอบไบต์ที่ลงนามแล้ว ลายเซ็นนี้ไม่ได้รับการตรวจสอบ",
       "gat-wijkt-af-van-contents": "ค่าลายเซ็นในไฟล์แตกต่างจากค่าในพจนานุกรมลายเซ็น",
       "interne-fout": "เกิดข้อผิดพลาดภายในขณะตรวจสอบลายเซ็นนี้",
       "unknown": "การตรวจสอบรายงานปัญหาเพิ่มเติม"

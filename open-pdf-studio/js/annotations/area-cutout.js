@@ -14,14 +14,33 @@ function polygonsOf(rings) {
     .filter(({ index }) => additive[index])
     .sort((a, b) => Math.abs(ringOppervlak(a.ring)) - Math.abs(ringOppervlak(b.ring)))
     .map(({ ring }) => ({ shell: coordinates(ring), polygon: [coordinates(ring)] }));
+  const stray = [];
   rings.forEach((ring, index) => {
     if (additive[index]) return;
     const hole = coordinates(ring);
     const owner = parts.find(part => polygonClipping.difference([hole], [part.shell]).length === 0);
-    if (!owner) throw new Error('The area has a hole without a containing part.');
-    owner.polygon.push(hole);
+    // A hole saved partly outside its part (corners inside, an edge across
+    // a notch) is still a hole: it is subtracted from the parts below.
+    if (owner) owner.polygon.push(hole);
+    else stray.push([hole]);
   });
-  return parts.map(part => part.polygon);
+  const polygons = parts.map(part => part.polygon);
+  return stray.length && polygons.length ? polygonClipping.difference(polygons, ...stray) : polygons;
+}
+
+/**
+ * Whether a cutout lies entirely within the area: inside a part and clear of
+ * every existing hole. Such a cutout needs no clipping, so the area's rings
+ * (and their arcs) can stay exactly as they are.
+ */
+export function cutoutInsideArea(outer, holes, cutout) {
+  const rings = vlakRingen(outer, holes);
+  if (!rings.length || !Array.isArray(cutout) || cutout.length < 3) return false;
+  // Inside the area is not enough where parts overlap: appended there, the
+  // ring would count as one more part (inside an even number of rings).
+  const withCutout = vlakRingen(outer, [...(holes || []), cutout]);
+  if (withCutout.length !== rings.length + 1 || ringenIndelen(withCutout).at(-1) !== false) return false;
+  return polygonClipping.difference([coordinates(cutout)], polygonsOf(rings)).length === 0;
 }
 
 /** Subtract a drawn cutout without changing the annotation. Null is a no-op. */

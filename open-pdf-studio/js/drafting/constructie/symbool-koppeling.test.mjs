@@ -69,4 +69,3 @@ test('elke stalen profielfamilie wijst naar een bestaand symbool met die maat', 
     assert.ok(mm && mm.width > 0 && mm.height > 0, `${tekst}: geen werkelijke maat`);
   }
 });
-

@@ -55,6 +55,7 @@ export const SIGNALEN = [
   'subfilter-niet-ondersteund',
   'zoekbudget-op',
   'gat-wijkt-af-van-contents',
+  'hashbudget-op',
   'interne-fout',
 ];
 

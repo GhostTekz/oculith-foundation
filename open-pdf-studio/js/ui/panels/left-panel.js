@@ -3,6 +3,7 @@ import { nativeOcgHasGroups, nativeOcgPdfJsConfig, nativeOcgSelectionForDocument
 import { drawAnnotation } from '../../annotations/rendering.js';
 import { edition } from '../../editions/active.js';
 import { scrollThumbnailToPage } from '../../solid/stores/panels/thumbnailStore.js';
+import { thumbnailDocStillCurrent } from './thumbnail-doc-current.js';
 import { updateAnnotationsList } from './annotations-list.js';
 import { updateAttachmentsList } from './attachments.js';
 import { updateSignaturesList } from './signatures.js';
@@ -342,8 +343,12 @@ export async function generateThumbnails() {
   // Get first page dimensions for placeholder sizing
   let placeholderWidth = 150;
   let placeholderHeight = Math.round(150 * 1.414);
+  // The tab may be switched or closed, or the document reloaded, while page 1
+  // loads; then this run must not fill the strip with the old document.
+  const stillCurrent = () => thumbnailDocStillCurrent(activeDoc, pdfDoc, getActiveDocument(), state.documents);
   try {
     const firstPage = await pdfDoc.getPage(1);
+    if (!stillCurrent()) return;
     const extraRot = getPageRotation(1);
     const thOpts = { scale: THUMBNAIL_SCALE };
     if (extraRot) thOpts.rotation = (firstPage.rotate + extraRot) % 360;
@@ -357,6 +362,7 @@ export async function generateThumbnails() {
   } catch (err) {
     console.warn('[Thumbnails] Could not get first page dimensions:', err);
   }
+  if (!stillCurrent()) return;
 
   // Initialize or update document state
   if (!documentState.has(docId)) {

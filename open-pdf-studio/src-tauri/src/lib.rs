@@ -1555,7 +1555,7 @@ async fn append_file_atomic(request: tauri::ipc::Request<'_>) -> Result<(), Stri
                 .map_err(|e| e.to_string())?
         }
     };
-    if head_len + tail_len > body.len() {
+    if head_len.checked_add(tail_len).map_or(true, |n| n > body.len()) {
         return Err("Malformed append request".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
@@ -1682,11 +1682,24 @@ fn open_default_apps_settings(app: tauri::AppHandle) -> Result<bool, String> {
 }
 
 /// Lock a file to prevent other applications from writing to it.
-/// Opens the file with shared read access only (no write sharing on Windows).
+///
+/// One lock per path: locking a path the app already holds is a no-op, and
+/// `unlock_file` releases it. The editor keeps the count itself (it unlocks a
+/// path only when no open document uses it, js/pdf/saver.js `unlockIfUnused`)
+/// and drops the lock around its own atomic save, so a counter here would
+/// only drift from the repeated locks of a document reload.
+///
+/// Windows: opened with read sharing only, so other processes cannot write,
+/// rename or delete it. Unix: a shared advisory `flock`, which refuses other
+/// processes an exclusive lock (the lock of a cooperating writer); it does not
+/// stop a program that writes without locking.
 #[tauri::command(async)]
 fn lock_file(path: String, state: tauri::State<LockedFiles>) -> Result<bool, String> {
     let mut locks = state.0.lock().map_err(|e| e.to_string())?;
+    lock_path(&mut locks, path)
+}
 
+fn lock_path(locks: &mut HashMap<String, File>, path: String) -> Result<bool, String> {
     // Already locked by us
     if locks.contains_key(&path) {
         return Ok(true);
@@ -1698,22 +1711,33 @@ fn lock_file(path: String, state: tauri::State<LockedFiles>) -> Result<bool, Str
         // FILE_SHARE_READ = 0x00000001 — allow others to read, but not write or delete
         let file = fs::OpenOptions::new()
             .read(true)
-            .custom_flags(0) // no special flags
             .share_mode(0x00000001) // FILE_SHARE_READ only
             .open(&path)
             .map_err(|e| format!("Failed to lock file: {}", e))?;
         locks.insert(path, file);
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(unix)]
     {
-        // On Unix, use advisory file locking (flock)
+        use std::os::unix::io::AsRawFd;
         let file = fs::OpenOptions::new()
             .read(true)
             .open(&path)
             .map_err(|e| format!("Failed to open file: {}", e))?;
-        // Advisory lock — other well-behaved apps will respect this
-        // Note: this is best-effort on non-Windows platforms
+        // Non-blocking: a file another process holds exclusively is reported,
+        // not waited for. The lock goes with the descriptor when it closes.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
+            return Err(format!("Failed to lock file: {}", std::io::Error::last_os_error()));
+        }
+        locks.insert(path, file);
+    }
+
+    #[cfg(not(any(target_os = "windows", unix)))]
+    {
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .open(&path)
+            .map_err(|e| format!("Failed to open file: {}", e))?;
         locks.insert(path, file);
     }
 
@@ -2594,10 +2618,9 @@ fn discard_spool_pdf(path: String) -> Result<bool, String> {
 /// hook after a successful Save As so the user immediately sees their
 /// freshly-saved file in their preferred reader.
 ///
-/// Windows: `cmd /C start "" "<path>"` — the empty title argument prevents
-/// `start` from interpreting the path as a window title (a long-standing
-/// quoting quirk). The shell `start` verb honours the user's default app
-/// association for .pdf, so whichever reader the user prefers opens it.
+/// Windows: `ShellExecuteW` with the default verb, which honours the user's
+/// default app association for .pdf. No `cmd /C start`: cmd.exe would read
+/// `&`, `|`, `^` and `%VAR%` in a file name as shell syntax.
 ///
 /// macOS: `open "<path>"` honours `LSHandlerContentType` for .pdf.
 /// Linux: `xdg-open "<path>"` honours the `application/pdf` MIME default.
@@ -2615,17 +2638,7 @@ fn open_pdf_in_default_viewer(path: String) -> Result<bool, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        // `cmd /C start "" "<path>"` is the Windows idiom for "open this
-        // file with whatever the user has set as the default handler".
-        // The double-quoted empty title is required: without it, `start`
-        // treats the quoted path as the window title and then has no file
-        // argument to open.
-        std::process::Command::new("cmd")
-            .args(&["/C", "start", "", &path])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
+        shell_open_default(std::path::Path::new(&path))
             .map_err(|e| format!("Failed to launch default PDF viewer: {}", e))?;
         Ok(true)
     }
@@ -2645,6 +2658,39 @@ fn open_pdf_in_default_viewer(path: String) -> Result<bool, String> {
             .map_err(|e| format!("Failed to launch default PDF viewer: {}", e))?;
         Ok(true)
     }
+}
+
+/// A path as a NUL-terminated UTF-16 string for a Win32 call; refuses an
+/// embedded NUL, which would silently cut the path short.
+#[cfg(any(target_os = "windows", test))]
+fn wide_nul(path: &std::ffi::OsStr) -> Result<Vec<u16>, String> {
+    #[cfg(target_os = "windows")]
+    let units: Vec<u16> = {
+        use std::os::windows::ffi::OsStrExt;
+        path.encode_wide().collect()
+    };
+    #[cfg(not(target_os = "windows"))]
+    let units: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
+    if units.contains(&0) {
+        return Err("Path contains a NUL character".into());
+    }
+    Ok(units.into_iter().chain(std::iter::once(0)).collect())
+}
+
+/// Open `path` with its default handler through the shell API. The path goes
+/// to Windows as one argument; nothing in it is interpreted by a command line.
+#[cfg(target_os = "windows")]
+fn shell_open_default(path: &std::path::Path) -> Result<(), String> {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let file = wide_nul(path.as_os_str())?;
+    // A null verb runs the default verb of the file type.
+    let code = unsafe {
+        ShellExecuteW(std::ptr::null_mut(), std::ptr::null(), file.as_ptr(),
+            std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL)
+    } as isize;
+    // ShellExecuteW returns a value above 32 on success.
+    if code > 32 { Ok(()) } else { Err(format!("ShellExecute error {code}")) }
 }
 
 /// Reveal a file in the OS file manager (Explorer / Finder / Linux file
@@ -2698,11 +2744,12 @@ fn reveal_in_file_manager(path: String) -> Result<bool, String> {
     }
 }
 
-/// Download a PDF from a URL and save it to a temp file.
-/// Returns the temp file path on success.
+/// Download a PDF from a URL into the app cache's private download folder.
+/// Returns the file path on success.
 #[tauri::command]
-async fn download_pdf_from_url(url: String) -> Result<String, String> {
-    remote_pdf::download_pdf_from_url(&url).await
+async fn download_pdf_from_url(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    let cache = datamap::tauri_map(&app, datamap::TauriMap::Cache).map_err(|e| e.to_string())?;
+    remote_pdf::download_pdf_from_url(&url, &cache).await
 }
 
 /// List PDF files in a directory.
@@ -3308,10 +3355,42 @@ fn worker_pool_ready(
 }
 
 /// True when a pool error means the worker process itself went away (EOF or a
-/// broken pipe), as opposed to a timeout or a bitmap that did not fit.
+/// broken pipe), or no worker can take the request because a failed one is
+/// being replaced, as opposed to a bitmap that did not fit or an older worker.
 fn worker_died(e: &anyhow::Error) -> bool {
     let msg = e.to_string();
-    msg.ends_with(" EOF") || msg.starts_with("write to worker") || msg.starts_with("read from worker")
+    msg.ends_with(" EOF")
+        || msg.starts_with("write to worker")
+        || msg.starts_with("read from worker")
+        || worker_pool::pool_unavailable_after_crash(e)
+}
+
+/// Run blocking work (a file read, a parse, an in-process PDFium call that
+/// waits for the process-wide PDFium lock) on the blocking pool, so the async
+/// runtime threads that every other command shares stay free.
+async fn run_blocking<T: Send + 'static>(
+    what: &str,
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("{what} task: {e}"))?
+}
+
+/// Refuse to render a page in this process when rendering it broke a
+/// worker: the native crash or hang would then take the app down instead.
+fn refuse_inproc_after_crash(
+    pool: &tokio::sync::OnceCell<worker_pool::WorkerPool>,
+    path: &str,
+    page_index: u32,
+) -> Result<(), String> {
+    match pool.get() {
+        Some(pool) if pool.page_crashed_worker(path, page_index) => Err(format!(
+            "PDFium worker render failed: page {} of this file stopped a render worker; it is not rendered in the app itself",
+            page_index + 1
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// A render may finish after a save has evicted its source. Wait for every
@@ -3360,6 +3439,47 @@ mod native_render_save_race_tests {
         cache_rendered_frame(&pixmaps, generation, &key, 2, 1, &frame);
         cache_rendered_frame(&pixmaps, generation, &key, 2, 1, &frame);
         assert!(pixmaps.lookup_for_render(&key, &[]).0.is_none(), "a render from before the save never enters");
+    }
+
+    /// Blocking work must leave the runtime thread free: here the only
+    /// runtime thread has to deliver the signal the blocking work waits for.
+    #[tokio::test(flavor = "current_thread")]
+    async fn blocking_work_does_not_hold_a_runtime_thread() {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let work = run_blocking("test", move || {
+            rx.recv_timeout(std::time::Duration::from_secs(5)).map_err(|e| e.to_string())
+        });
+        let signal = async move {
+            tokio::task::yield_now().await;
+            tx.send(()).unwrap();
+        };
+        let (result, ()) = tokio::join!(work, signal);
+        assert_eq!(result, Ok(()));
+        assert_eq!(run_blocking("test", || Err::<(), _>("failed".to_string())).await, Err("failed".to_string()));
+    }
+
+    #[test]
+    fn a_pool_down_after_a_crash_counts_as_a_dead_worker() {
+        assert!(worker_died(&anyhow::anyhow!("worker 1 EOF")));
+        assert!(worker_died(&anyhow::anyhow!(
+            "{}: PDFium worker pool has no ready workers", worker_pool::POOL_UNAVAILABLE_AFTER_CRASH
+        )));
+        assert!(!worker_died(&anyhow::anyhow!("PDFium worker pool has no ready workers")));
+        assert!(!worker_died(&anyhow::anyhow!("worker render error: bitmap too large for SHM")));
+    }
+
+    #[tokio::test]
+    async fn a_page_that_broke_a_worker_is_not_rendered_in_process() {
+        let worker = std::sync::Arc::new(worker_pool::WorkerState::new(0));
+        worker.set_status(worker_pool::Status::Ready);
+        let pool = tokio::sync::OnceCell::new();
+        let _ = pool.set(worker_pool::WorkerPool::new(vec![worker]));
+        assert!(refuse_inproc_after_crash(&pool, "drawing.pdf", 2).is_ok());
+        // The worker has no pipe: its exchange fails like a crashed one.
+        assert!(pool.get().unwrap().render("drawing.pdf", 2, 1.0, 0, &[]).await.is_err());
+        assert!(refuse_inproc_after_crash(&pool, "drawing.pdf", 2).is_err());
+        assert!(refuse_inproc_after_crash(&pool, "drawing.pdf", 3).is_ok());
+        assert!(refuse_inproc_after_crash(&tokio::sync::OnceCell::new(), "drawing.pdf", 2).is_ok());
     }
 
     #[tokio::test]
@@ -3528,6 +3648,7 @@ fn cache_rendered_frame(
 
 #[tauri::command]
 async fn render_pdf_page(
+    app: tauri::AppHandle,
     path: String,
     page_index: u32,
     scale: f32,
@@ -3536,8 +3657,6 @@ async fn render_pdf_page(
     ocg_visibility: Option<Vec<ocg_render_copy::LayerVisibility>>,
     annot_appearance: Option<Vec<String>>,
     annot_appearance_index: Option<Vec<u32>>,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
-    pdfium_cache: tauri::State<'_, pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
     pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<tauri::ipc::Response, String> {
@@ -3613,21 +3732,31 @@ async fn render_pdf_page(
         if worker_only.unwrap_or(false) {
             return Err("PDFium worker pool is not ready".to_string());
         }
+        refuse_inproc_after_crash(&pool, &path, page_index)?;
 
-        // Fallback: in-proc PDFium.
-        let handle = inproc_render_document(&path, &visibility, &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
-
-        let (width, height, rgba) = pdfium_renderer::render_page_to_rgba_with_annotations(
-            handle.document(),
-            page_index,
-            scale,
-            extra_rot,
-            annot_appearance,
-        )?;
-
-        let data = pdfium_renderer::frame_rgba(width, height, &rgba);
-        drop(rgba);
-        cache_rendered_frame(&pixmap_cache, pixmap_generation, &cache_key, width, height, &data);
+        // Fallback: in-proc PDFium, on the blocking pool (file read, parse
+        // and render under the process-wide PDFium lock).
+        let data = {
+            let (app, path, visibility, annot_show, cache_key) =
+                (app.clone(), path.clone(), visibility.clone(), annot_show.clone(), cache_key.clone());
+            run_blocking("Render", move || {
+                let bytes_cache = app.state::<PdfBytesCache>();
+                let pdfium_cache = app.state::<pdfium_renderer::PdfiumDocCache>();
+                let pixmap_cache = app.state::<pdfium_renderer::PixmapCacheState>();
+                let handle = inproc_render_document(&path, &visibility, &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
+                let (width, height, rgba) = pdfium_renderer::render_page_to_rgba_with_annotations(
+                    handle.document(),
+                    page_index,
+                    scale,
+                    extra_rot,
+                    annot_show.as_ref(),
+                )?;
+                let data = pdfium_renderer::frame_rgba(width, height, &rgba);
+                drop(rgba);
+                cache_rendered_frame(&pixmap_cache, pixmap_generation, &cache_key, width, height, &data);
+                Ok(data)
+            }).await?
+        };
         if accept_render_generation(&path, response_generation, &pixmap_cache, &pool).await? {
             return Ok(tauri::ipc::Response::new(data));
         }
@@ -3646,12 +3775,11 @@ async fn ocr_pdf_page(
     path: String,
     page_index: u32,
     lang: Option<String>,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
-    pdfium_cache: tauri::State<'_, pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
+    pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<Vec<ocr::OcrWord>, String> {
+    refuse_inproc_after_crash(&pool, &path, page_index)?;
     let render_generation = pixmap_cache.snapshot_generation(&path);
-    let handle = inproc_render_document(&path, &[], &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
 
     let resource_dir = app
         .path()
@@ -3666,7 +3794,13 @@ async fn ocr_pdf_page(
     // Tesseract inference is synchronous/blocking (and re-inits per call) —
     // run it off the async executor so it doesn't stall other IPC.
     tauri::async_runtime::spawn_blocking({
-        move || ocr::ocr_page_words(handle.document(), page_index, &tessdata_dir, &lang)
+        move || {
+            let bytes_cache = app.state::<PdfBytesCache>();
+            let pdfium_cache = app.state::<pdfium_renderer::PdfiumDocCache>();
+            let pixmap_cache = app.state::<pdfium_renderer::PixmapCacheState>();
+            let handle = inproc_render_document(&path, &[], &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
+            ocr::ocr_page_words(handle.document(), page_index, &tessdata_dir, &lang)
+        }
     })
     .await
     .map_err(|e| format!("OCR task panicked: {}", e))?
@@ -3681,8 +3815,30 @@ async fn ocr_pdf_page() -> Result<(), String> {
     Err("OCR is op dit platform niet beschikbaar".to_string())
 }
 
+/// A page's text as PDF.js text items (JSON), read by a PDFium worker and
+/// kept for the next scan of the same file. For whole-set reads (Smart
+/// Review, the set scans): the window's process neither parses the page nor
+/// holds the file. `expect_len` is the length of the file the caller has
+/// open; another version of the file on disk is refused. An error means the
+/// caller reads the page itself.
+#[tauri::command]
+async fn pdf_page_text_native(
+    path: String,
+    page_index: u32,
+    expect_len: Option<u64>,
+    pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
+) -> Result<tauri::ipc::Response, String> {
+    let pool = pool.get().ok_or("page text: the worker pool is not ready")?;
+    if !pool.reads_page_text() {
+        return Err("page text: the workers do not read text".into());
+    }
+    let text = pool.page_text(&path, page_index, expect_len).await.map_err(|e| e.to_string())?;
+    Ok(tauri::ipc::Response::new(text.as_ref().clone()))
+}
+
 #[tauri::command]
 async fn render_pdf_page_region(
+    app: tauri::AppHandle,
     path: String,
     page_index: u32,
     scale: f32,
@@ -3697,8 +3853,6 @@ async fn render_pdf_page_region(
     annot_appearance_index: Option<Vec<u32>>,
     render_lane: Option<String>,
     render_generation: Option<u64>,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
-    pdfium_cache: tauri::State<'_, pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
     pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<tauri::ipc::Response, String> {
@@ -3750,24 +3904,28 @@ async fn render_pdf_page_region(
         // in-proc PDFium-toegang (laden én renderen, alle drie de render-paden) wordt
         // nu centraal geserialiseerd via PDFIUM_INPROC_LOCK in pdfium_renderer, dus
         // dit pad heeft geen eigen lock meer nodig.
-        let handle = inproc_render_document(&path, &visibility, &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
-
-        let (width, height, rgba) = pdfium_renderer::render_page_region_to_rgba_with_annotations(
-            handle.document(),
-            page_index,
-            scale,
-            extra_rot,
-            region_x_pt,
-            region_y_pt,
-            region_w_pt,
-            region_h_pt,
-            annot_show.as_ref(),
-        )?;
-
-        let mut data = Vec::with_capacity(8 + rgba.len());
-        data.extend_from_slice(&width.to_le_bytes());
-        data.extend_from_slice(&height.to_le_bytes());
-        data.extend_from_slice(&rgba);
+        refuse_inproc_after_crash(&pool, &path, page_index)?;
+        let data = {
+            let (app, path, visibility, annot_show) = (app.clone(), path.clone(), visibility.clone(), annot_show.clone());
+            run_blocking("Region render", move || {
+                let bytes_cache = app.state::<PdfBytesCache>();
+                let pdfium_cache = app.state::<pdfium_renderer::PdfiumDocCache>();
+                let pixmap_cache = app.state::<pdfium_renderer::PixmapCacheState>();
+                let handle = inproc_render_document(&path, &visibility, &bytes_cache, &pdfium_cache, &pixmap_cache, render_generation)?;
+                let (width, height, rgba) = pdfium_renderer::render_page_region_to_rgba_with_annotations(
+                    handle.document(),
+                    page_index,
+                    scale,
+                    extra_rot,
+                    region_x_pt,
+                    region_y_pt,
+                    region_w_pt,
+                    region_h_pt,
+                    annot_show.as_ref(),
+                )?;
+                Ok(pdfium_renderer::frame_rgba(width, height, &rgba))
+            }).await?
+        };
         if accept_render_generation(&path, response_generation, &pixmap_cache, &pool).await? {
             return Ok(tauri::ipc::Response::new(data));
         }
@@ -3818,6 +3976,7 @@ async fn extract_pdf_page(
 /// stille degradatie) zodat de JS-kant per pagina kan terugvallen op PDFium.
 #[tauri::command]
 async fn render_tile_scene_region(
+    app: tauri::AppHandle,
     path: String,
     page_index: u32,
     rotation: Option<i32>,
@@ -3827,7 +3986,6 @@ async fn render_tile_scene_region(
     region_y_pt: f32,
     region_w_pt: f32,
     region_h_pt: f32,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
     handle_cache: tauri::State<'_, DocHandleCache>,
     scene_cache: tauri::State<'_, TileSceneCache>,
 ) -> Result<tauri::ipc::Response, String> {
@@ -3841,11 +3999,17 @@ async fn render_tile_scene_region(
         .map_err(|e| format!("Handle cache lock: {}", e))?.generation();
     // Gate before scene lookup: a path-keyed cached scene does not encode OCG
     // state, and the Rust interpreter currently ignores BDC/EMC visibility.
-    let doc = get_or_load_doc_at_generation(&path, &bytes_cache, &handle_cache, generation)?;
-    if doc.has_optional_content() {
-        return Err("OCG content requires PDFium renderer".into());
-    }
-    let meta = std::fs::metadata(&path).map_err(|e| format!("stat: {}", e))?;
+    let (doc, meta) = {
+        let (app, path) = (app.clone(), path.clone());
+        run_blocking("Document load", move || {
+            let doc = get_or_load_doc_at_generation(&path, &app.state::<PdfBytesCache>(), &app.state::<DocHandleCache>(), generation)?;
+            if doc.has_optional_content() {
+                return Err("OCG content requires PDFium renderer".into());
+            }
+            let meta = std::fs::metadata(&path).map_err(|e| format!("stat: {}", e))?;
+            Ok((doc, meta))
+        }).await?
+    };
     let mtime = meta
         .modified()
         .ok()
@@ -4053,7 +4217,9 @@ async fn render_thumbnail(
     skip_images: Option<bool>,
     pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
     thumb_cache: tauri::State<'_, ThumbnailCache>,
+    pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<String, String> {
+    refuse_inproc_after_crash(&pool, &path, page_index)?;
     let visibility = ocg_render_copy::canonical_visibility(ocg_visibility.as_deref().unwrap_or(&[]))
         .map_err(|e| format!("OCG selection: {e}"))?;
     let extra_rot = rotation.unwrap_or(0);
@@ -4099,9 +4265,9 @@ async fn render_thumbnail(
 
 #[tauri::command]
 async fn analyze_page_type(
+    app: tauri::AppHandle,
     path: String,
     page_index: u32,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
     handle_cache: tauri::State<'_, DocHandleCache>,
     page_type_cache: tauri::State<'_, PageTypeCache>,
 ) -> Result<String, String> {
@@ -4116,10 +4282,15 @@ async fn analyze_page_type(
             return Ok(cached);
         }
     }
-    let doc = get_or_load_doc_at_generation(&path, &bytes_cache, &handle_cache, generation)?;
-    let result = match doc.analyze_page_type(page_index as usize).map_err(|e| format!("{}", e))? {
-        open_pdf_render::PageType::Vector => "vector".to_string(),
-        open_pdf_render::PageType::Tile => "tile".to_string(),
+    let result = {
+        let (app, path) = (app.clone(), path.clone());
+        run_blocking("Page analysis", move || {
+            let doc = get_or_load_doc_at_generation(&path, &app.state::<PdfBytesCache>(), &app.state::<DocHandleCache>(), generation)?;
+            Ok(match doc.analyze_page_type(page_index as usize).map_err(|e| format!("{}", e))? {
+                open_pdf_render::PageType::Vector => "vector".to_string(),
+                open_pdf_render::PageType::Tile => "tile".to_string(),
+            })
+        }).await?
     };
     let handles = handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?;
     handles.with_generation(generation, || {
@@ -4138,9 +4309,9 @@ async fn analyze_page_type(
 /// returns the cached value.
 #[tauri::command]
 async fn analyze_page_type_batch(
+    app: tauri::AppHandle,
     path: String,
     page_indices: Vec<u32>,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
     handle_cache: tauri::State<'_, DocHandleCache>,
     page_type_cache: tauri::State<'_, PageTypeCache>,
 ) -> Result<Vec<String>, String> {
@@ -4172,9 +4343,14 @@ async fn analyze_page_type_batch(
         return Ok(results.into_iter().map(|o| o.unwrap_or_default()).collect());
     }
 
-    let doc = get_or_load_doc_at_generation(&path, &bytes_cache, &handle_cache, generation)?;
     let pages: Vec<usize> = todo.iter().map(|&(_, p)| p as usize).collect();
-    let batch_results = doc.analyze_page_types_batch(&pages);
+    let batch_results = {
+        let (app, path) = (app.clone(), path.clone());
+        run_blocking("Page analysis", move || {
+            let doc = get_or_load_doc_at_generation(&path, &app.state::<PdfBytesCache>(), &app.state::<DocHandleCache>(), generation)?;
+            Ok(doc.analyze_page_types_batch(&pages))
+        }).await?
+    };
 
     // Always return this command's results, even if an invalidation prevents
     // them from entering the cache.
@@ -4199,26 +4375,28 @@ async fn analyze_page_type_batch(
 
 #[tauri::command]
 async fn extract_draw_commands(
+    app: tauri::AppHandle,
     path: String,
     page_index: u32,
     rotation: Option<i32>,
     ocg_visibility: Option<Vec<ocg_render_copy::LayerVisibility>>,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
-    handle_cache: tauri::State<'_, DocHandleCache>,
 ) -> Result<tauri::ipc::Response, String> {
     let visibility = ocg_render_copy::canonical_visibility(ocg_visibility.as_deref().unwrap_or(&[]))
         .map_err(|e| format!("OCG selection: {e}"))?;
     if !visibility.is_empty() {
         return Err("OCG content requires PDFium renderer".into());
     }
-    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
-    if doc.has_optional_content() {
-        return Err("OCG content requires PDFium renderer".into());
-    }
     let extra_rot = rotation.unwrap_or(0);
-    let cmds = doc.extract_draw_commands(page_index as usize, extra_rot).map_err(|e| format!("{}", e))?;
+    let bytes = run_blocking("Draw command extraction", move || {
+        let doc = get_or_load_doc(&path, &app.state::<PdfBytesCache>(), &app.state::<DocHandleCache>())?;
+        if doc.has_optional_content() {
+            return Err("OCG content requires PDFium renderer".into());
+        }
+        let cmds = doc.extract_draw_commands(page_index as usize, extra_rot).map_err(|e| format!("{}", e))?;
+        Ok(cmds.into_bytes())
+    }).await?;
     // Raw bytes, not a JSON array of numbers (3-4x the size, parsed in JS).
-    Ok(tauri::ipc::Response::new(cmds.into_bytes()))
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command(async)]
@@ -4241,32 +4419,33 @@ fn extract_page_text(
 /// Pass an empty array to use 0 for all pages.
 #[tauri::command]
 async fn extract_draw_commands_batch(
+    app: tauri::AppHandle,
     path: String,
     page_indices: Vec<u32>,
     rotations: Option<Vec<i32>>,
     ocg_visibility: Option<Vec<ocg_render_copy::LayerVisibility>>,
-    bytes_cache: tauri::State<'_, PdfBytesCache>,
-    handle_cache: tauri::State<'_, DocHandleCache>,
 ) -> Result<Vec<Vec<u8>>, String> {
     let visibility = ocg_render_copy::canonical_visibility(ocg_visibility.as_deref().unwrap_or(&[]))
         .map_err(|e| format!("OCG selection: {e}"))?;
     if !visibility.is_empty() {
         return Err("OCG content requires PDFium renderer".into());
     }
-    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
-    if doc.has_optional_content() {
-        return Err("OCG content requires PDFium renderer".into());
-    }
     let rots = rotations.unwrap_or_default();
     let pairs: Vec<(usize, i32)> = page_indices.iter().enumerate().map(|(i, &p)| {
         (p as usize, rots.get(i).copied().unwrap_or(0))
     }).collect();
-    let results = doc.extract_draw_commands_batch(&pairs);
-    let mut out = Vec::with_capacity(results.len());
-    for r in results {
-        out.push(r.map(|b| b.into_bytes()).map_err(|e| format!("{}", e))?);
-    }
-    Ok(out)
+    run_blocking("Draw command extraction", move || {
+        let doc = get_or_load_doc(&path, &app.state::<PdfBytesCache>(), &app.state::<DocHandleCache>())?;
+        if doc.has_optional_content() {
+            return Err("OCG content requires PDFium renderer".into());
+        }
+        let results = doc.extract_draw_commands_batch(&pairs);
+        let mut out = Vec::with_capacity(results.len());
+        for r in results {
+            out.push(r.map(|b| b.into_bytes()).map_err(|e| format!("{}", e))?);
+        }
+        Ok(out)
+    }).await
 }
 
 /// Bump the display-list generation while removing every cache derived from
@@ -4895,6 +5074,14 @@ pub fn run(opts: StartupOpts) {
                     );
                 });
             }
+            // PDFs downloaded from a URL on an earlier run (remote_pdf.rs).
+            if let Ok(cachemap) = datamap::tauri_map(app.handle(), datamap::TauriMap::Cache) {
+                std::thread::spawn(move || {
+                    remote_pdf::sweep_downloads(&remote_pdf::download_dir(&cachemap), remote_pdf::DOWNLOAD_MAX_AGE);
+                    // Earlier versions downloaded into the shared temp folder.
+                    remote_pdf::sweep_downloads(&std::env::temp_dir(), remote_pdf::DOWNLOAD_MAX_AGE);
+                });
+            }
             // Voorbeeld-PDF's van het importvenster voor DWG en DXF die van een
             // vorige keer zijn blijven staan (#400). De import kiest zijn map
             // zelf, op een plek (cad_import::voorbeeldmap).
@@ -5117,6 +5304,7 @@ pub fn run(opts: StartupOpts) {
             ocr_pdf_page,
             worker_pool_ready,
             render_pdf_page_region,
+            pdf_page_text_native,
             extract_pdf_page,
             render_tile_scene_region,
             page_content_size,
@@ -5264,5 +5452,67 @@ fn register_updater(app: &tauri::AppHandle) {
     }
     if let Err(e) = app.plugin(tauri_plugin_updater::Builder::new().build()) {
         eprintln!("[startup] updater unavailable: {e}");
+    }
+}
+
+#[cfg(test)]
+mod file_shell_tests {
+    use super::*;
+
+    fn temp_file(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("opds-file-shell-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a&b|c^d%PATH%.pdf");
+        fs::write(&path, b"%PDF-1.7").unwrap();
+        path
+    }
+
+    #[test]
+    fn wide_path_keeps_shell_characters_and_refuses_nul() {
+        let wide = wide_nul(std::ffi::OsStr::new("C:\\x&calc|y^z%PATH%.pdf")).unwrap();
+        assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), "C:\\x&calc|y^z%PATH%.pdf");
+        assert_eq!(wide.last(), Some(&0));
+        assert!(wide_nul(std::ffi::OsStr::new("a\0b")).is_err());
+    }
+
+    #[test]
+    fn default_viewer_refuses_a_missing_file() {
+        assert!(open_pdf_in_default_viewer("/nonexistent/opds/missing.pdf".into()).is_err());
+    }
+
+    #[test]
+    fn lock_is_one_per_path_and_released_by_unlock() {
+        let path = temp_file("lock");
+        let key = path.to_string_lossy().into_owned();
+        let mut locks = HashMap::new();
+        assert!(lock_path(&mut locks, key.clone()).unwrap());
+        assert!(lock_path(&mut locks, key.clone()).unwrap());
+        assert_eq!(locks.len(), 1);
+        locks.remove(&key);
+        assert!(locks.is_empty());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_lock_takes_a_shared_flock() {
+        use std::os::unix::io::AsRawFd;
+        let path = temp_file("flock");
+        let key = path.to_string_lossy().into_owned();
+        let mut locks = HashMap::new();
+        lock_path(&mut locks, key.clone()).unwrap();
+        let other = fs::File::open(&path).unwrap();
+        // Another reader may share the lock; a writer's exclusive lock is refused.
+        assert_eq!(unsafe { libc::flock(other.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) }, -1);
+        assert_eq!(unsafe { libc::flock(other.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) }, 0);
+        unsafe { libc::flock(other.as_raw_fd(), libc::LOCK_UN) };
+        locks.remove(&key);
+        assert_eq!(unsafe { libc::flock(other.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) }, 0);
+        // A file held exclusively elsewhere is reported, not waited for.
+        assert!(lock_path(&mut locks, key.clone()).is_err());
+        assert!(locks.is_empty());
+        drop(other);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

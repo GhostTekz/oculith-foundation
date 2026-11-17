@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal, onMount, onCleanup } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
-import { sheetRegister, saveSheetRegister } from '../../../stores/sheetRegisterStore.js';
-import { updateSheet, replaceSheet, relinkSheet, relinkHistoricalSource, removeSheet, parseSheetRegister, filterSheets, sortSheetsByLabel, adjacentSheet, drawingLogCsv } from '../../../../sets/sheet-register.js';
+import { sheetRegister, saveSheetRegister, userTitleBlockTemplates, saveUserTitleBlockTemplates } from '../../../stores/sheetRegisterStore.js';
+import { setTitleBlockTemplates, updateSheet, replaceSheet, relinkSheet, relinkHistoricalSource, removeSheet, parseSheetRegister, filterSheets, sortSheetsByLabel, adjacentSheet, drawingLogCsv } from '../../../../sets/sheet-register.js';
 import { addPdfPages, assertRecordedContentUnchanged, fingerprintPdfBytes, inspectPdfPages, matchingCurrentPdfSource, relinkMatchingPdfSource } from '../../../../sets/pdf-page-import.js';
 import { inspectSheetFile, inspectHistoricalFiles } from '../../../../sets/sheet-file-status.js';
 import { extractFileName, fileExists, isTauri, openFileDialog, readBinaryFile, saveFileDialog, writeBinaryFile, invoke } from '../../../../core/platform.js';
@@ -18,6 +18,7 @@ import { buildSetPageGeometryAudit } from '../../../../sets/set-page-geometry.js
 import { buildSetTransmittalReadiness } from '../../../../sets/set-transmittal-readiness.js';
 import { createCurrentDrawingLog, assertCurrentDrawingLog, currentDrawingLogCsv } from '../../../../sets/current-drawing-log.js';
 import { applySheetMetadataReview, sheetMetadataReviewIssues } from '../../../../sets/sheet-metadata-review.js';
+import { applyTitleBlockPlan, combinedTemplates, planTitleBlockApply } from '../../../../sets/title-block-template.js';
 import { startCompare } from '../../../../compare/compare-store.js';
 import { getPdfBytes } from '../../../../pdf/loader.js';
 
@@ -55,6 +56,14 @@ export default function SheetsPanel() {
   const [packageBusy, setPackageBusy] = createSignal(false);
   const [metadataReview, setMetadataReview] = createSignal(null);
   const [metadataBusy, setMetadataBusy] = createSignal(false);
+  const [templateBusy, setTemplateBusy] = createSignal(false);
+  const [templateResult, setTemplateResult] = createSignal(null);
+  const titleBlockTemplates = createMemo(() => {
+    const inSet = new Set((sheetRegister().titleBlockTemplates || []).map(item => item.id));
+    const inDefaults = new Set(userTitleBlockTemplates().map(item => item.id));
+    return combinedTemplates(sheetRegister().titleBlockTemplates, userTitleBlockTemplates())
+      .map(template => ({ template, inSet: inSet.has(template.id), inDefaults: inDefaults.has(template.id) }));
+  });
   const [query, setQuery] = createSignal('');
   const [revisionFilter, setRevisionFilter] = createSignal('');
   const [exportingCurrentView, setExportingCurrentView] = createSignal(false);
@@ -273,6 +282,49 @@ export default function SheetsPanel() {
     finally { setMetadataBusy(false); }
   }
 
+  // Title block templates: read every registered sheet's page once, let the
+  // matching template fill its number, title, revision and date, and list
+  // the sheets no template matched. The PDFs are checked against their
+  // fingerprints and never changed.
+  async function applyTitleBlockTemplates() {
+    const register = sheetRegister();
+    const templates = combinedTemplates(register.titleBlockTemplates, userTitleBlockTemplates());
+    if (templateBusy() || !register.sheets.length || !templates.length) return;
+    setTemplateBusy(true);
+    setTemplateResult(null);
+    setMessage('');
+    try {
+      const { readTemplatePages } = await import('../../../../sets/title-block-template-app.js');
+      const pages = await readTemplatePages(register.sheets);
+      if (sheetRegister() !== register) throw new Error('The drawing set changed while its sheets were read. Apply the templates again.');
+      const plan = planTitleBlockApply(register, pages, templates);
+      const changed = plan.rows.filter(row => Object.keys(row.changes).length);
+      // A template the set used is kept with the set.
+      let next = applyTitleBlockPlan(register, plan);
+      const used = templates.filter(template => plan.rows.some(row => row.templateId === template.id));
+      for (const template of used) {
+        if (!(next.titleBlockTemplates || []).some(item => item.id === template.id)) {
+          next = setTitleBlockTemplates(next, [...(next.titleBlockTemplates || []), template]);
+        }
+      }
+      if (next !== register) commit(next);
+      setTemplateResult({ matched: plan.rows.length, changed: changed.length, unmatched: plan.unmatched, conflicts: plan.conflicts });
+      setMessage(`${plan.rows.length} of ${register.sheets.length} sheets matched a title block template; ${changed.length} updated.`);
+    } catch (error) { setMessage(`Could not apply title block templates: ${error.message}`); }
+    finally { setTemplateBusy(false); }
+  }
+
+  function removeTitleBlockTemplate(entry) {
+    const where = entry.inSet && entry.inDefaults ? 'this drawing set and your defaults' : entry.inSet ? 'this drawing set' : 'your defaults';
+    if (!confirm(`Remove the title block template “${entry.template.name}” from ${where}?`)) return;
+    try {
+      if (entry.inSet) {
+        commit(setTitleBlockTemplates(sheetRegister(), (sheetRegister().titleBlockTemplates || []).filter(item => item.id !== entry.template.id)));
+      }
+      if (entry.inDefaults) saveUserTitleBlockTemplates(userTitleBlockTemplates().filter(item => item.id !== entry.template.id));
+    } catch (error) { setMessage(error.message); }
+  }
+
   async function addPdfs() {
     if (importing()) return;
     setImporting(true);
@@ -322,7 +374,7 @@ export default function SheetsPanel() {
       const picked = await openFileDialog(['pdf'], { multiple: true });
       if (!picked) return;
       const { inspectRevisionPdf, readRevisionFile } = await import('../../../../sets/slip-sheet-run.js');
-      const { planSlipSheet } = await import('../../../../sets/slip-sheet-match.js');
+      const { planSlipSheet, slipSheetCollisionText } = await import('../../../../sets/slip-sheet-match.js');
       const files = [];
       const skipped = [];
       for (const path of (Array.isArray(picked) ? picked : [picked])) {
@@ -330,8 +382,8 @@ export default function SheetsPanel() {
         catch (error) { skipped.push(`${extractFileName(path)}: ${error.message}`); }
       }
       if (!files.length) { setMessage(skipped.join(' ')); return; }
-      const { rows } = planSlipSheet(sheetRegister(), files);
-      setMessage(skipped.join(' '));
+      const { rows, collisions } = planSlipSheet(sheetRegister(), files);
+      setMessage([...skipped, slipSheetCollisionText(collisions)].filter(Boolean).join(' '));
       openDialog('slipSheet', { files: files.map(({ filePath, pageCount }) => ({ filePath, pageCount })), rows,
         onDone: (text) => { setSelectedId(null); setSourceCandidate(null); setMessage(text); void refreshAvailability(); } });
     } catch (error) { setMessage(error.message); }
@@ -1127,6 +1179,7 @@ export default function SheetsPanel() {
               </div>}
             </Show>
             <label class="sheets-field">Revision<input aria-label="Revision" value={sheet().revision} onChange={(event) => edit(sheet().id, { revision: event.currentTarget.value })} /></label>
+            <label class="sheets-field">Sheet date<input aria-label="Sheet date" value={sheet().date || ''} onChange={(event) => edit(sheet().id, { date: event.currentTarget.value })} /></label>
             <div class="sheets-history-title">Current source</div>
             <div class="sheets-source">{extractFileName(sheet().filePath)} · Page {sheet().page} · Revision {sheet().revision || 'Unnumbered'}</div>
             <div class="sheets-path" title={sheet().filePath}>{sheet().filePath}</div>
@@ -1184,6 +1237,36 @@ export default function SheetsPanel() {
             </Show>
           </div>}
         </Show>
+        <div class="sheets-templates" aria-label="Title block templates">
+          <div class="sheets-history-title">Title block templates</div>
+          <p class="sheets-suggestion-note">Mark the title block fields once on a sheet, then fill the sheet number, title, revision and date of every sheet with the same layout. Selectable PDF text only.</p>
+          <For each={titleBlockTemplates()}>{(entry) => <div class="sheets-history-item">
+            <div><strong>{entry.template.name}</strong>
+              <small>{Math.round(entry.template.size.width)} × {Math.round(entry.template.size.height)} pt · {entry.template.anchors.length} fixed words · {[entry.inSet && 'this set', entry.inDefaults && 'my defaults'].filter(Boolean).join(', ')}</small>
+            </div>
+            <button type="button" aria-label={`Remove title block template ${entry.template.name}`} onClick={() => removeTitleBlockTemplate(entry)}>Remove</button>
+          </div>}</For>
+          <div class="sheets-actions">
+            <button type="button" onClick={() => openDialog('title-block-template', {})}>New template…</button>
+            <button type="button" onClick={applyTitleBlockTemplates}
+              disabled={templateBusy() || !sheetRegister().sheets.length || !titleBlockTemplates().length}>
+              {templateBusy() ? 'Reading sheets…' : 'Apply to set'}</button>
+          </div>
+          <Show when={templateResult()}>{(result) => <div class="sheets-candidate" aria-label="Title block template result">
+            <div class="sheets-metadata-count">{result().matched} matched · {result().changed} updated · {result().unmatched.length} not matched</div>
+            <Show when={result().unmatched.length}>
+              <details class="sheets-suggestion-source" open><summary>Sheets not matched (unchanged)</summary>
+                <For each={result().unmatched}>{(row) => <div><strong>{row.label}</strong> · {row.reason}</div>}</For>
+              </details>
+            </Show>
+            <Show when={result().conflicts.length}>
+              <details class="sheets-suggestion-source" open><summary>Sheet numbers not taken</summary>
+                <For each={result().conflicts}>{(row) => <div><strong>{row.label}</strong> · {row.reason}</div>}</For>
+              </details>
+            </Show>
+            <div class="sheets-actions"><button type="button" onClick={() => setTemplateResult(null)}>Dismiss</button></div>
+          </div>}</Show>
+        </div>
         <div class="sheets-export">
           <button onClick={publishCurrentSet} disabled={publishingSet() || !sheetRegister().sheets.length}>{publishingSet() ? 'Preparing current sheets…' : 'Publish current sheets PDF'}</button>
           <p class="sheets-suggestion-note">Current view: {visibleSheets().length} of {sheetRegister().sheets.length} sheets. These exports include the displayed current revision only.</p>

@@ -32,6 +32,7 @@ globalThis.createImageBitmap ??= async (img) => ({ width: img.width, height: img
 globalThis.window.__TAURI__ = {
   core: {
     async invoke(cmd, args) {
+      if (cmd === 'page_content_size') return globalThis.__contentSize ? globalThis.__contentSize(args) : 0;
       if (cmd !== 'render_pdf_page') throw new Error(`unexpected ${cmd}`);
       renders.push(args.scale);
       // Same sizing as the worker: ceil(pt * f32 scale).
@@ -116,4 +117,29 @@ test('getBestAvailableBitmap finds exact-scale entries by their render scale', (
   assert.equal(cache.getBestAvailableBitmap('/synthetic/best.pdf', 1, 0, 0.25).scale, 0.3);
   assert.equal(cache.getCachedBitmapNearScale('/synthetic/best.pdf', 1, 0, 1.44).scale, 1.437);
   assert.equal(cache.getCachedBitmapNearScale('/synthetic/best.pdf', 1, 0, 1.6), null);
+});
+
+test('a zoom change while the page size check is pending renders only the new zoom', async () => {
+  const { state } = await import('../core/state.js');
+  const before = state.preferences.progressiveRender;
+  state.preferences.progressiveRender = true;
+  const gates = [];
+  globalThis.__contentSize = () => new Promise((resolve) => gates.push(() => resolve(1000)));
+  try {
+    renders.length = 0;
+    cache.clearAllBitmaps();
+    show('/synthetic/race.pdf', A4, 0.6);
+    const first = orch.ensureBitmapForCurrentView();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    viewport.zoom = 1;
+    const second = orch.ensureBitmapForCurrentView();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (const open of gates) open();
+    await Promise.all([first, second]);
+    assert.deepEqual(renders, [2], 'the left zoom (1.2) is not rendered');
+    assert.equal(viewport.currentBitmap.width, Math.ceil(Math.fround(Math.fround(A4.w) * Math.fround(2))));
+  } finally {
+    delete globalThis.__contentSize;
+    state.preferences.progressiveRender = before;
+  }
 });

@@ -3,7 +3,7 @@
 // edit.undo and edit.redo are seed commands in registry.js.
 
 import { registerCommand } from './registry.js';
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { lucide } from '../data/lucideIcons.js';
 import {
   handIcon, selectCommentsIcon, selectTextIcon, selectAllIcon, deselectIcon, findIcon,
@@ -61,9 +61,13 @@ registerCommand({
   // region cut from a drawing pastes when it is the latest copy.
   id: 'edit.paste', label: 'common:commands.paste', icon: pasteIcon, shortcut: 'Ctrl+V', category: C,
   enabled: editable, run: async () => {
+    // Into the drawing active when the command ran, not one switched to
+    // while the modules load.
+    const doc = getActiveDocument();
     const region = await import('../../annotations/region-clipboard.js');
-    if (region.regionPasteIsLatest()) { await region.pasteRegion(); return; }
-    (await import('../../annotations/clipboard.js')).pasteAnnotations();
+    if (region.regionPasteIsLatest()) { await region.pasteRegion(doc); return; }
+    const clipboard = await import('../../annotations/clipboard.js');
+    if (clipboard.pasteTargetCurrent(doc)) clipboard.pasteAnnotations();
   },
 });
 registerCommand({

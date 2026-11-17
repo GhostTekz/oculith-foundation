@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "ڈیجیٹل دستخطوں کی جانچ ہو رہی ہے…",
     "barLabel": "ڈیجیٹل دستخط",
+    "unsignedFieldsSummary_one": "غیر دستخط شدہ دستخطی فیلڈز: {{count}}",
+    "unsignedFieldsSummary_other": "غیر دستخط شدہ دستخطی فیلڈز: {{count}}",
+    "showUnsignedFields": "فیلڈز دکھائیں",
+    "hideUnsignedFields": "فیلڈز چھپائیں",
     "listError": "دستخطوں کی جانچ نہیں ہو سکی: {{detail}}",
     "documentTimestamp": "دستاویز کا ٹائم اسٹیمپ",
     "documentTimestampBy": "دستاویز کا ٹائم اسٹیمپ ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "بائٹ رینج کے خلا میں صرف دستخط کی قدر نہیں ہے۔",
       "subfilter-niet-ondersteund": "یہ دستخطی فارمیٹ معاون نہیں ہے۔",
       "zoekbudget-op": "سرٹیفکیٹ زنجیر کی تلاش اپنی حد پر رک گئی؛ ممکن ہے پھر بھی کوئی زنجیر موجود ہو۔",
+      "hashbudget-op": "دستخط شدہ بائٹس جانچنے کی دستاویز کی حد پوری ہو گئی؛ یہ دستخط نہیں جانچا گیا۔",
       "gat-wijkt-af-van-contents": "فائل میں دستخط کی قدر دستخطی ڈکشنری والی قدر سے مختلف ہے۔",
       "interne-fout": "اس دستخط کی جانچ کے دوران ایک اندرونی خرابی پیش آئی۔",
       "unknown": "جانچ نے ایک اضافی مسئلے کی اطلاع دی۔"

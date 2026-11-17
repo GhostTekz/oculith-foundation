@@ -346,10 +346,21 @@ export function buildWorkbook(model) {
   return zipStore([...head, ...entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))], zipDate);
 }
 
-/** CSV text (RFC 4180, CRLF line ends) from rows of plain values. */
+// A text cell a spreadsheet would run as a formula when the CSV is opened
+// (CSV injection): it starts with = + - @, a tab or a carriage return.
+const FORMULA_START = /^[=+\-@\t\r]/;
+// A number written as text ("-12.5", "+3"): a value, not a formula.
+const PLAIN_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+/**
+ * CSV text (RFC 4180, CRLF line ends) from rows of plain values. A text
+ * cell that would open as a formula gets a leading apostrophe, so it is
+ * shown as text; numbers, also negative ones, stay numbers.
+ */
 export function csvText(rows) {
   const cell = (v) => {
-    const s = v === null || v === undefined ? '' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : '') : String(v);
+    let s = v === null || v === undefined ? '' : typeof v === 'number' ? (Number.isFinite(v) ? String(v) : '') : String(v);
+    if (typeof v !== 'number' && FORMULA_START.test(s) && !PLAIN_NUMBER.test(s)) s = `'${s}`;
     return /[",\r\n]/.test(s) || /^\s|\s$/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return rows.map((row) => row.map(cell).join(',')).join('\r\n') + '\r\n';

@@ -128,6 +128,21 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
 }
 
 // Convert PDF annotation to our format
+// A saved angle as written (12.5 stays 12.5), but a float's dust on a whole
+// degree (89.99999999) is that degree, so checks such as === 90 still hold.
+function exactRotation(angle) {
+  const whole = Math.round(angle);
+  return Math.abs(angle - whole) < 1e-6 ? whole : angle;
+}
+
+export function sameVertices(exact, rounded) {
+  if (!exact || !rounded || exact.length !== rounded.length) return false;
+  for (let i = 0; i < exact.length; i++) {
+    if (Math.fround(exact[i]) !== Math.fround(rounded[i])) return false;
+  }
+  return true;
+}
+
 async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, annotColorMap) {
   // Helpers to convert PDF coordinates to viewport coordinates (handles CropBox/MediaBox offsets)
   const convertPoint = (pdfX, pdfY) => viewport.convertToViewportPoint(pdfX, pdfY);
@@ -175,7 +190,11 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
   // Look up extra colors extracted via pdf-lib (IC entry, appearance stream
   // colors). Zie extra-sleutel.js voor het zoeken op de rauwe /Rect.
   let extraColors = extraVoorAnnotatie(annotColorMap, annot) || {};
-  const vertices = extraColors.pdfVertices || annot.vertices;
+  // Full-precision vertices read with pdf-lib, but only when they are this
+  // markup's: the extra data is found by /Rect, so another markup with the
+  // same or a nearby /Rect could otherwise lend it its geometry. PDF.js holds
+  // the same values at float32 precision.
+  const vertices = sameVertices(extraColors.pdfVertices, annot.vertices) ? extraColors.pdfVertices : annot.vertices;
   if (extraColors.pluginAnnotation) {
     return createAnnotation({ ...extraColors.pluginAnnotation, page: pageNum,
       ...(extraColors.markupTextValue ? { markupTextValue: extraColors.markupTextValue } : {}),
@@ -543,7 +562,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
       if (extraColors.rotation !== undefined && extraColors.rotation !== 0) {
         // Our saver stores the exact angle; rounding it moves the shape
         // away from its saved appearance each time the document reopens.
-        sqRotation = extraColors.rotation;
+        sqRotation = exactRotation(extraColors.rotation);
         // /Rect is de omhullende van de gedraaide rechthoek, niet zijn maat.
         ({ x: sqX, y: sqY, width: sqW, height: sqH } = echteVormMaat(sqRect));
       } else if (extraColors.matrixAngle !== undefined && Math.abs(extraColors.matrixAngle) > 1) {
@@ -593,7 +612,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
       let crX = crRect.x, crY = crRect.y, crW = crRect.width, crH = crRect.height;
       let crRotation = 0;
       if (extraColors.rotation !== undefined && extraColors.rotation !== 0) {
-        crRotation = Math.round(extraColors.rotation);
+        crRotation = exactRotation(extraColors.rotation); // as the saver writes it (OPS_Rotation)
         // /Rect is de omhullende van de gedraaide ellips, niet zijn maat.
         ({ x: crX, y: crY, width: crW, height: crH } = echteVormMaat(crRect));
       } else if (extraColors.matrixAngle !== undefined && Math.abs(extraColors.matrixAngle) > 1) {
@@ -1633,7 +1652,7 @@ async function converteerPdfAnnotatie(annot, pageNum, viewport, stampImageMap, a
 
       let stRotation = 0;
       if (extraColors.rotation !== undefined && extraColors.rotation !== 0) {
-        stRotation = Math.round(extraColors.rotation);
+        stRotation = exactRotation(extraColors.rotation); // as the saver writes it (OPS_Rotation)
       } else if (extraColors.matrixAngle !== undefined && Math.abs(extraColors.matrixAngle) > 1) {
         // Zelfde conventie als het FreeText-pad hierboven: de /Matrix-hoek is
         // een hoek in PDF-ruimte, en de pagina-/Rotate draait het hele blad

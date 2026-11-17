@@ -1,6 +1,7 @@
-import { getActiveDocument } from "../core/state.js";
+import { state, getActiveDocument } from "../core/state.js";
 import { getPdfBytes } from "./loader.js";
-import { getCacheKey, reloadFromBytes } from "./page-manager.js";
+import { getCacheKey, reloadFromBytes, pageDataOf, pageDataChange } from "./page-manager.js";
+import { withHistoryLock } from "../core/history-lock.js";
 import { parsePageRange } from "./exporter.js";
 import { recordPageStructure } from "../core/undo-manager.js";
 import { showLoading, hideLoading } from "../ui/chrome/dialogs.js";
@@ -35,12 +36,16 @@ export function translateAnnotation(ann, dx, dy) {
  * @param {number} heightMm - Target visual height in millimetres
  * @returns {Promise<{resized: number}>}
  */
-export async function resizePages(applyTo, rangeStr, widthMm, heightMm) {
+export function resizePages(applyTo, rangeStr, widthMm, heightMm) {
+  return withHistoryLock(() => resizePagesNu(applyTo, rangeStr, widthMm, heightMm), { resized: 0 });
+}
+
+async function resizePagesNu(applyTo, rangeStr, widthMm, heightMm) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return { resized: 0 };
   if (!(widthMm > 0) || !(heightMm > 0)) return { resized: 0 };
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = await getPdfBytes(cacheKey);
   if (!currentBytes) return { resized: 0 };
 
@@ -50,6 +55,7 @@ export async function resizePages(applyTo, rangeStr, widthMm, heightMm) {
   const oldAnnotations = doc.annotations.map((a) => cloneAnnotation(a));
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   const totalPages = doc.pdfDoc.numPages;
   let pageNumbers;
@@ -84,7 +90,9 @@ export async function resizePages(applyTo, rangeStr, widthMm, heightMm) {
     const newRotations = { ...oldRotations };
     const targetPage = doc.currentPage;
 
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage);
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return { resized: 0 };
+    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, null, doc);
     recordPageStructure(
       currentBytes,
       oldAnnotations,
@@ -93,7 +101,8 @@ export async function resizePages(applyTo, rangeStr, widthMm, heightMm) {
       newBytes,
       newAnnotations,
       newRotations,
-      targetPage
+      targetPage,
+      { doc, ...pageDataChange(dataBefore, doc) }
     );
 
     return { resized: pageOffsets.size };

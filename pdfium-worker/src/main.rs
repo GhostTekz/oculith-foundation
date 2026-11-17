@@ -7,6 +7,7 @@
 mod protocol;
 mod render;
 mod shm;
+mod text;
 
 use anyhow::{Context, Result};
 use protocol::{Request, Response};
@@ -73,6 +74,7 @@ fn run() -> Result<()> {
         annot_appearance: true,
         annot_appearance_index: true,
         region_pixel_clip: true,
+        page_text: true,
     };
     writeln!(std::io::stdout(), "{}", serde_json::to_string(&ready)?)?;
     std::io::stdout().flush()?;
@@ -94,6 +96,10 @@ fn run() -> Result<()> {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("[worker {}] bad request: {}", slot, e);
+                if let Some(reply) = protocol::reply_to_unparsable(&line, &e.to_string()) {
+                    writeln!(stdout, "{}", serde_json::to_string(&reply)?)?;
+                    stdout.flush()?;
+                }
                 continue;
             }
         };
@@ -153,6 +159,14 @@ fn run() -> Result<()> {
                         id, ok: false,
                         error: format!("{}", e),
                     },
+                };
+                writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
+                stdout.flush()?;
+            }
+            Request::PageText { id, path, page_index } => {
+                let resp = match renderer.page_text(&path, page_index).and_then(|json| shm_region.write_bytes(&json)) {
+                    Ok(bytes) => Response::TextOk { id, ok: true, text_bytes: bytes },
+                    Err(e) => Response::RenderErr { id, ok: false, error: format!("{}", e) },
                 };
                 writeln!(stdout, "{}", serde_json::to_string(&resp)?)?;
                 stdout.flush()?;

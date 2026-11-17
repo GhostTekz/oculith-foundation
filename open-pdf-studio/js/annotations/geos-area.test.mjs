@@ -229,3 +229,58 @@ test('a missing offset command keeps the JavaScript curve', async () => {
   assert.equal(annotation.endY, 0);
   assert.equal(annotation.offsetPending, false);
 });
+
+// Two tabs with different page scales; the engine answers after a tab switch.
+function openTwoTabs() {
+  const area = {
+    id: 'area', type: 'measureArea', page: 1,
+    points: square(0, 0, 10), holes: [square(5, 0, 10)],
+    measureValue: 0, measureUnit: 'mm²', measureText: '',
+  };
+  const own = { id: 'own', currentPage: 1, annotations: [area], measureScale: null,
+    pageScales: { 1: { pixelsPerUnit: 2, unit: 'mm' } } };
+  const other = { id: 'other', currentPage: 1, annotations: [], measureScale: null,
+    pageScales: { 1: { pixelsPerUnit: 10, unit: 'm' } } };
+  state.documents = [own, other];
+  state.activeDocumentIndex = 0;
+  state.preferences.measureScale = null;
+  return { area, own, other };
+}
+
+function deferredEngine() {
+  let answer;
+  const result = new Promise((resolve) => { answer = resolve; });
+  return { invoke: () => result, answer };
+}
+
+test('an engine area that arrives after a tab switch uses the scale of its own document', async () => {
+  const { area } = openTwoTabs();
+  const engine = deferredEngine();
+  const refining = refineMeasureArea(area, engine.invoke);
+  state.activeDocumentIndex = 1;
+  engine.answer(150);
+  assert.equal(await refining, true);
+  assert.equal(area.measureUnit, 'mm²');
+  assert.equal(area.measureValue, 150 / 4);
+});
+
+test('an engine area for an outline edited meanwhile is not written', async () => {
+  const { area } = openTwoTabs();
+  const engine = deferredEngine();
+  const refining = refineMeasureArea(area, engine.invoke);
+  area.points = square(0, 0, 20);
+  engine.answer(150);
+  assert.equal(await refining, false);
+  assert.equal(area.measureValue, 0);
+});
+
+test('an engine area for a closed document is not written', async () => {
+  const { area, other } = openTwoTabs();
+  const engine = deferredEngine();
+  const refining = refineMeasureArea(area, engine.invoke);
+  state.documents = [other];
+  state.activeDocumentIndex = 0;
+  engine.answer(150);
+  assert.equal(await refining, false);
+  assert.equal(area.measureValue, 0);
+});

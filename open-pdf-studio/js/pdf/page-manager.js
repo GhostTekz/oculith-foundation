@@ -8,6 +8,7 @@ import { hideProperties } from '../ui/panels/properties-panel.js';
 import { saveFileDialog, writeBinaryFile, readBinaryFile, isTauri, unlockFile } from '../core/platform.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import { recordPageStructure } from '../core/undo-manager.js';
+import { withHistoryLock } from '../core/history-lock.js';
 import { PDFDocument } from 'pdf-lib';
 import {
   herschikViewports, leesPdfViewports, viewportsVanPaginas,
@@ -23,6 +24,7 @@ import { onthoudWerkbestand, losgelatenWerkbestanden, ruimWerkbestandenOp } from
 import { nieuwMergeVerslag, REDEN_VOORBEELD, REDEN_GEEN_PAGINAS } from './merge-verslag.js';
 import { spacesOnPages } from '../spaces/model.js';
 import { pageChange, writePageChange, announcePageChange } from './page-changes.js';
+import { documentPathChanged } from '../core/document-lifecycle.js';
 import {
   annotationRefsByPage, remapPageAnnotations, readMarkupPages, readPagesAfterChange,
 } from './page-markup-state.js';
@@ -38,10 +40,10 @@ export function getPageClipboard() {
  * Copy a page to the page clipboard.
  * Extracts the page as a standalone single-page PDF.
  */
-export async function copyPage(pageNum) {
-  if (!getActiveDocument()?.pdfDoc) return;
+export async function copyPage(pageNum, doc = getActiveDocument()) {
+  if (!doc?.pdfDoc) return;
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
 
@@ -60,10 +62,10 @@ export async function copyPage(pageNum) {
 /**
  * Copy multiple pages to the page clipboard.
  */
-export async function copyPages(pageNumbers) {
-  if (!getActiveDocument()?.pdfDoc || !pageNumbers || pageNumbers.length === 0) return;
+export async function copyPages(pageNumbers, doc = getActiveDocument()) {
+  if (!doc?.pdfDoc || !pageNumbers || pageNumbers.length === 0) return;
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
 
@@ -81,17 +83,17 @@ export async function copyPages(pageNumbers) {
 }
 
 /**
- * Cut a page (copy + delete).
+ * Cut a page (copy + delete), both on the tab where the cut started.
  */
 export async function cutPage(pageNum) {
   const activeDoc = getActiveDocument();
   if (!activeDoc?.pdfDoc) return;
   if (activeDoc.pdfDoc.numPages <= 1) return;
 
-  await copyPage(pageNum);
+  await copyPage(pageNum, activeDoc);
   if (pageClipboard) {
     pageClipboard.cut = true;
-    await deletePages([pageNum]);
+    await deletePages([pageNum], activeDoc);
   }
 }
 
@@ -103,28 +105,32 @@ export async function cutPages(pageNumbers) {
   if (!activeDoc?.pdfDoc || !pageNumbers || pageNumbers.length === 0) return;
   if (activeDoc.pdfDoc.numPages <= pageNumbers.length) return;
 
-  await copyPages(pageNumbers);
+  await copyPages(pageNumbers, activeDoc);
   if (pageClipboard) {
     pageClipboard.cut = true;
-    await deletePages(pageNumbers);
+    await deletePages(pageNumbers, activeDoc);
   }
 }
 
 /**
  * Paste the page clipboard after the given page number.
  */
-export async function pastePage(afterPageNum) {
-  if (!getActiveDocument()?.pdfDoc || !pageClipboard) return;
+export function pastePage(afterPageNum) {
+  return withHistoryLock(() => pastePageNu(afterPageNum));
+}
 
-  const cacheKey = getCacheKey();
+async function pastePageNu(afterPageNum) {
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc || !pageClipboard) return;
+
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
-
-  const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   showLoading('Pasting page...');
   try {
@@ -163,16 +169,19 @@ export async function pastePage(afterPageNum) {
 
     // Meetschalen van de ingevoegde pagina's komen uit die pagina's zelf (#400).
     const newViewports = viewportsVanPaginas(copiedPages, insertIdx + 1);
-    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return;
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow }, doc);
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, {
+      pageChange: change, readBefore, readAfter, doc, ...pageDataChange(dataBefore, doc),
+    });
   } finally {
     hideLoading();
   }
 }
 
 // Get the cache key for the current document's bytes
-export function getCacheKey() {
-  const doc = getActiveDocument();
+export function getCacheKey(doc = getActiveDocument()) {
   if (!doc) return null;
   if (doc.filePath) return doc.filePath;
   return `__memory__${doc.id}`;
@@ -226,10 +235,12 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
       // Remember the real file Ctrl+S must write to: the original opened path.
       // An untitled doc has none → it stays untitled (Ctrl+S → Save-As).
       const saveTarget = doc.saveTargetPath || (wasUntitled ? null : oldPath);
+      const pathBefore = doc.filePath || null;
       doc.filePath = renderPath;
       doc._renderTemp = true;
       doc.saveTargetPath = saveTarget;
       doc.isUntitled = !saveTarget; // saved docs keep Ctrl+S → original; untitled → Save-As
+      documentPathChanged(doc, pathBefore, renderPath);
 
       // Delete the previous working/temp file (never a real saved original).
       // A temp file that was opened through the normal open flow (the PDF of
@@ -388,6 +399,20 @@ function remapAnnotations(annotations, pageMapping, refsBefore = null, refsAfter
   return remapPageAnnotations(annotations, pageMapping, refsBefore, refsAfter);
 }
 
+const plainCopy = (value) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value)));
+
+// What else a page change renumbers (reloadFromBytes moves them with the
+// page mapping): the user's page scales and the spaces. Undo and redo put
+// back the state of their moment.
+// Exported for the page operations in other modules (crop, deskew, resize,
+// shift, flatten, page labels, image removal).
+export function pageDataOf(doc) {
+  return { pageScales: plainCopy(doc.pageScales), spaces: plainCopy(doc.spaces) };
+}
+export function pageDataChange(before, doc) {
+  return { oldPageData: before, newPageData: pageDataOf(doc) };
+}
+
 // Build remapped rotations object based on page mapping
 function remapRotations(rotations, pageMapping) {
   const remapped = {};
@@ -409,18 +434,22 @@ function remapRotations(rotations, pageMapping) {
  * @param {number} widthPt - Page width in points
  * @param {number} heightPt - Page height in points
  */
-export async function insertBlankPages(position, refPage, count, widthPt, heightPt) {
-  if (!getActiveDocument()?.pdfDoc) return;
+export function insertBlankPages(position, refPage, count, widthPt, heightPt) {
+  return withHistoryLock(() => insertBlankPagesNu(position, refPage, count, widthPt, heightPt));
+}
 
-  const cacheKey = getCacheKey();
+async function insertBlankPagesNu(position, refPage, count, widthPt, heightPt) {
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return;
+
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
-
-  const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   showLoading('Inserting pages...');
   try {
@@ -464,10 +493,14 @@ export async function insertBlankPages(position, refPage, count, widthPt, height
     // Determine which page to navigate to
     let targetPage = insertIdx + 1; // First inserted page
 
-    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, change, read: readNow });
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return;
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, change, read: readNow }, doc);
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, {
+      pageChange: change, readBefore, readAfter, doc, ...pageDataChange(dataBefore, doc),
+    });
   } finally {
     hideLoading();
   }
@@ -489,8 +522,13 @@ export async function insertBlankPages(position, refPage, count, widthPt, height
  * @returns {Promise<boolean>} true when the pages were inserted; the CAD
  *   import dialog has to know whether it succeeded (#400)
  */
-export async function insertPagesFromFile(refPage, position, sourcePath = null, { stil = false } = {}) {
+export function insertPagesFromFile(refPage, position, sourcePath = null, opties = {}) {
+  return withHistoryLock(() => insertPagesFromFileNu(refPage, position, sourcePath, opties), false);
+}
+
+async function insertPagesFromFileNu(refPage, position, sourcePath = null, { stil = false } = {}) {
   const activeDoc = getActiveDocument();
+  const doc = activeDoc;
   if (!activeDoc?.pdfDoc) return false;
   if (!isTauri()) return false;
 
@@ -511,15 +549,14 @@ export async function insertPagesFromFile(refPage, position, sourcePath = null, 
   }
   if (!filePath) return false;
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return false;
-
-  const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   showLoading('Inserting pages...');
   let inserted = false;
@@ -592,10 +629,14 @@ export async function insertPagesFromFile(refPage, position, sourcePath = null, 
     // De meetschalen van de ingevoegde pagina's komen uit de pagina's zelf;
     // die zijn hier al ingelezen (#400).
     const newViewports = viewportsVanPaginas(copiedPages, insertIdx + 1);
-    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return false;
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow }, doc);
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, {
+      pageChange: change, readBefore, readAfter, doc, ...pageDataChange(dataBefore, doc),
+    });
     inserted = true;
   } catch (err) {
     console.error('Failed to insert pages from file:', err);
@@ -610,8 +651,12 @@ export async function insertPagesFromFile(refPage, position, sourcePath = null, 
  * Delete pages from the current document.
  * @param {number[]} pageNumbers - Page numbers to delete (1-based)
  */
-export async function deletePages(pageNumbers) {
-  const activeDoc = getActiveDocument();
+export function deletePages(pageNumbers, doc = getActiveDocument()) {
+  return withHistoryLock(() => deletePagesNu(pageNumbers, doc));
+}
+
+async function deletePagesNu(pageNumbers, doc) {
+  const activeDoc = doc;
   if (!activeDoc?.pdfDoc) return;
 
   const numPages = activeDoc.pdfDoc.numPages;
@@ -622,15 +667,14 @@ export async function deletePages(pageNumbers) {
     return;
   }
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
-
-  const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   showLoading('Deleting pages...');
   try {
@@ -668,10 +712,14 @@ export async function deletePages(pageNumbers) {
     // Clamp current page
     let targetPage = Math.min(doc.currentPage, newNumPages);
 
-    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, change, read: readNow });
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return;
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, change, read: readNow }, doc);
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, {
+      pageChange: change, readBefore, readAfter, doc, ...pageDataChange(dataBefore, doc),
+    });
   } finally {
     hideLoading();
   }
@@ -707,12 +755,12 @@ export async function extractPages(pageNumbers, deleteFromOriginal) {
     return;
   }
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(activeDoc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
 
   // Ask user where to save
-  const doc = getActiveDocument();
+  const doc = activeDoc;
   const baseName = (doc.fileName || 'document').replace(/\.pdf$/i, '');
   const defaultPath = `${baseName}_extracted.pdf`;
 
@@ -739,7 +787,7 @@ export async function extractPages(pageNumbers, deleteFromOriginal) {
       if (pageNumbers.length >= numPages) {
         showMessage(i18next.t('cannotDeleteAllPagesSource'));
       } else {
-        await deletePages(pageNumbers);
+        await deletePages(pageNumbers, activeDoc);
       }
     }
   } finally {
@@ -752,8 +800,13 @@ export async function extractPages(pageNumbers, deleteFromOriginal) {
  * @param {number[]} newPageOrder - Array where newPageOrder[i] = old page number that becomes page i+1
  *   e.g. [3,1,2,4] means old page 3 becomes new page 1, old page 1 becomes new page 2, etc.
  */
-export async function reorderPages(newPageOrder) {
+export function reorderPages(newPageOrder) {
+  return withHistoryLock(() => reorderPagesNu(newPageOrder));
+}
+
+async function reorderPagesNu(newPageOrder) {
   const activeDoc = getActiveDocument();
+  const doc = activeDoc;
   if (!activeDoc?.pdfDoc) return;
 
   const numPages = activeDoc.pdfDoc.numPages;
@@ -763,15 +816,14 @@ export async function reorderPages(newPageOrder) {
   const unchanged = newPageOrder.every((p, i) => p === i + 1);
   if (unchanged) return;
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
-
-  const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   showLoading('Reordering pages...');
   try {
@@ -812,10 +864,14 @@ export async function reorderPages(newPageOrder) {
     // Alle pagina's zijn gekopieerd; hun meetschalen komen uit de pagina's
     // zelf, genummerd vanaf de eerste (#400).
     const newViewports = viewportsVanPaginas(copiedPages, 1);
-    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return;
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow }, doc);
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, {
+      pageChange: change, readBefore, readAfter, doc, ...pageDataChange(dataBefore, doc),
+    });
   } finally {
     hideLoading();
   }
@@ -828,10 +884,17 @@ export async function reorderPages(newPageOrder) {
  * @param {Object} rotations - Page rotations to restore
  * @param {number} currentPage - Page to navigate to
  */
-export async function restorePageState(bytes, annotations, rotations, currentPage, readPages = null) {
+export async function restorePageState(bytes, annotations, rotations, currentPage, readPages = null,
+  { doc = getActiveDocument(), pageData = null } = {}) {
+  if (!doc || !state.documents.includes(doc)) return;
   showLoading('Restoring...');
   try {
-    await reloadFromBytes(bytes, annotations, rotations, currentPage, readPages ? { readPages } : null);
+    await reloadFromBytes(bytes, annotations, rotations, currentPage, readPages ? { readPages } : null, doc);
+    // The page scales and spaces of that moment, on its page numbers.
+    if (pageData) {
+      doc.pageScales = plainCopy(pageData.pageScales);
+      doc.spaces = plainCopy(pageData.spaces);
+    }
   } finally {
     hideLoading();
   }
@@ -841,8 +904,13 @@ export async function restorePageState(bytes, annotations, rotations, currentPag
  * Replace a page in the current document with pages from another PDF file.
  * @param {number} pageNumber - The page number to replace (1-based)
  */
-export async function replacePages(pageNumber) {
+export function replacePages(pageNumber) {
+  return withHistoryLock(() => replacePagesNu(pageNumber));
+}
+
+async function replacePagesNu(pageNumber) {
   const activeDoc = getActiveDocument();
+  const doc = activeDoc;
   if (!activeDoc?.pdfDoc) return;
   if (!isTauri()) return;
 
@@ -861,15 +929,14 @@ export async function replacePages(pageNumber) {
   }
   if (!filePath) return;
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes) return;
-
-  const doc = getActiveDocument();
   const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   showLoading('Replacing page...');
   try {
@@ -928,10 +995,14 @@ export async function replacePages(pageNumber) {
     // De vervangende pagina's brengen hun eigen meetschalen mee, vanaf de
     // plek van de vervangen pagina (#400).
     const newViewports = viewportsVanPaginas(copiedPages, pageNumber);
-    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return;
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow }, doc);
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, {
+      pageChange: change, readBefore, readAfter, doc, ...pageDataChange(dataBefore, doc),
+    });
   } catch (err) {
     console.error('Failed to replace page:', err);
     showMessage(i18next.t('failedToReplacePage', { error: err.message }));
@@ -949,7 +1020,11 @@ export async function replacePages(pageNumber) {
  *   A skipped file is not an error here, so a caller that has to report (the
  *   MCP bridge) reads this instead of assuming success.
  */
-export async function mergeFiles(filePaths, position) {
+export function mergeFiles(filePaths, position) {
+  return withHistoryLock(() => mergeFilesNu(filePaths, position), nieuwMergeVerslag('busy'));
+}
+
+async function mergeFilesNu(filePaths, position) {
   if (!filePaths || filePaths.length === 0) return nieuwMergeVerslag('no-files');
   if (!isTauri()) return nieuwMergeVerslag('not-desktop');
 
@@ -958,7 +1033,7 @@ export async function mergeFiles(filePaths, position) {
   if (!doc?.pdfDoc) return nieuwMergeVerslag('no-document');
   const verslag = nieuwMergeVerslag();
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   let currentBytes = getCachedPdfBytes(cacheKey) || await getPdfBytes(cacheKey);
   if (!currentBytes && doc.filePath) {
     // Bytes may not be in the JS cache yet (e.g. a just-opened doc) — read
@@ -970,6 +1045,7 @@ export async function mergeFiles(filePaths, position) {
   const readBefore = readMarkupPages(doc);
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   showLoading('Merging PDFs...');
   try {
@@ -1059,10 +1135,14 @@ export async function mergeFiles(filePaths, position) {
 
     // Meetschalen van alle samengevoegde pagina's, op hun nieuwe nummer (#400).
     const newViewports = viewportsVanPaginas(destDoc.getPages().slice(insertIdx, insertIdx + totalInserted), insertIdx + 1);
-    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow });
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return nieuwMergeVerslag('closed');
+    const readAfter = await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, { pageMapping, newViewports, change, read: readNow }, doc);
 
     // Record undo
-    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, { pageChange: change, readBefore, readAfter });
+    recordPageStructure(currentBytes, oldAnnotations, oldRotations, oldPage, newBytes, newAnnotations, newRotations, targetPage, {
+      pageChange: change, readBefore, readAfter, doc, ...pageDataChange(dataBefore, doc),
+    });
     return verslag;
   } finally {
     hideLoading();

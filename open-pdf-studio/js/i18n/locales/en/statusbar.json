@@ -195,5 +195,6 @@
     "activePane": "Active split",
     "openDocuments": "Open documents in this split",
     "moveHint": "Drop on the other split to move the document there"
-  }
+  },
+  "areaHoleFailed": "Could not subtract this hole. The area was kept unchanged."
 }

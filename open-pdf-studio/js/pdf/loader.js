@@ -42,6 +42,7 @@ import { yieldToMain } from '../core/yield-to-main.js';
 import { $RAW } from 'solid-js/store';
 import { noteActivity } from './pdfjs-idle-cleanup.js';
 import { pdfjsWorkerSrc } from './pdfjs-worker-src.js';
+import { ownCatalogAnswers, loadOwnCatalog } from './own-catalog.js';
 import { FileRangeSource, createRangeTransport, onRangeSourceFailed, RANGE_CHUNK_BYTES } from './file-range.js';
 
 
@@ -791,7 +792,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null, { exactS
         edition.pdf.applyWorkspace?.(doc, null);
         return;
       }
-      const pdfLibDoc = await getSharedPdfLibDoc(doc);
+      const pdfLibDoc = await getSharedPdfLibDoc(doc, { keys: Array.isArray(keys) ? keys : null });
       if (isClosed() || !pdfLibDoc) return;
       edition.pdf.applyWorkspace?.(doc, edition.pdf.readWorkspace(pdfLibDoc));
       if (isActive()) {
@@ -1404,6 +1405,8 @@ class PdfLibReads {
     this.unreadable = false; // pdf-lib could not read the file
     this.ready = null;       // Promise<this>
     this.pdfjs = null;       // the PDF.js transport of the document these bytes opened
+    this.ownCatalog = null;  // the file's own catalog entries (own-catalog.js) { bytes, keys }, from the worker
+    this.ownCatalogDoc = null; // Promise<PDFDocument> of ownCatalog.bytes, loaded on first use
   }
 }
 
@@ -1460,6 +1463,7 @@ async function openPdfLibSource(doc, source) {
     try {
       const opened = await session.open();
       catalog = opened.catalog;
+      source.ownCatalog = opened.ownCatalog || null;
       console.log(`[PERF] pdf-lib worker ready: ${(performance.now() - t0).toFixed(0)}ms (parse ${opened.parseMs.toFixed(0)}ms)`);
       perfRecord('load.pdfLibWorker', performance.now() - t0);
       perfRecord('load.pdfLibParseWorker', opened.parseMs);
@@ -1558,7 +1562,7 @@ async function stampPdfLibDoc(doc, data) {
 // The pictures of a page's stamps and image markups (/IT /SquareImage), or
 // null when it has none. A plain Square (an app-made rectangle) carries no
 // picture: a page of those costs nothing here.
-async function pageStampImages(doc, page, viewport, annotations, pageNum, data) {
+async function pageStampImages(doc, page, viewport, annotations, pageNum, data, side = null) {
   const stampAnnots = annotations.filter(a => a.subtype === 'Stamp');
   const hasSquareImages = annotations.some(a => a.subtype === 'Square' && a.it === 'SquareImage');
   if (stampAnnots.length === 0 && !hasSquareImages) return null;
@@ -1568,7 +1572,8 @@ async function pageStampImages(doc, page, viewport, annotations, pageNum, data) 
     const images = data?.images || null;
     map = await extractStampImagesHybrid(
       page, viewport, stampAnnots, pageNum, images ? null : await stampPdfLibDoc(doc, data),
-      { images, onStep: perfRecord, stampSheet: stampSheetFor(doc, page, pageNum, data) },
+      { images, onStep: perfRecord, stampSheet: stampSheetFor(doc, page, pageNum, data),
+        renderPage: side ? () => sideReaderPage(doc, side, pageNum) : null },
     );
   } catch (e) {
     console.warn('[loader] hybrid stamp extraction failed:', e);
@@ -1606,12 +1611,20 @@ function stampSheetFor(doc, page, pageNum, data) {
  * until its worker goes idle). The loader itself needs it only where
  * workers are unavailable and for stamp images; an edition reader that
  * takes a pdf-lib document uses it too.
+ *
+ * `keys`: the caller reads only these catalog entries. It then gets the
+ * small document of the file's own catalog entries when that answers for
+ * them (ownCatalogDoc), and the whole file is not read or parsed here.
  */
-export async function getSharedPdfLibDoc(doc) {
+export async function getSharedPdfLibDoc(doc, { keys = null } = {}) {
   if (!doc) {
     doc = getActiveDocument();
   }
   if (!doc) return null;
+  if (keys) {
+    const own = await ownCatalogDoc(doc, keys);
+    if (own) return own;
+  }
   if (doc._sharedPdfLibDoc) return doc._sharedPdfLibDoc;
   if (doc._sharedPdfLibDocPromise) return doc._sharedPdfLibDocPromise;
   let pdfBytes = doc._pdfLibSource?.bytes || originalBytesCache.get(doc.filePath);
@@ -1640,6 +1653,29 @@ export async function getSharedPdfLibDoc(doc) {
   });
   doc._sharedPdfLibDocPromise = promise;
   return promise;
+}
+
+/**
+ * A reader of only the catalog entries `keys`: the document's own catalog
+ * entries (own-catalog.js) as the worker copied them from the file, when
+ * they answer for those keys and the file is still the version a whole parse
+ * here would read. Otherwise null (the caller parses the whole file).
+ */
+async function ownCatalogDoc(doc, keys) {
+  const source = await pdfLibSource(doc).catch(() => null);
+  if (!source || doc._pdfLibSource !== source || !source.ownCatalog || !source.catalog) return null;
+  if (!ownCatalogAnswers(keys, source.ownCatalog.keys, source.catalog.catalogKeys)) return null;
+  // getSharedPdfLibDoc parses source.bytes, else the cached bytes: after a
+  // save those are a newer version than the one the worker read.
+  if (!source.bytes) {
+    const cached = originalBytesCache.get(doc.filePath);
+    if (!source.reader || doc._rangeSource !== source.reader || (cached && cached !== source.reader.memory)) return null;
+  }
+  if (!source.ownCatalogDoc) {
+    source.ownCatalogDoc = loadOwnCatalog(source.ownCatalog.bytes.slice());
+    source.ownCatalogDoc.catch(() => { if (doc._pdfLibSource === source) source.ownCatalogDoc = null; });
+  }
+  return source.ownCatalogDoc.catch(() => null);
 }
 
 // The first sheet of a document on screen (renderer.js calls notePagePainted
@@ -1693,9 +1729,28 @@ function ownListSource(doc, page) {
   return source;
 }
 
+// What loadAnnotationsForSinglePage returns for a page of a large set whose
+// markups wait for the deferred pdf-lib read (see there).
+const DEFERRED_READ = 'deferred';
+
+// Markups drawn from their colors and the editor's own data (fill opacity,
+// layer, the keys of an outline the file marks as something more): their
+// page waits for the pdf-lib read even on a large set.
+const SHAPE_SUBTYPES = new Set(['Square', 'Circle', 'Line', 'Polygon', 'PolyLine']);
+
+// A page whose markups wait for the pdf-lib read of a large set: it is not
+// ready (the file stays the truth for it in a save) and holds no markups of
+// the file in the model until that read is released and the page is read
+// again (readDeferredPages).
+function awaitingDeferredRead(doc, pageNum) {
+  return !!doc?._pagesNeedingColorUpdate?.has(pageNum) && !doc._annotationPagesReady?.has(pageNum);
+}
+
 // Load annotations for a single page on-demand (called when user navigates to a page)
-// If waitForColors=false, skips color extraction when pdf-lib isn't ready yet
-async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false, epoch = doc?._annotationPagesEpoch || 0) {
+// If waitForColors=false, skips color extraction when pdf-lib isn't ready yet.
+// Returns DEFERRED_READ when the page's markups wait for a large set's
+// pdf-lib read; nothing entered the model then.
+async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false, epoch = doc?._annotationPagesEpoch || 0, side = null) {
   if (!doc || !doc.pdfDoc) return;
   const _sp0 = performance.now();
   // PDF.js keeps what it parses for this: freed after a quiet spell.
@@ -1725,7 +1780,11 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false,
   }
   if (!annotations) {
     const _ga0 = performance.now();
-    annotations = await pageAnnotations(page);
+    // A whole-document read takes the list from its own PDF.js document of
+    // the file (sideReaderAnnotations), so the open document does not keep
+    // what that parse read of the file.
+    if (side) annotations = await sideReaderAnnotations(doc, side, pageNum);
+    if (!annotations) annotations = await pageAnnotations(page);
     perfRecord('load.getAnnotationsPdfjs', performance.now() - _ga0);
   }
   console.log(`[PERF] page ${pageNum}: getAnnotations (${annotations.length} annots): ${(performance.now() - _sp0).toFixed(0)}ms`);
@@ -1736,14 +1795,16 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false,
 
   const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Stamp', 'Caret', 'Link'].includes(a.subtype));
 
+  const hasShapes = annotations.some(a => SHAPE_SUBTYPES.has(a.subtype));
+
   // The pdf-lib reads of this document: colors and stamp images. A document
   // that is not a large set reads them anyway (loadPDF starts them after
   // the first paint): wait for them rather than read the colors twice.
+  // A large set starts them for shapes only: a page of text markups, stamps
+  // or plain hyperlinks waits for the read that follows the open window
+  // (DEFERRED_READ below) instead of parsing the whole file first.
   let source = doc._pdfLibSource?.settled ? doc._pdfLibSource : null;
-  // Large sets have no later metadata pass. FreeText, stamps and the other
-  // editable markups need their original names, styling and custom fields
-  // before this page is marked ready and its models can be saved.
-  if (!source && (waitForColors || needsExtraData)) {
+  if (!source && (waitForColors || hasShapes || (needsExtraData && !doc._deferSharedPdfLib))) {
     await afterFirstPaint(doc);
     if (!state.documents.includes(doc)) return;
     const _pl0 = performance.now();
@@ -1761,11 +1822,21 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false,
       data = await pageMarkupData(doc, source, pageNum);
       console.log(`[PERF] page ${pageNum}: colorExtraction: ${(performance.now() - _ce0).toFixed(0)}ms`);
       await yieldToMain();
+    } else if (doc._deferSharedPdfLib) {
+      // A large set before its pdf-lib read. Without that read, names,
+      // styling, custom fields and the editor's own hyperlinks would be
+      // missing from the models, and a save would write them back that way.
+      // The page stays unread instead (ensureAnnotationsForPage) and is read
+      // again once the read is released.
+      doc._pagesNeedingColorUpdate.add(pageNum);
+      return DEFERRED_READ;
     } else {
       // On-demand path: pdf-lib not ready, skip colors for now
       doc._pagesNeedingColorUpdate.add(pageNum);
     }
   }
+  // Read with the page's data: no longer waiting for a deferred read.
+  if (data) doc._pagesNeedingColorUpdate.delete(pageNum);
   const annotColorMap = data?.colors || null;
 
   // What follows holds the main thread in long pieces (a stamp render, the
@@ -1774,7 +1845,7 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false,
   await untilFirstPaint(doc, 'load.waitPaintConvert');
   if (!state.documents.includes(doc)) return;
 
-  const stampImageMap = await pageStampImages(doc, page, viewport, annotations, pageNum, data);
+  const stampImageMap = await pageStampImages(doc, page, viewport, annotations, pageNum, data, side);
   // The pages changed meanwhile: these markups belong to the old file.
   if (epoch !== (doc._annotationPagesEpoch || 0)) return;
 
@@ -1799,11 +1870,16 @@ function refineLoadedAreas(models) {
 }
 
 // Ensure annotations are loaded for a given page (on-demand, called from renderer)
-export async function ensureAnnotationsForPage(pageNum, doc) {
+// On a large set whose pdf-lib read is still deferred, only the renderer and
+// the open window pass `mayDefer`: their page may wait, unread, for that read.
+// Every other caller reads the page to change or inspect it, and must see it
+// complete (crash recovery, search, plug-ins): it releases the read first.
+export async function ensureAnnotationsForPage(pageNum, doc, { mayDefer = false, side = null } = {}) {
   if (!doc) {
     doc = getActiveDocument();
   }
   if (!doc) return;
+  if (doc._deferSharedPdfLib && !mayDefer) releaseSharedPdfLib(doc);
   // A page change (cancelAnnotationLoading) during this load gives the page
   // number to another page: then this load neither adds its markups nor
   // marks that page as read.
@@ -1815,15 +1891,21 @@ export async function ensureAnnotationsForPage(pageNum, doc) {
   // it): this page is read anew.
   const lopend = annotationPageLoads.get(doc)?.get(pageNum);
   if (lopend?.epoch === epoch) return lopend.wait;
-  if (doc._loadedAnnotationPages.has(pageNum)) {
+  // A page whose read waited for a large set's pdf-lib read is read again
+  // once that read was released; until then it stays unread.
+  if (doc._loadedAnnotationPages.has(pageNum)
+      && (doc._deferSharedPdfLib || !awaitingDeferredRead(doc, pageNum))) {
     return;
   }
   doc._loadedAnnotationPages.add(pageNum);
   const _ea0 = performance.now();
   console.log(`[PERF] ensureAnnotationsForPage(${pageNum}) START`);
   const laden = (async () => {
-    await loadAnnotationsForSinglePage(doc, pageNum, false, epoch);
+    const result = await loadAnnotationsForSinglePage(doc, pageNum, false, epoch, side);
     if (epoch !== (doc._annotationPagesEpoch || 0)) return;
+    // No markups entered the model: the page is not ready, and a save keeps
+    // its markups as the file has them (readDeferredPages reads it again).
+    if (result === DEFERRED_READ) return;
     // Pas nu staan de annotaties echt in het model; eerder mag de saver
     // deze pagina niet als 'geladen' behandelen (dataverlies-wachter).
     if (doc._annotationPagesReady) doc._annotationPagesReady.add(pageNum);
@@ -1917,19 +1999,83 @@ export function annotationSheetsLoaded(doc = getActiveDocument()) {
  * whole-drawing work). `onProgress({ loaded, total })` after each sheet.
  */
 export async function ensureAllAnnotations(doc = getActiveDocument(), { onProgress } = {}) {
-  for (let p = 1; ; p++) {
-    if (!state.documents.includes(doc) || !doc.pdfDoc) return;
-    if (p > doc.pdfDoc.numPages) break;
-    if (doc._annotationPagesReady?.has(p)) continue;
-    const epoch = doc._annotationPagesEpoch || 0;
-    await ensureAnnotationsForPage(p, doc);
-    // The pages changed during this read: the pages read before stay read
-    // on their new numbers; go over the new pages again for the rest.
-    if (epoch !== (doc._annotationPagesEpoch || 0)) { p = 0; continue; }
-    onProgress?.(annotationSheetsLoaded(doc));
+  // Every sheet needs the pdf-lib read of a large set now.
+  releaseSharedPdfLib(doc);
+  const side = acquireSideReader(doc);
+  try {
+    for (let p = 1; ; p++) {
+      if (!state.documents.includes(doc) || !doc.pdfDoc) return;
+      if (p > doc.pdfDoc.numPages) break;
+      if (doc._annotationPagesReady?.has(p)) continue;
+      const epoch = doc._annotationPagesEpoch || 0;
+      await ensureAnnotationsForPage(p, doc, { side });
+      // The pages changed during this read: the pages read before stay read
+      // on their new numbers; go over the new pages again for the rest.
+      if (epoch !== (doc._annotationPagesEpoch || 0)) { p = 0; continue; }
+      onProgress?.(annotationSheetsLoaded(doc));
+    }
+  } finally {
+    releaseSideReader(side);
   }
   const { updateAnnotationsList } = await import('../ui/panels/annotations-list.js');
   if (getActiveDocument() === doc) updateAnnotationsList();
+}
+
+// ─── The side reader of a whole-document read ───────────────────────────
+// PDF.js keeps every part of the file it read for the open document until
+// that document closes. Reading every sheet's annotation list there (link
+// destinations, form fields, appearance streams) leaves hundreds of
+// megabytes of a large drawing set in the window's process for good. A
+// whole-document read of a large set opened by range therefore asks a PDF.js
+// document of its own over the same range source (openPageReaders): the
+// same file, so the same list, and what it read goes when it is closed, once
+// the last whole-document read using it is done.
+
+const sideReaders = new WeakMap(); // raw doc -> { pdfDoc, users, reader }
+
+function acquireSideReader(doc) {
+  if (!doc?._largeOpen || !doc._rangeSource || !doc.pdfDoc) return null;
+  const key = rawDoc(doc);
+  let side = sideReaders.get(key);
+  if (!side || side.pdfDoc !== doc.pdfDoc) {
+    side = { key, pdfDoc: doc.pdfDoc, users: 0, reader: null };
+    sideReaders.set(key, side);
+  }
+  side.users++;
+  return side;
+}
+
+function releaseSideReader(side) {
+  if (!side || --side.users > 0) return;
+  if (sideReaders.get(side.key) === side) sideReaders.delete(side.key);
+  const reader = side.reader;
+  side.reader = null;
+  void reader?.then((r) => closePageReaders(r ? [r] : []), () => {});
+}
+
+// Page `pageNum` of the side reader, or null (no reader, the document
+// changed, a failed read): the caller then uses the open document's page.
+async function sideReaderPage(doc, side, pageNum) {
+  if (side.users <= 0 || doc.pdfDoc !== side.pdfDoc) return null;
+  if (!side.reader) {
+    side.reader = openPageReaders(doc, 1).then((r) => r[0] || null, () => null);
+  }
+  const reader = await side.reader;
+  if (!reader || side.users <= 0 || doc.pdfDoc !== side.pdfDoc) return null;
+  return reader.getPage(pageNum).catch(() => null);
+}
+
+// The annotation list of `pageNum` from the side reader, or null.
+async function sideReaderAnnotations(doc, side, pageNum) {
+  const page = await sideReaderPage(doc, side, pageNum);
+  if (!page) return null;
+  try {
+    return await page.getAnnotations();
+  } catch {
+    return null;
+  } finally {
+    page.cleanup?.();
+  }
 }
 
 // How long the neighbours of a large set wait for the sheet on screen.
@@ -1942,6 +2088,20 @@ function untilOrAfter(promise, ms) {
     Promise.resolve(promise).catch(() => {}),
     new Promise((resolve) => { timer = setTimeout(resolve, ms); }),
   ]).finally(() => clearTimeout(timer));
+}
+
+// Read the pages of a large set whose markups waited for its pdf-lib read
+// (DEFERRED_READ), now that it was released: each with its names, styling
+// and custom fields, before it is marked ready. A page change clears the
+// list (cancelAnnotationLoading); the pages left are read on their own.
+async function readDeferredPages(doc) {
+  const epoch = doc._annotationPagesEpoch || 0;
+  const pages = [...doc._pagesNeedingColorUpdate].sort((a, b) => a - b);
+  for (const pageNum of pages) {
+    if (!state.documents.includes(doc) || !doc.pdfDoc || epoch !== (doc._annotationPagesEpoch || 0)) return;
+    if (!awaitingDeferredRead(doc, pageNum)) continue;
+    await ensureAnnotationsForPage(pageNum, doc);
+  }
 }
 
 // Load existing annotations from PDF
@@ -1966,11 +2126,13 @@ export async function loadExistingAnnotations(doc) {
         perfRecord('load.neighbourWait', performance.now() - _nw0);
         if (!state.documents.includes(doc)) return;
       }
-      await ensureAnnotationsForPage(pageNum, doc);
+      await ensureAnnotationsForPage(pageNum, doc, { mayDefer: true });
     }
     // Catalog fields (scale viewports, spaces, columns) follow the open
     // sheet, once, instead of starting a full-file parse before first paint.
     releaseSharedPdfLib(doc);
+    // The pages whose markups waited for that read are read now, with it.
+    await readDeferredPages(doc);
     return;
   }
 

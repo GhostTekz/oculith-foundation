@@ -18,6 +18,15 @@ pub struct RenderResult {
 // proces toe (PdfiumLibraryBindingsAlreadyInitialized) — alles loopt dus via
 // deze ene instantie.
 static PDFIUM: OnceLock<Pdfium> = OnceLock::new();
+/// The PDFium library file the worker bound (None: found on the system
+/// search path), so text.rs can reach the same, initialised library.
+static PDFIUM_FILE: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+
+/// The library file PDFium was bound from (binds it first if needed).
+pub fn pdfium_library_file() -> Result<Option<std::path::PathBuf>> {
+    pdfium()?;
+    Ok(PDFIUM_FILE.get().cloned().flatten())
+}
 
 /// Directories under `<exe_dir>/../lib/` that hold a libpdfium.so: the
 /// resource folder of a Linux bundle (`usr/lib/<product name>/`).
@@ -58,17 +67,21 @@ fn pdfium() -> Result<&'static Pdfium> {
             dirs.push(std::path::PathBuf::from(d));
         }
         dirs.extend(linux_resource_dirs(&exe_dir));
-        let bound = dirs.iter().find_map(|d| {
-            Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(d)).ok()
-        });
+        let bind_at = |dir: &std::path::Path| {
+            let file = Pdfium::pdfium_platform_library_name_at_path(dir);
+            Pdfium::bind_to_library(&file).map(|b| (b, Some(std::path::PathBuf::from(file))))
+        };
+        let bound = dirs.iter().find_map(|d| bind_at(d).ok());
         let bindings = match bound {
             Some(b) => Ok(b),
-            None => Pdfium::bind_to_system_library()
-                .or_else(|_| Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(&exe_dir)))
-                .or_else(|_| Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(&res_dir)))
-                .or_else(|_| Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))),
+            None => Pdfium::bind_to_system_library().map(|b| (b, None))
+                .or_else(|_| bind_at(&exe_dir))
+                .or_else(|_| bind_at(&res_dir))
+                .or_else(|_| bind_at(std::path::Path::new("./"))),
         }
         .context("PDFium library not found (OCUDRAW_PDFIUM_DIR, ../lib/<app>, system, exe-dir, ../Resources, or ./)")?;
+        let (bindings, file) = bindings;
+        let _ = PDFIUM_FILE.set(file);
         let _ = PDFIUM.set(Pdfium::new(bindings));
     }
     Ok(PDFIUM.get().expect("PDFIUM set above"))
@@ -115,6 +128,7 @@ const DOC_CACHE_CAP: usize = 2;
 
 pub struct Renderer {
     cache: Vec<Box<CachedDoc>>,
+    text: crate::text::TextReader,
 }
 
 impl Renderer {
@@ -122,7 +136,7 @@ impl Renderer {
         // Bind PDFium meteen zodat een ontbrekende DLL bij worker-start faalt
         // (Ready wordt dan nooit gemeld) i.p.v. pas bij de eerste render.
         pdfium()?;
-        Ok(Self { cache: Vec::new() })
+        Ok(Self { cache: Vec::new(), text: crate::text::TextReader::default() })
     }
 
     /// Cache-lookup met verversing: hit alleen als pad + mtime + lengte +
@@ -193,6 +207,13 @@ impl Renderer {
         Ok(self.cache.len() - 1)
     }
 
+    /// A page's text items as JSON (text.rs). The page is opened for this
+    /// read alone and closed after it, so a whole-set read leaves no parse
+    /// state behind; the render's documents and open page are left as they are.
+    pub fn page_text(&mut self, path: &str, page_index: u32) -> Result<Vec<u8>> {
+        self.text.page_text_json(path, page_index)
+    }
+
     /// Sluit alle open pagina-handles (de dure parse-state); documenten
     /// blijven. De volgende render op die pagina betaalt eenmalig de
     /// her-parse. Aangeroepen bij pool-inactiviteit om het werkgeheugen van
@@ -201,6 +222,7 @@ impl Renderer {
         for e in self.cache.iter_mut() {
             e.close_page();
         }
+        self.text.close();
     }
 
     /// Do not rely on mtime/length after an atomic rewrite: either can match
@@ -208,6 +230,7 @@ impl Renderer {
     /// closes the worker's handle on the file.
     pub fn invalidate_path(&mut self, path: &str) {
         self.cache.retain(|entry| entry.path != path);
+        self.text.forget(path);
     }
 
     /// Open (of hergebruik) de pagina-handle. FPDF_LoadPage parset de volledige
@@ -252,6 +275,7 @@ impl Renderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         path: &str,
@@ -345,27 +369,12 @@ impl Renderer {
     /// intrinsieke /Rotate van de pagina). De matrix-API van PDFium werkt
     /// in RUWE paginaruimte, dus voor /Rotate-pagina's wordt de rotatie in
     /// de matrix meegebakken.
-    pub fn render_region(
-        &mut self,
-        path: &str,
-        page_index: u32,
-        scale: f32,
-        rotation: i32,
-        region_x_pt: f32,
-        region_y_pt: f32,
-        region_w_pt: f32,
-        region_h_pt: f32,
-        visibility: &[LayerVisibility],
-        annot_appearance: Option<AnnotShow>,
-        out: &mut [u8],
-    ) -> Result<RenderResult> {
-        self.render_region_tile(path, page_index, scale, rotation,
-            region_x_pt, region_y_pt, region_w_pt, region_h_pt,
-            visibility, annot_appearance, out, None)
-    }
-
-    /// A bounded transfer tile on the original region's pixel grid. Keeping
-    /// the original point origin avoids rounding a new origin at high zoom.
+    ///
+    /// With `pixel_clip` (`[x, y, w, h]` in pixels of that full region) only
+    /// that rectangle is rendered, on the original region's pixel grid:
+    /// keeping the original point origin avoids rounding a new origin at
+    /// high zoom, so stitched tiles equal one whole-region render.
+    #[allow(clippy::too_many_arguments)]
     pub fn render_region_tile(
         &mut self,
         path: &str,
@@ -533,17 +542,6 @@ impl<'a> AnnotShow<'a> {
     }
 }
 
-/// Laat alleen de annotaties met een /NM uit `names`, of op een positie uit
-/// `indices` in de /Annots-rij (FPDFPage_GetAnnot telt die rij letterlijk),
-/// met hun eigen uiterlijk (/AP) meerasteren; alle andere niet-widget-
-/// annotaties krijgen de Hidden-vlag. De app tekent die zelf (bewerkt, eigen
-/// markeringen, links). Widgets (formuliervelden) blijven zoals ze waren: die
-/// tekent PDFium via de formulierlaag. Dezelfde keuze op dezelfde open pagina
-/// wordt niet opnieuw gelopen: een tegelreeks zou anders elk merk opnieuw
-/// aanraken. Een andere keuze, of een nieuwe pagina-handle, zet de vlaggen
-/// opnieuw. Zonder annotaties (`render_annotations(false)`) tellen ze niet.
-/// Een ongeldige plek in de rij wordt overgeslagen, de rest telt gewoon door.
-
 /// Zelfde keuze in een andere volgorde is dezelfde pass.
 fn annot_signature(page_index: u32, names: &[String], indices: &[u32]) -> (u32, u64) {
     let mut names: Vec<&str> = names.iter().map(String::as_str).collect();
@@ -571,6 +569,17 @@ fn annot_signature(page_index: u32, names: &[String], indices: &[u32]) -> (u32, 
     }
     (page_index, hash)
 }
+
+/// Laat alleen de annotaties met een /NM uit `names`, of op een positie uit
+/// `indices` in de /Annots-rij (FPDFPage_GetAnnot telt die rij letterlijk),
+/// met hun eigen uiterlijk (/AP) meerasteren; alle andere niet-widget-
+/// annotaties krijgen de Hidden-vlag. De app tekent die zelf (bewerkt, eigen
+/// markeringen, links). Widgets (formuliervelden) blijven zoals ze waren: die
+/// tekent PDFium via de formulierlaag. Dezelfde keuze op dezelfde open pagina
+/// wordt niet opnieuw gelopen: een tegelreeks zou anders elk merk opnieuw
+/// aanraken. Een andere keuze, of een nieuwe pagina-handle, zet de vlaggen
+/// opnieuw. Zonder annotaties (`render_annotations(false)`) tellen ze niet.
+/// Een ongeldige plek in de rij wordt overgeslagen, de rest telt gewoon door.
 pub fn apply_annotation_appearance(page: &PdfPage, names: &[String], indices: &[u32]) -> Result<()> {
     let names: std::collections::HashSet<&str> = names.iter().map(String::as_str).collect();
     let indices: std::collections::HashSet<u32> = indices.iter().copied().collect();

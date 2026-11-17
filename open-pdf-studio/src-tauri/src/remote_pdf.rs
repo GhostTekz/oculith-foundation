@@ -11,9 +11,60 @@ use url::Url;
 const MAX_REMOTE_PDF_BYTES: u64 = 256 * 1024 * 1024;
 static DOWNLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-pub async fn download_pdf_from_url(raw_url: &str) -> Result<String, String> {
-    let path = download_with_limit(raw_url, MAX_REMOTE_PDF_BYTES, &std::env::temp_dir()).await?;
+/// Downloads live in a private folder of the app cache, not the shared temp folder.
+const DOWNLOAD_SUBDIR: &str = "downloads";
+const DOWNLOAD_PREFIX: &str = "oculith_url_";
+/// A download older than this is removed at startup; it was opened from a
+/// URL and is fetched again from there. Long enough for a tab still open in
+/// another running instance.
+pub const DOWNLOAD_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+pub fn download_dir(cache_root: &Path) -> PathBuf {
+    cache_root.join(DOWNLOAD_SUBDIR)
+}
+
+pub async fn download_pdf_from_url(raw_url: &str, cache_root: &Path) -> Result<String, String> {
+    let dir = download_dir(cache_root);
+    create_private_dir(&dir)?;
+    let path = download_with_limit(raw_url, MAX_REMOTE_PDF_BYTES, &dir).await?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// The download folder, readable by the user only (0700 on Unix).
+fn create_private_dir(dir: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
+            .map_err(|e| format!("Failed to create download folder: {e}"))?;
+        // An existing folder keeps its mode otherwise.
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to protect download folder: {e}"))?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create download folder: {e}"))?;
+    Ok(())
+}
+
+/// Remove downloads older than `older_than` from `dir`. Only the app's own
+/// download files; errors are ignored.
+pub fn sweep_downloads(dir: &Path, older_than: Duration) {
+    let Ok(items) = std::fs::read_dir(dir) else { return };
+    let now = SystemTime::now();
+    for item in items.flatten() {
+        let name = item.file_name();
+        if !name.to_str().is_some_and(|n| n.starts_with(DOWNLOAD_PREFIX)) {
+            continue;
+        }
+        let Ok(meta) = std::fs::symlink_metadata(item.path()) else { continue };
+        let old = meta.modified().ok().and_then(|t| now.duration_since(t).ok()).is_some_and(|d| d > older_than);
+        if meta.is_file() && old {
+            let _ = std::fs::remove_file(item.path());
+        }
+    }
 }
 
 fn parse_remote_url(raw_url: &str) -> Result<Url, String> {
@@ -49,7 +100,7 @@ fn temp_path(dir: &Path, filename: &str) -> PathBuf {
         .unwrap_or(0);
     let sequence = DOWNLOAD_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     dir.join(format!(
-        "oculith_url_{}_{}_{}_{}",
+        "{DOWNLOAD_PREFIX}{}_{}_{}_{}",
         std::process::id(),
         timestamp,
         sequence,
@@ -94,9 +145,11 @@ async fn download_with_limit(raw_url: &str, max_bytes: u64, dir: &Path) -> Resul
     }
 
     let path = temp_path(dir, &safe_pdf_filename(response.url()));
-    let mut file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
         .open(&path)
         .await
         .map_err(|e| format!("Failed to create temp file: {e}"))?;
@@ -232,6 +285,43 @@ mod tests {
         let error = download_with_limit(&url, 16, &dir).await.unwrap_err();
         assert!(error.contains("Failed to read response"), "{error}");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn downloads_into_a_private_cache_folder() {
+        let url = serve_once(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n%PDF-123").await;
+        let cache = test_dir();
+        let path = PathBuf::from(download_pdf_from_url(&url, &cache).await.unwrap());
+        assert_eq!(path.parent().unwrap(), download_dir(&cache));
+        assert_eq!(std::fs::read(&path).unwrap(), b"%PDF-123");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&download_dir(&cache)), 0o700);
+            assert_eq!(mode(&path), 0o600);
+        }
+        std::fs::remove_dir_all(cache).unwrap();
+    }
+
+    #[test]
+    fn sweep_removes_only_old_downloads() {
+        let dir = test_dir();
+        let old = dir.join("oculith_url_1_2_3_old.pdf");
+        let fresh = dir.join("oculith_url_1_2_4_fresh.pdf");
+        let other = dir.join("someone-else.pdf");
+        for p in [&old, &fresh, &other] {
+            std::fs::write(p, b"%PDF").unwrap();
+        }
+        let long_ago = SystemTime::now() - Duration::from_secs(30 * 24 * 60 * 60);
+        for p in [&old, &other] {
+            std::fs::OpenOptions::new().write(true).open(p).unwrap().set_modified(long_ago).unwrap();
+        }
+        sweep_downloads(&dir, DOWNLOAD_MAX_AGE);
+        assert!(!old.exists());
+        assert!(fresh.exists());
+        assert!(other.exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

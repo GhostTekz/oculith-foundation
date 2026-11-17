@@ -30,8 +30,13 @@ export async function suggestDetailsForSheet(sheet) {
   }
 }
 
-/** Read current registered pages in groups so a multi-page PDF is loaded once. */
-export async function suggestDetailsForSheets(sheets) {
+/**
+ * Read current registered pages in groups so a multi-page PDF is loaded
+ * once: `read(page)` gets each verified PDF.js page. Returns a Map of sheet
+ * id to the result, or `{ error }` for a sheet whose PDF is missing,
+ * changed, unverified or short of its page.
+ */
+export async function readRegisteredPages(sheets, read) {
   const groups = new Map();
   for (const sheet of sheets) {
     if (!groups.has(sheet.filePath)) groups.set(sheet.filePath, []);
@@ -70,11 +75,7 @@ export async function suggestDetailsForSheets(sheets) {
           results.set(sheet.id, { error: `Page ${sheet.page} is no longer in the registered PDF.` });
           continue;
         }
-        if (!byPage.has(sheet.page)) {
-          const page = await document.getPage(sheet.page);
-          const content = await page.getTextContent();
-          byPage.set(sheet.page, suggestSheetDetails(content.items, modelViewport(page)));
-        }
+        if (!byPage.has(sheet.page)) byPage.set(sheet.page, await read(await document.getPage(sheet.page)));
         results.set(sheet.id, byPage.get(sheet.page));
       }
     } catch (error) {
@@ -82,4 +83,10 @@ export async function suggestDetailsForSheets(sheets) {
     } finally { await task?.destroy(); }
   }
   return results;
+}
+
+/** Title block suggestions for the current registered pages. */
+export function suggestDetailsForSheets(sheets) {
+  return readRegisteredPages(sheets, async (page) =>
+    suggestSheetDetails((await page.getTextContent()).items, modelViewport(page)));
 }

@@ -58,6 +58,14 @@ function stubBron(bestand) {
 
 const pad = (url) => fileURLToPath(url).replace(/\\/g, '/');
 
+// Een test die een van deze modules echt nodig heeft (bv. de echte lader
+// naast de echte saver) geeft haar pad mee:
+// register('./saver-test-hooks.mjs', import.meta.url, { data: { real: ['js/pdf/loader.js'] } }).
+const REAL = new Set();
+export function initialize(data) {
+  for (const p of data?.real || []) REAL.add(p);
+}
+
 export async function resolve(specifier, context, nextResolve) {
   // De browserbouw van pdf.js vraagt DOMMatrix; onder node de legacy-bouw.
   if (specifier === 'pdfjs-dist') return nextResolve('pdfjs-dist/legacy/build/pdf.mjs', context);
@@ -67,7 +75,7 @@ export async function resolve(specifier, context, nextResolve) {
 export async function load(url, context, nextLoad) {
   if (url.startsWith('file:')) {
     const p = pad(url);
-    if (p.endsWith('.jsx') || STUBS.some((s) => p.endsWith(`/${s}`))) {
+    if (p.endsWith('.jsx') || STUBS.some((s) => !REAL.has(s) && p.endsWith(`/${s}`))) {
       return { format: 'module', shortCircuit: true, source: stubBron(fileURLToPath(url)) };
     }
   }

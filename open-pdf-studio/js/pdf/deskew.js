@@ -10,9 +10,10 @@
 // rotation transform. This preserves vector content losslessly (text stays
 // real text) and works identically for a scanned page (content is just one
 // big image either way).
-import { getActiveDocument } from "../core/state.js";
+import { state, getActiveDocument } from "../core/state.js";
 import { getPdfBytes } from "./loader.js";
-import { getCacheKey, reloadFromBytes } from "./page-manager.js";
+import { getCacheKey, reloadFromBytes, pageDataOf, pageDataChange } from "./page-manager.js";
+import { withHistoryLock } from "../core/history-lock.js";
 import { parsePageRange } from "./exporter.js";
 import { recordPageStructure } from "../core/undo-manager.js";
 import { showLoading, hideLoading } from "../ui/chrome/dialogs.js";
@@ -154,20 +155,25 @@ function straightenOnePage(pdfDoc, pages, pageIndex, angleDeg) {
  * @param {string} rangeStr - only used when applyTo is 'range'
  * @returns {Promise<{straightened: number, angleDeg: number}>}
  */
-export async function straightenPages(x1, y1, x2, y2, applyTo, rangeStr) {
+export function straightenPages(x1, y1, x2, y2, applyTo, rangeStr) {
+  return withHistoryLock(() => straightenPagesNu(x1, y1, x2, y2, applyTo, rangeStr), { straightened: 0, angleDeg: 0 });
+}
+
+async function straightenPagesNu(x1, y1, x2, y2, applyTo, rangeStr) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return { straightened: 0, angleDeg: 0 };
 
   const angleDeg = computeStraightenAngle(x1, y1, x2, y2);
   if (!(Math.abs(angleDeg) > 0.01)) return { straightened: 0, angleDeg };
 
-  const cacheKey = getCacheKey();
+  const cacheKey = getCacheKey(doc);
   const currentBytes = await getPdfBytes(cacheKey);
   if (!currentBytes) return { straightened: 0, angleDeg };
 
   const oldAnnotations = doc.annotations.map((a) => cloneAnnotation(a));
   const oldRotations = { ...doc.pageRotations };
   const oldPage = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
 
   const totalPages = doc.pdfDoc.numPages;
   let pageNumbers;
@@ -212,7 +218,9 @@ export async function straightenPages(x1, y1, x2, y2, applyTo, rangeStr) {
     const newRotations = { ...oldRotations };
     const targetPage = doc.currentPage;
 
-    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage);
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return { straightened: 0, angleDeg };
+    await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage, null, doc);
     recordPageStructure(
       currentBytes,
       oldAnnotations,
@@ -221,7 +229,8 @@ export async function straightenPages(x1, y1, x2, y2, applyTo, rangeStr) {
       newBytes,
       newAnnotations,
       newRotations,
-      targetPage
+      targetPage,
+      { doc, ...pageDataChange(dataBefore, doc) }
     );
 
     return { straightened: targetPages.size, angleDeg };

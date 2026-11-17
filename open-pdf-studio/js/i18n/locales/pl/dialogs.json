@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Sprawdzanie podpisów cyfrowych…",
     "barLabel": "Podpisy cyfrowe",
+    "unsignedFieldsSummary_one": "Niepodpisane pola podpisu: {{count}}",
+    "unsignedFieldsSummary_other": "Niepodpisane pola podpisu: {{count}}",
+    "showUnsignedFields": "Pokaż pola",
+    "hideUnsignedFields": "Ukryj pola",
     "listError": "Nie udało się sprawdzić podpisów: {{detail}}",
     "documentTimestamp": "Znacznik czasu dokumentu",
     "documentTimestampBy": "Znacznik czasu dokumentu ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Luka w zakresie bajtów zawiera nie tylko wartość podpisu.",
       "subfilter-niet-ondersteund": "Ten format podpisu nie jest obsługiwany.",
       "zoekbudget-op": "Wyszukiwanie łańcucha certyfikatów zatrzymało się na limicie; łańcuch może mimo to istnieć.",
+      "hashbudget-op": "Osiągnięto limit dokumentu dla sprawdzania podpisanych bajtów; ten podpis nie został sprawdzony.",
       "gat-wijkt-af-van-contents": "Wartość podpisu w pliku różni się od wartości w słowniku podpisu.",
       "interne-fout": "Podczas sprawdzania tego podpisu wystąpił błąd wewnętrzny.",
       "unknown": "Sprawdzanie zgłosiło dodatkowy problem."

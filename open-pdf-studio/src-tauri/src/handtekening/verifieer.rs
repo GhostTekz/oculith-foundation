@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::algoritme::{controleer_handtekening, gebruikte_hash, pkcs1_digest, Hashalg, WaardeFout};
+use super::algoritme::{controleer_handtekening, gebruikte_hash, pkcs1_digest, Hashalg, Hashsessie, WaardeFout};
 use super::bytebereik::Bytebereik;
 use super::certificaat::common_name;
 use super::cms_lees::{
@@ -414,7 +414,7 @@ const MAX_CONTROLES_PER_DOCUMENT: usize = 2000;
 
 /// Alle handtekeningen van een document, elk met integriteit, dekking en vertrouwen.
 pub fn verifieer_document(bytes: &[u8], archief: &Vertrouwensarchief, nu_unix: i64) -> Result<Vec<HandtekeningInfo>, LijstFout> {
-    verifieer_document_binnen(bytes, archief, nu_unix, MAX_CONTROLES_PER_DOCUMENT)
+    verifieer_document_binnen(bytes, archief, nu_unix, MAX_CONTROLES_PER_DOCUMENT, None)
 }
 
 /// Als [`verifieer_document`], met een eigen budget aan certificaatcontroles.
@@ -423,17 +423,39 @@ fn verifieer_document_binnen(
     archief: &Vertrouwensarchief,
     nu_unix: i64,
     mut budget: usize,
+    hashbudget: Option<u64>,
 ) -> Result<Vec<HandtekeningInfo>, LijstFout> {
     let (velden, afgekapt) = geordende_velden(bytes)?;
+    // Velden met hetzelfde bytebereik delen hun hash; samen blijven ze binnen
+    // een veelvoud van de bestandsgrootte.
+    let hashsessie = match hashbudget {
+        Some(b) => Hashsessie::met_budget(bytes, b),
+        None => Hashsessie::begin(bytes),
+    };
     Ok(velden
         .into_iter()
         .enumerate()
         .map(|(nummer, (veld, _))| {
             let mut info = verifieer_veld(bytes, nummer, veld, archief, nu_unix, &mut budget);
+            if hashsessie.budget_op() {
+                hashbudget_op(&mut info);
+            }
             info.lijst_afgekapt = afgekapt;
             info
         })
         .collect())
+}
+
+/// Het hashbudget van het document raakte op tijdens dit veld: de uitkomst
+/// berust niet op een volledige controle en telt als niet te controleren.
+fn hashbudget_op(info: &mut HandtekeningInfo) {
+    let integriteit = Integriteit::NietTeControleren { reden: OnleesbaarReden::BytebereikOngeldig };
+    info.integriteit = Some(integriteit);
+    info.vertrouwen = Vertrouwen::NietBepaald;
+    voeg_signaal_toe(&mut info.signalen, signaal::HASHBUDGET_OP);
+    let getoond = leid_af(integriteit, Vertrouwen::NietBepaald, info.dekt_hele_document);
+    info.status = getoond.status;
+    info.daarna_gewijzigd = getoond.daarna_gewijzigd;
 }
 
 #[cfg(test)]
@@ -1577,7 +1599,7 @@ mod tests {
         let heeft = |h: &HandtekeningInfo| h.signalen.iter().any(|s| s == signaal::ZOEKBUDGET_OP);
         let gewoon = verifieer_document(&bytes, &Vertrouwensarchief::leeg(), 1_789_000_000).unwrap();
         assert!(!gewoon.iter().any(heeft));
-        let krap = verifieer_document_binnen(&bytes, &Vertrouwensarchief::leeg(), 1_789_000_000, 0).unwrap();
+        let krap = verifieer_document_binnen(&bytes, &Vertrouwensarchief::leeg(), 1_789_000_000, 0, None).unwrap();
         let intact: Vec<&HandtekeningInfo> = krap.iter().filter(|h| h.integriteit == Some(Integriteit::Intact)).collect();
         assert!(intact.len() >= 2);
         assert!(intact.iter().any(|h| heeft(h)), "{:?}", intact.iter().map(|h| &h.signalen).collect::<Vec<_>>());
@@ -1700,6 +1722,18 @@ mod tests {
             pdf[p..p + 34].copy_from_slice(bereik.as_bytes());
         }
         pdf
+    }
+
+    #[test]
+    fn hashbudget_op_maakt_de_handtekening_niet_te_controleren() {
+        let pdf = pdf_met_cms(&fixture("cms-rsa-sha256.der"));
+        let ruim = &verifieer_document(&pdf, &Vertrouwensarchief::leeg(), 0).unwrap()[0];
+        assert_eq!(ruim.integriteit, Some(Integriteit::Gewijzigd));
+        assert!(!ruim.signalen.iter().any(|s| s == signaal::HASHBUDGET_OP));
+        let krap = &verifieer_document_binnen(&pdf, &Vertrouwensarchief::leeg(), 0, MAX_CONTROLES_PER_DOCUMENT, Some(10)).unwrap()[0];
+        assert_eq!(krap.integriteit, Some(niet(OnleesbaarReden::BytebereikOngeldig)));
+        assert_eq!(krap.status, Status::NietTeControleren { reden: OnleesbaarReden::BytebereikOngeldig });
+        assert!(krap.signalen.iter().any(|s| s == signaal::HASHBUDGET_OP), "{:?}", krap.signalen);
     }
 
     #[test]

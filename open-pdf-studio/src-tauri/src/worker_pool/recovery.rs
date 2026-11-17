@@ -8,11 +8,39 @@ use std::time::{Duration, Instant};
 
 const CRASH_WINDOW: Duration = Duration::from_secs(30);
 const MAX_CRASHES_IN_WINDOW: usize = 3;
+#[cfg(not(test))]
 const RESPAWN_DELAY: Duration = Duration::from_secs(1);
+#[cfg(test)]
+const RESPAWN_DELAY: Duration = Duration::from_millis(1);
+/// Waits before each further attempt when a respawn fails (a busy disk, an
+/// antivirus scan holding the executable, a full temp directory). After the
+/// last one the slot is given up as DeadPermanent instead of staying Dead,
+/// which nothing would ever recover.
+#[cfg(not(test))]
+const RESPAWN_RETRY_BACKOFF: [Duration; 3] = [
+    Duration::from_secs(2),
+    Duration::from_secs(5),
+    Duration::from_secs(15),
+];
+#[cfg(test)]
+const RESPAWN_RETRY_BACKOFF: [Duration; 3] = [Duration::from_millis(1); 3];
 
 /// Recover one failed process incarnation. Several queued requests may report
 /// the same failure; only one of them may replace the child and SHM mapping.
 pub async fn handle_worker_crash(worker: Arc<WorkerState>, exe_path: PathBuf, failed_incarnation: u64) {
+    let respawn_worker = worker.clone();
+    recover_with(worker, failed_incarnation, move || {
+        let worker = respawn_worker.clone();
+        let exe_path = exe_path.clone();
+        async move { spawn_worker(worker, &exe_path).await }
+    }).await
+}
+
+async fn recover_with<F, Fut>(worker: Arc<WorkerState>, failed_incarnation: u64, respawn: F)
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
     if worker.stopping.load(Ordering::Acquire)
         || worker.incarnation.load(Ordering::Acquire) != failed_incarnation
         || worker.recovery_requested.swap(true, Ordering::AcqRel) {
@@ -25,7 +53,7 @@ pub async fn handle_worker_crash(worker: Arc<WorkerState>, exe_path: PathBuf, fa
         worker.recovery_requested.store(false, Ordering::Release);
         return;
     }
-    worker.set_status(Status::Dead);
+    worker.retire();
     let crashes = worker.crashes.fetch_add(1, Ordering::Release) + 1;
     let now = Instant::now();
     let recent_count = {
@@ -59,11 +87,26 @@ pub async fn handle_worker_crash(worker: Arc<WorkerState>, exe_path: PathBuf, fa
         return;
     }
 
-    match spawn_worker(worker.clone(), &exe_path).await {
-        Ok(_) => eprintln!("[recovery] worker {} respawned", worker.slot),
-        Err(e) => {
-            eprintln!("[recovery] worker {} respawn failed: {}", worker.slot, e);
-            worker.set_status(Status::Dead);
+    let mut backoff = RESPAWN_RETRY_BACKOFF.iter();
+    loop {
+        match respawn().await {
+            Ok(_) => {
+                eprintln!("[recovery] worker {} respawned", worker.slot);
+                break;
+            }
+            Err(e) => {
+                eprintln!("[recovery] worker {} respawn failed: {}", worker.slot, e);
+                worker.retire();
+            }
+        }
+        let Some(wait) = backoff.next() else {
+            worker.set_status(Status::DeadPermanent);
+            eprintln!("[recovery] worker {} could not be respawned — marking DeadPermanent", worker.slot);
+            break;
+        };
+        tokio::time::sleep(*wait).await;
+        if worker.stopping.load(Ordering::Acquire) {
+            break;
         }
     }
     worker.recovery_requested.store(false, Ordering::Release);
@@ -73,23 +116,69 @@ pub async fn handle_worker_crash(worker: Arc<WorkerState>, exe_path: PathBuf, fa
 mod tests {
     use super::*;
 
+    use std::sync::atomic::AtomicUsize;
+
+    /// A respawn that succeeds like spawn_worker: a new process, Ready.
+    fn fake_respawn(worker: Arc<WorkerState>) -> impl Fn() -> std::future::Ready<anyhow::Result<()>> {
+        move || {
+            worker.incarnation.fetch_add(1, Ordering::AcqRel);
+            worker.set_status(Status::Ready);
+            std::future::ready(Ok(()))
+        }
+    }
+
     #[tokio::test]
     async fn three_quick_crashes_marks_permanent() {
-        // Use a non-existent exe path so respawn always fails — we just
-        // care about the crash counter / DeadPermanent transition.
         let worker = Arc::new(WorkerState::new(0));
-        let bad_path = PathBuf::from("C:/does-not-exist.exe");
+        worker.set_status(Status::Ready);
 
-        // First crash: status Dead, respawn attempted (fails, set Dead again)
-        handle_worker_crash(worker.clone(), bad_path.clone(), 0).await;
-        assert_eq!(worker.status(), Status::Dead);
+        recover_with(worker.clone(), 0, fake_respawn(worker.clone())).await;
+        assert_eq!(worker.status(), Status::Ready);
+        recover_with(worker.clone(), 1, fake_respawn(worker.clone())).await;
+        assert_eq!(worker.status(), Status::Ready);
+        // Third crash within the window: the crash limit.
+        recover_with(worker.clone(), 2, fake_respawn(worker.clone())).await;
+        assert_eq!(worker.status(), Status::DeadPermanent);
+    }
 
-        // Second crash within 30s: still Dead, not yet permanent
-        handle_worker_crash(worker.clone(), bad_path.clone(), 0).await;
-        // crashes counter is 2 now
+    #[tokio::test]
+    async fn a_failed_respawn_is_retried_until_it_succeeds() {
+        let worker = Arc::new(WorkerState::new(0));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let (w, a) = (worker.clone(), attempts.clone());
+        recover_with(worker.clone(), 0, move || {
+            let attempt = a.fetch_add(1, Ordering::AcqRel);
+            if attempt < 2 {
+                return std::future::ready(Err(anyhow::anyhow!("spawn failed")));
+            }
+            w.incarnation.fetch_add(1, Ordering::AcqRel);
+            w.set_status(Status::Ready);
+            std::future::ready(Ok(()))
+        }).await;
+        assert_eq!(attempts.load(Ordering::Acquire), 3);
+        assert_eq!(worker.status(), Status::Ready);
+        assert!(!worker.recovery_requested.load(Ordering::Acquire));
+    }
 
-        // Third crash: should hit MAX_CRASHES_IN_WINDOW
-        handle_worker_crash(worker.clone(), bad_path, 0).await;
+    #[tokio::test]
+    async fn a_slot_that_never_respawns_is_given_up_not_left_dead() {
+        let worker = Arc::new(WorkerState::new(0));
+        handle_worker_crash(worker.clone(), PathBuf::from("does-not-exist-worker"), 0).await;
+        assert_eq!(worker.status(), Status::DeadPermanent);
+        assert!(!worker.recovery_requested.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn a_permanent_slot_is_not_recovered_again() {
+        let worker = Arc::new(WorkerState::new(0));
+        worker.set_status(Status::DeadPermanent);
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let a = attempts.clone();
+        recover_with(worker.clone(), 0, move || {
+            a.fetch_add(1, Ordering::AcqRel);
+            std::future::ready(Ok(()))
+        }).await;
+        assert_eq!(attempts.load(Ordering::Acquire), 0);
         assert_eq!(worker.status(), Status::DeadPermanent);
     }
 

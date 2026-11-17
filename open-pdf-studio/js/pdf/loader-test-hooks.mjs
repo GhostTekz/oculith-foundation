@@ -4,7 +4,9 @@
 // hooks keep the modules the page reads run on (the state store, the page
 // annotation cache, solid-js/store, timing helpers) and replace every other
 // module loader.js imports with a stub whose named exports do nothing.
-// Register app-test-hooks.mjs first, then these.
+// Register app-test-hooks.mjs first, then these. A test that needs more of
+// them real passes their specifiers as loader.js writes them:
+// register('./loader-test-hooks.mjs', import.meta.url, { data: { keep: [...] } }).
 
 import { readFileSync } from 'node:fs';
 
@@ -13,6 +15,10 @@ const KEEP = [
   '../core/state.js', '../core/perf.js', '../core/yield-to-main.js', 'solid-js/store',
   './page-annotations.js', './pdfjs-idle-cleanup.js', './large-open.js',
 ];
+
+export function initialize(data) {
+  for (const specifier of data?.keep || []) if (!KEEP.includes(specifier)) KEEP.push(specifier);
+}
 
 // The names loader.js imports from each module, static and dynamic.
 const names = new Map();

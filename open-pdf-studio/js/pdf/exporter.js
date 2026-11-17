@@ -10,6 +10,7 @@ import { joinExportPath } from './export-path.js';
 import { canvasToTiffBytes } from './tiff.js';
 import { imageWithDpi } from './image-dpi.js';
 import { PDFDocument } from 'pdf-lib';
+import { cappedExportScale } from './export-pixel-cap.js';
 import { nativeOcgPdfJsConfig, nativeOcgSelectionForDocument } from './native-ocg-selection.js';
 
 /**
@@ -105,26 +106,32 @@ export async function renderPageOffscreen(pageNum, exportScale, { deel = null, m
   await renderTask.promise;
   ensureCurrent();
 
-  // Markups with the Multiply blend mode (the external editor /BM /Multiply) multiply with
-  // the page, as in the external editor: then the markups are drawn straight onto the page
-  // canvas, in their own order.
-  const metVermenigvuldigen = markeringen
-    && (doc.annotations || []).some(a => a.page === pageNum && a.blendMode === 'multiply');
-  if (metVermenigvuldigen) {
-    await renderMarkeringenOffscreen(pageNum, exportScale, viewport, { deel, markeringen, doelCanvas: pdfCanvas });
-    ensureCurrent();
-    return pdfCanvas;
-  }
-
-  // Annotation layer on its own canvas, composited on top of the PDF below.
-  const annCanvas = await renderMarkeringenOffscreen(pageNum, exportScale, viewport, { deel, markeringen });
+  // The markups are drawn straight onto the page canvas, in their own order:
+  // a Multiply markup (/BM /Multiply) mixes with the drawing, and no second
+  // page-sized canvas is allocated for the layer (source-over drawing on the
+  // page gives the same pixels as compositing a separate layer).
+  await renderMarkeringenOffscreen(pageNum, exportScale, viewport, { deel, markeringen, doelCanvas: pdfCanvas });
   ensureCurrent();
-
-  // Composite: draw annotations on top of PDF
-  pdfCtx.drawImage(annCanvas, 0, 0);
-  ensureCurrent();
-
   return pdfCanvas;
+}
+
+/** Size of a page in points as exported (its /Rotate plus the view rotation). */
+async function exportPageSizePt(doc, pdf, pageNum) {
+  const page = await pdf.getPage(pageNum);
+  const extraRotation = doc.pageRotations?.[pageNum] || 0;
+  const opts = { scale: 1 };
+  if (extraRotation) opts.rotation = (page.rotate + extraRotation) % 360;
+  const viewport = page.getViewport(opts);
+  return { width: viewport.width, height: viewport.height };
+}
+
+function cappedExportWarning(capped, requestedDpi) {
+  if (!capped.length) return;
+  const list = capped.map(c => `${c.page} (${c.dpi} dpi)`).join(', ');
+  showMessage(i18next.t('exportResolutionCapped', {
+    defaultValue: 'Some pages were too large to export at {{dpi}} dpi and were exported at a lower resolution: {{pages}}.',
+    dpi: requestedDpi, pages: list,
+  }));
 }
 
 /**
@@ -216,6 +223,14 @@ function getPdfBaseName(doc = getActiveDocument()) {
   return fileName.replace(/\.pdf$/i, '');
 }
 
+// Give a page-sized export canvas's pixels back now instead of at the next
+// collection: a multi-page export would otherwise hold several at once.
+function releaseCanvas(canvas) {
+  if (!canvas) return;
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 function exportChanged() {
   return new Error(i18next.t('documentChangedDuringExport', {
     defaultValue: 'The document changed during export. Start again.',
@@ -265,6 +280,7 @@ export async function exportAsImages({ format = 'png', quality = 0.92, dpi = 150
   }
 
   showLoading('Exporting images...');
+  const capped = [];
 
   try {
     ensureCurrent();
@@ -273,10 +289,16 @@ export async function exportAsImages({ format = 'png', quality = 0.92, dpi = 150
       const pageNum = pages[i];
       showLoading(`Exporting page ${pageNum} of ${pages[pages.length - 1]}...`);
 
-      const canvas = await renderPageOffscreen(pageNum, exportScale, { markeringen: includeAnnotations, doc });
+      const size = await exportPageSizePt(doc, pdf, pageNum);
+      ensureCurrent();
+      const fit = cappedExportScale(size.width, size.height, exportScale);
+      if (fit.capped) capped.push({ page: pageNum, dpi: fit.dpi });
+      const pageDpi = fit.capped ? fit.dpi : dpi;
+      const canvas = await renderPageOffscreen(pageNum, fit.scale, { markeringen: includeAnnotations, doc });
       const bytes = format === 'tiff'
-        ? canvasToTiffBytes(canvas, dpi)
-        : imageWithDpi(await canvasToBytes(canvas, format, quality), format, dpi);
+        ? canvasToTiffBytes(canvas, pageDpi)
+        : imageWithDpi(await canvasToBytes(canvas, format, quality), format, pageDpi);
+      releaseCanvas(canvas);
       ensureCurrent();
 
       let filePath;
@@ -289,6 +311,7 @@ export async function exportAsImages({ format = 'png', quality = 0.92, dpi = 150
 
       await writeBinaryFileAtomic(filePath, bytes);
     }
+    cappedExportWarning(capped, dpi);
   } catch (error) {
     console.error('[export images]', error);
     showMessage(error?.message || String(error));
@@ -323,6 +346,7 @@ export async function exportAsRasterPdf({ dpi = 300, pages, doc = getActiveDocum
   if (!outputPath) return;
 
   showLoading('Exporting raster PDF...');
+  const capped = [];
 
   try {
     ensureCurrent();
@@ -334,8 +358,13 @@ export async function exportAsRasterPdf({ dpi = 300, pages, doc = getActiveDocum
       const pageNum = pages[i];
       showLoading(`Rasterizing page ${pageNum} of ${pages[pages.length - 1]}...`);
 
-      const canvas = await renderPageOffscreen(pageNum, exportScale, { doc });
+      const size = await exportPageSizePt(doc, pdf, pageNum);
+      ensureCurrent();
+      const fit = cappedExportScale(size.width, size.height, exportScale);
+      if (fit.capped) capped.push({ page: pageNum, dpi: fit.dpi });
+      const canvas = await renderPageOffscreen(pageNum, fit.scale, { doc });
       const jpegBytes = await canvasToBytes(canvas, 'jpeg', 0.92);
+      releaseCanvas(canvas);
       ensureCurrent();
 
       const jpegImage = await newPdf.embedJpg(jpegBytes);
@@ -362,6 +391,7 @@ export async function exportAsRasterPdf({ dpi = 300, pages, doc = getActiveDocum
     const pdfBytes = await newPdf.save();
     ensureCurrent();
     await writeBinaryFileAtomic(outputPath, pdfBytes);
+    cappedExportWarning(capped, dpi);
 
     // Open the rasterised result in a new tab. Each page is now a flat image,
     // so it renders identically in every viewer/printer — the reliable way to

@@ -46,3 +46,57 @@ test('co-located counts match by identity before position when list order change
     oldPage: 1, newPage: 1, changes: revisions });
   assert.match(csv, /count: lighting #2 → lighting #3/);
 });
+
+// ── Appearance: independent colours, text formatting and opacity ────────────
+
+const box = (overrides = {}) => ({
+  type: 'rectangle', x: 100, y: 100, width: 80, height: 40,
+  color: '#ff0000', strokeColor: '#ff0000', fillColor: '#00ff00', lineWidth: 2, ...overrides,
+});
+const textbox = (overrides = {}) => ({
+  type: 'textbox', x: 300, y: 300, width: 160, height: 40, text: 'GENERAL NOTE',
+  color: '#000000', textColor: '#000000', fontFamily: 'Arial', ...overrides,
+});
+const modified = (before, after) => {
+  const changes = diffAnnotationLists([before], [after]);
+  return changes.length === 1 && changes[0].type === 'modified';
+};
+
+test('a fill-only colour change is reported even when the legacy color is unchanged', () => {
+  assert.deepEqual(diffAnnotationLists([box()], [box()]), []);
+  assert.ok(modified(box(), box({ fillColor: '#0000ff' })));
+});
+
+test('a stroke-only or text-colour change is reported independently', () => {
+  assert.ok(modified(box(), box({ strokeColor: '#123456' })));
+  assert.ok(modified(textbox(), textbox({ textColor: '#ff00ff' })));
+});
+
+test('a bold change is reported for a text box', () => {
+  assert.ok(modified(textbox(), textbox({ fontBold: true })));
+  // A run that makes only part of the text bold is also a change.
+  const runs = [[{ text: 'GENERAL ', bold: false }, { text: 'NOTE', bold: true }]];
+  assert.ok(modified(textbox(), textbox({ textRuns: runs })));
+});
+
+test('equivalent adjacent text runs are not a change', () => {
+  const split = [[{ text: 'GENERAL ' }, { text: 'NOTE' }]];
+  assert.deepEqual(diffAnnotationLists([textbox()], [textbox({ textRuns: split })]), []);
+});
+
+test('an opacity change is reported', () => {
+  assert.ok(modified(box(), box({ opacity: 0.5 })));
+  assert.ok(modified(box({ opacity: 0.5 }), box({ opacity: 0.5, fillOpacity: 0.2 })));
+});
+
+test('a highlight at the default 0.3 opacity equals an unset highlight opacity', () => {
+  const hl = (o = {}) => ({ type: 'highlight', x: 50, y: 50, width: 120, height: 12, color: '#ffff00', ...o });
+  assert.deepEqual(diffAnnotationLists([hl()], [hl({ opacity: 0.3 })]), []);
+  assert.deepEqual(diffAnnotationLists([hl({ opacity: 0.3 })], [hl()]), []);
+  assert.ok(modified(hl(), hl({ opacity: 1 })));
+});
+
+test('an implicit text box font size equals an explicit 14', () => {
+  assert.deepEqual(diffAnnotationLists([textbox()], [textbox({ fontSize: 14 })]), []);
+  assert.ok(modified(textbox(), textbox({ fontSize: 18 })));
+});

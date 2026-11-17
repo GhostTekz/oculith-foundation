@@ -94,11 +94,12 @@ export async function copyRegionSelection() {
  * is still running.
  * @returns {Promise<object|null>} the new vectorSnippet markup
  */
-export async function pasteRegion() {
+export async function pasteRegion(doc = getActiveDocument()) {
   while (_pending) await _pending;
   const clip = _clip;
-  const doc = getActiveDocument();
-  if (!clip || !doc?.pdfDoc) return null;
+  // Into the drawing where the paste started, and only while it is the
+  // active one: a cut still running may outlast a tab switch or close.
+  if (!clip || !doc?.pdfDoc || getActiveDocument() !== doc || !state.documents.includes(doc)) return null;
   const page = doc.currentPage || 1;
   const maat = paginaMaat(page, doc);
   const { x, y } = pastePosition(clip, { width: clip.knipsel.breedte, height: clip.knipsel.hoogte },

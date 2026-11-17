@@ -33,7 +33,7 @@ const ECDSA_SHA512: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.100
 const P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 const P384: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.34");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Hashalg {
     Sha1,
     Sha256,
@@ -63,7 +63,19 @@ impl Hashalg {
     }
 
     /// Hash over de aaneengeschakelde delen, zonder ze eerst samen te voegen.
+    ///
+    /// Binnen een [`Hashsessie`] wordt een hash over delen van het document
+    /// per (algoritme, bytebereik) één keer berekend, en houdt de sessie het
+    /// totaal binnen haar budget. Is dat op, dan is de uitkomst leeg (die past
+    /// bij geen enkele digest) en meldt [`Hashsessie::budget_op`] het.
     pub fn hash(self, delen: &[&[u8]]) -> Vec<u8> {
+        SESSIE.with(|sessie| match sessie.borrow_mut().as_mut() {
+            Some(sessie) => sessie.hash(self, delen),
+            None => self.hash_direct(delen),
+        })
+    }
+
+    fn hash_direct(self, delen: &[&[u8]]) -> Vec<u8> {
         fn met<D: sha2::Digest>(delen: &[&[u8]]) -> Vec<u8> {
             let mut h = D::new();
             for deel in delen {
@@ -289,6 +301,93 @@ fn lees_digest_info(b: &[u8], hash: Hashalg) -> Option<Vec<u8>> {
     Some(digest.inhoud.to_vec())
 }
 
+thread_local! {
+    static SESSIE: std::cell::RefCell<Option<SessieStaat>> = const { std::cell::RefCell::new(None) };
+}
+
+struct SessieStaat {
+    /// Begin en lengte van het document: alleen delen daarbinnen worden
+    /// onthouden (hun adres blijft de hele sessie dezelfde bytes aanwijzen).
+    begin: usize,
+    lengte: usize,
+    digests: std::collections::HashMap<(Hashalg, Vec<(usize, usize)>), Vec<u8>>,
+    gehasht: u64,
+    budget: u64,
+    op: bool,
+}
+
+impl SessieStaat {
+    fn hash(&mut self, alg: Hashalg, delen: &[&[u8]]) -> Vec<u8> {
+        let binnen = |d: &&[u8]| {
+            let p = d.as_ptr() as usize;
+            p >= self.begin && p - self.begin <= self.lengte && d.len() <= self.lengte - (p - self.begin)
+        };
+        if delen.is_empty() || !delen.iter().all(binnen) {
+            return alg.hash_direct(delen);
+        }
+        let sleutel = (alg, delen.iter().map(|d| (d.as_ptr() as usize - self.begin, d.len())).collect::<Vec<_>>());
+        if let Some(digest) = self.digests.get(&sleutel) {
+            return digest.clone();
+        }
+        let totaal: u64 = delen.iter().map(|d| d.len() as u64).sum();
+        if self.gehasht.saturating_add(totaal) > self.budget {
+            self.op = true;
+            return Vec::new();
+        }
+        self.gehasht += totaal;
+        let digest = alg.hash_direct(delen);
+        self.digests.insert(sleutel, digest.clone());
+        digest
+    }
+}
+
+/// Zoveel keer de bestandsgrootte mag een document samen aan hashen kosten
+/// (plus een vaste marge voor kleine documenten). Elk bytebereik telt per
+/// algoritme één keer; meer is alleen nodig voor veel verschillende bereiken.
+pub const HASHBUDGET_FACTOR: u64 = 8;
+const HASHBUDGET_MARGE: u64 = 16 * 1024 * 1024;
+
+/// Een verificatieronde over één document, op deze thread: hashes over delen
+/// van `document` worden gedeeld en samen begrensd. Eindigt bij drop.
+pub struct Hashsessie(());
+
+impl Hashsessie {
+    pub fn begin(document: &[u8]) -> Hashsessie {
+        let budget = (document.len() as u64).saturating_mul(HASHBUDGET_FACTOR).saturating_add(HASHBUDGET_MARGE);
+        Self::met_budget(document, budget)
+    }
+
+    pub fn met_budget(document: &[u8], budget: u64) -> Hashsessie {
+        SESSIE.with(|s| {
+            *s.borrow_mut() = Some(SessieStaat {
+                begin: document.as_ptr() as usize,
+                lengte: document.len(),
+                digests: std::collections::HashMap::new(),
+                gehasht: 0,
+                budget,
+                op: false,
+            })
+        });
+        Hashsessie(())
+    }
+
+    /// Of het budget sinds de vorige vraag op is geraakt; zet de melding terug.
+    pub fn budget_op(&self) -> bool {
+        SESSIE.with(|s| s.borrow_mut().as_mut().is_some_and(|s| std::mem::take(&mut s.op)))
+    }
+
+    #[cfg(test)]
+    pub fn gehasht(&self) -> u64 {
+        SESSIE.with(|s| s.borrow().as_ref().map_or(0, |s| s.gehasht))
+    }
+}
+
+impl Drop for Hashsessie {
+    fn drop(&mut self) {
+        SESSIE.with(|s| *s.borrow_mut() = None);
+    }
+}
+
 /// SubjectPublicKeyInfo: algoritme en de sleutelbytes uit de BIT STRING.
 fn spki_delen(spki_der: &[u8]) -> Result<(AlgId, Vec<u8>), WaardeFout> {
     let (buiten, _) = lees_tlv(spki_der)?;
@@ -477,6 +576,35 @@ mod tests {
         assert_eq!(&Hashalg::Sha1.hash(&[b"abc".as_slice()])[..4], &[0xa9, 0x99, 0x3e, 0x36]);
         assert_eq!(Hashalg::Sha384.hash(&[b"abc".as_slice()]).len(), 48);
         assert_eq!(Hashalg::Sha512.hash(&[b"abc".as_slice()]).len(), 64);
+    }
+
+    #[test]
+    fn hashsessie_hasht_een_bereik_eenmaal_en_begrenst_het_totaal() {
+        let document = vec![7u8; 1000];
+        let delen: [&[u8]; 2] = [&document[..400], &document[600..]];
+        let los = Hashalg::Sha256.hash(&delen);
+        {
+            let sessie = Hashsessie::met_budget(&document, 2000);
+            assert_eq!(Hashalg::Sha256.hash(&delen), los);
+            assert_eq!(Hashalg::Sha256.hash(&delen), los);
+            assert_eq!(sessie.gehasht(), 800, "hetzelfde bereik telt eenmaal");
+            assert!(!sessie.budget_op());
+            // Een ander algoritme over hetzelfde bereik telt apart.
+            assert_eq!(Hashalg::Sha1.hash(&delen).len(), 20);
+            assert_eq!(sessie.gehasht(), 1600);
+            // Bytes buiten het document tellen niet mee.
+            let ander = vec![1u8; 5000];
+            assert_eq!(Hashalg::Sha256.hash(&[ander.as_slice()]).len(), 32);
+            assert_eq!(sessie.gehasht(), 1600);
+            // Het volgende bereik past niet meer: lege uitkomst, en de melding.
+            assert!(Hashalg::Sha256.hash(&[&document[..500]]).is_empty());
+            assert!(sessie.budget_op());
+            assert!(!sessie.budget_op(), "de melding wordt teruggezet");
+            // Wat al berekend was, blijft beschikbaar.
+            assert_eq!(Hashalg::Sha256.hash(&delen), los);
+        }
+        // Na de sessie: weer gewoon hashen, zonder budget.
+        assert_eq!(Hashalg::Sha256.hash(&[&document[..500]]).len(), 32);
     }
 
     #[test]

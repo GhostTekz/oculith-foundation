@@ -65,6 +65,7 @@ import {
   scaledCompareOffset,
 } from '../../../compare/compare-viewport.js';
 import { runTextCompare, clearTextCompareCache } from '../../../compare/text-compare.js';
+import { changesOnOldPane } from '../../../compare/old-pane-changes.js';
 import { diffWords } from '../../../compare/text-diff.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { state } from '../../../core/state.js';
@@ -636,7 +637,7 @@ export default function CompareView() {
   // Paint one highlight canvas restricted to a subset of change types. Used by
   // both modes: overlay shows all three; side-by-side shows removed+modified on
   // OLD and added+modified on NEW so each edit lands on the page it belongs to.
-  const paintPaneHighlights = (canvas, allow) => {
+  const paintPaneHighlights = (canvas, allow, side = 'new') => {
     if (!canvas) return;
     const v = visibleTypes();
     const sel = compareFocusedChange();
@@ -651,9 +652,24 @@ export default function CompareView() {
     const style = { showBox: compareShowBox(), showContour: compareShowContour() };
     // Content changes are measured in detection-px → highlightRatio(). This call
     // clears the canvas first.
-    paintHighlights(canvas, compareChanges(), {
+    let content = compareChanges();
+    let contentSelected = selForPane && selForPane.source !== 'annotation' ? selForPane : null;
+    // Detection measured the boxes on the NEW page with OLD moved by the
+    // alignment; the side-by-side OLD pane shows the old page unmoved.
+    if (side === 'old') {
+      const perPt = 1.5 * renderedZoom;
+      const newSizePt = newCanvasRef && perPt > 0
+        ? { width: newCanvasRef.width / perPt, height: newCanvasRef.height / perPt } : null;
+      const mapped = changesOnOldPane(content, compareOffset(), newSizePt, perPt);
+      if (contentSelected) {
+        const i = content.indexOf(contentSelected);
+        contentSelected = i >= 0 ? mapped[i] : changesOnOldPane([contentSelected], compareOffset(), newSizePt, perPt)[0];
+      }
+      content = mapped;
+    }
+    paintHighlights(canvas, content, {
       ratio: highlightRatio(), visibleTypes: vis, ...style,
-      selected: selForPane && selForPane.source !== 'annotation' ? selForPane : null,
+      selected: contentSelected,
       clear: true,
     });
     // Annotation changes are measured in page-points (scale 1) → 1.5*renderedZoom,
@@ -686,7 +702,7 @@ export default function CompareView() {
         oldHiCanvasRef.width = oldCanvasRef.width;
         oldHiCanvasRef.height = oldCanvasRef.height;
         if (textMode) paintTextHighlights(oldHiCanvasRef, 'old');
-        else paintPaneHighlights(oldHiCanvasRef, { added: false, removed: true, modified: true });
+        else paintPaneHighlights(oldHiCanvasRef, { added: false, removed: true, modified: true }, 'old');
       }
       if (newHiCanvasRef && newCanvasRef) {
         newHiCanvasRef.width = newCanvasRef.width;
@@ -1319,7 +1335,7 @@ export default function CompareView() {
         >
           {/* Titel + weergavemodus */}
           <strong>{t('compare.title') || 'Compare PDFs'}</strong>
-          <select class="compare-view-mode" aria-label="Comparison view" value={compareMode()}
+          <select class="compare-view-mode" aria-label={t('compare.viewMode', 'Comparison view')} value={compareMode()}
             onChange={e => setCompareMode(e.currentTarget.value)}>
             <option value="side">{t('compare.sideBySide') || 'Side-by-side'}</option>
             <option value="overlay">{t('compare.overlay') || 'Overlay'}</option>
@@ -1354,9 +1370,9 @@ export default function CompareView() {
         </div>
         <details class="compare-review-tools">
           <summary>
-            Review tools · {compareConfirmedPairs().length} confirmed matches
-            {' · '}{compareCurrentConfirmedPair() ? 'Current pair confirmed' : 'Current pair unconfirmed'}
-            <Show when={batchRunning()}> · Batch {batchProgress()?.completed || 0}/{batchProgress()?.total || 0}</Show>
+            {t('compare.reviewTools', { count: compareConfirmedPairs().length, defaultValue: 'Review tools · {{count}} confirmed matches' })}
+            {' · '}{compareCurrentConfirmedPair() ? t('compare.pairConfirmed', 'Current pair confirmed') : t('compare.pairUnconfirmed', 'Current pair unconfirmed')}
+            <Show when={batchRunning()}> · {t('compare.batchProgress', { completed: batchProgress()?.completed || 0, total: batchProgress()?.total || 0, defaultValue: 'Batch {{completed}}/{{total}}' })}</Show>
           </summary>
           <div class="compare-review-tools-content">
           <div class="compare-toolbar compare-display-options">

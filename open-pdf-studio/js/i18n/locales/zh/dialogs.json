@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "正在检查数字签名…",
     "barLabel": "数字签名",
+    "unsignedFieldsSummary_one": "未签名的签名字段：{{count}}",
+    "unsignedFieldsSummary_other": "未签名的签名字段：{{count}}",
+    "showUnsignedFields": "显示字段",
+    "hideUnsignedFields": "隐藏字段",
     "listError": "无法检查签名：{{detail}}",
     "documentTimestamp": "文档时间戳",
     "documentTimestampBy": "文档时间戳（{{tsa}}）",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "字节范围中的间隙不只包含签名值。",
       "subfilter-niet-ondersteund": "不支持此签名格式。",
       "zoekbudget-op": "证书链搜索已达到上限并停止；证书链仍可能存在。",
+      "hashbudget-op": "已达到文档检查已签名字节的上限；此签名未经检查。",
       "gat-wijkt-af-van-contents": "文件中的签名值与签名字典中的签名值不同。",
       "interne-fout": "检查此签名时发生内部错误。",
       "unknown": "检查报告了一个额外问题。"

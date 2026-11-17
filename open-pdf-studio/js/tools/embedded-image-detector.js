@@ -10,9 +10,10 @@
 // ============================================================================
 
 import { PDFDocument, PDFName } from 'pdf-lib';
-import { getActiveDocument, getPageRotation } from '../core/state.js';
+import { state, getActiveDocument, getPageRotation } from '../core/state.js';
 import { getPdfBytes } from '../pdf/loader.js';
-import { getCacheKey, reloadFromBytes } from '../pdf/page-manager.js';
+import { getCacheKey, reloadFromBytes, pageDataOf, pageDataChange } from '../pdf/page-manager.js';
+import { withHistoryLock } from '../core/history-lock.js';
 import { recordPageStructure } from '../core/undo-manager.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import {
@@ -28,8 +29,8 @@ export function getCachedEmbeddedImages(pageNum) {
   return _cache.get(pageNum) || null;
 }
 
-async function currentBytes() {
-  const key = getCacheKey();
+async function currentBytes(doc) {
+  const key = getCacheKey(doc);
   return key ? getPdfBytes(key) : null;
 }
 
@@ -39,7 +40,7 @@ export async function detectEmbeddedImages(pageNum) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) { _cache.set(pageNum, []); return []; }
 
-  const bytes = await currentBytes();
+  const bytes = await currentBytes(doc);
   if (!bytes) { _cache.set(pageNum, []); return []; }
 
   let images, text;
@@ -87,12 +88,17 @@ export function hitTestEmbeddedImage(pageNum, x, y) {
 
 // Remove the embedded image at `index` on `pageNum` by neutralising its
 // `/Name Do` operator in the page content stream. Undo-able (page-structure
-// byte swap) and re-rendered. Returns true on success.
-export async function removeEmbeddedImage(pageNum, index) {
+// byte swap) and re-rendered. Returns true on success; false as well while
+// another page operation runs (history-lock.js) or when the tab closed.
+export function removeEmbeddedImage(pageNum, index) {
+  return withHistoryLock(() => removeEmbeddedImageNu(pageNum, index), false);
+}
+
+async function removeEmbeddedImageNu(pageNum, index) {
   const doc = getActiveDocument();
   if (!doc) return false;
 
-  const bytes = await currentBytes();
+  const bytes = await currentBytes(doc);
   if (!bytes) return false;
 
   showLoading('Removing image...');
@@ -117,14 +123,18 @@ export async function removeEmbeddedImage(pageNum, index) {
     const oldAnnotations = doc.annotations.map(a => ({ ...a }));
     const oldRotations = { ...doc.pageRotations };
     const oldPage = doc.currentPage;
+    const dataBefore = pageDataOf(doc);
 
-    await reloadFromBytes(newBytes, doc.annotations.map(a => ({ ...a })), { ...doc.pageRotations }, doc.currentPage);
+    // The tab may have closed during the work above.
+    if (!state.documents.includes(doc)) return false;
+    await reloadFromBytes(newBytes, doc.annotations.map(a => ({ ...a })), { ...doc.pageRotations }, doc.currentPage, null, doc);
 
     const newAnnotations = doc.annotations.map(a => ({ ...a }));
     const newRotations = { ...doc.pageRotations };
     recordPageStructure(
       oldBytes, oldAnnotations, oldRotations, oldPage,
       newBytes, newAnnotations, newRotations, doc.currentPage,
+      { doc, ...pageDataChange(dataBefore, doc) },
     );
 
     clearEmbeddedImageCache();

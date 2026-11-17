@@ -11,6 +11,7 @@ import {
 import { runBatch, batchFileList, setFilePaths } from '../../../batch/runner.js';
 import { DEFAULT_SUFFIX, DESKTOP_ONLY_OPS, NO_OUTPUT_OPS, MULTI_OUTPUT_OPS } from '../../../batch/ops.js';
 import { STAMP_POSITIONS } from '../../../batch/stamp-place.js';
+import { openDocumentPaths } from '../../../batch/open-paths.js';
 import { PAGE_SIZE_PRESETS } from '../../../pdf/resize-pages-core.js';
 import { allStampTemplates } from '../../../annotations/user-stamps.js';
 import { LANGUAGE_OPTIONS } from './OcrLanguageDialog.jsx';
@@ -197,7 +198,7 @@ export default function BatchOpsDialog(props) {
         output: { mode: outputMode(), dir, suffix: suffix() },
         write, exists: (path) => fileExists(path).catch(() => false),
         sources: list.map((f) => f.path),
-        openPaths: (state.documents || []).map((d) => d.filePath).filter(Boolean),
+        openPaths: openDocumentPaths(state.documents),
         onWritten: (file, path) => setWrittenNow({ ...writtenNow(), [file.path]: path }),
       });
       const result = await runBatch({
@@ -267,7 +268,7 @@ export default function BatchOpsDialog(props) {
     return p ? (p.index - 1) / Math.max(1, p.total) : 0;
   };
   const inPlaceCount = createMemo(() => files().length);
-  const openInTab = createMemo(() => new Set((state.documents || []).map((d) => pathKey(d.filePath))));
+  const openInTab = createMemo(() => new Set(openDocumentPaths(state.documents).map(pathKey)));
 
   // As the Page Setup dialog: A sizes by name, the others from its strings.
   const sizeLabel = (key) => (/^a\d$/u.test(key)

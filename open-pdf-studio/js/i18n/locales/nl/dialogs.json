@@ -629,6 +629,7 @@
       "bytebereik-gat-geen-hex-string": "Het gat in het bytebereik bevat niet alleen de handtekeningwaarde.",
       "subfilter-niet-ondersteund": "Dit handtekeningformaat wordt niet ondersteund.",
       "zoekbudget-op": "Het zoeken naar een certificaatketen is op de grens gestopt; er kan toch een keten bestaan.",
+      "hashbudget-op": "De grens van het document voor het controleren van ondertekende bytes is bereikt; deze handtekening is niet gecontroleerd.",
       "gat-wijkt-af-van-contents": "De handtekeningwaarde in het bestand wijkt af van die in het handtekeningwoordenboek.",
       "interne-fout": "Bij het controleren van deze handtekening is een interne fout opgetreden.",
       "unknown": "De controle meldde een aanvullend punt."

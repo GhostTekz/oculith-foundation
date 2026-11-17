@@ -71,6 +71,9 @@ export default function GoToSheet() {
     close();
     const doc = state.documents[sheet.docIndex];
     if (!doc?.pdfDoc) return;
+    // Like a tab click: leave the comparison (it stays on its own tab), also
+    // for a sheet of the drawing already shown, which would move behind it.
+    (await import('../../compare/compare-store.js')).blurCompareTab();
     if (sheet.docIndex !== state.activeDocumentIndex) {
       const { switchToTab } = await import('../../ui/chrome/tabs.js');
       switchToTab(sheet.docIndex);

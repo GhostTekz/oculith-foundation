@@ -6,6 +6,7 @@ import { invoke } from '../../core/platform.js';
 import { revealInFileManager } from '../../core/file-manager-reveal.js';
 import { showDocTabMenu, showDocListMenu } from '../stores/contextMenuStore.js';
 import { tabsToClose, cycleTabIndex } from './document-tab-menu.js';
+import { shouldHandleGlobalKey } from '../../ui/chrome/global-key-guard.js';
 import { lucide } from '../data/lucideIcons.js';
 import {
   compareActive,
@@ -475,6 +476,7 @@ export async function runDocTabAction(id, index) {
 // is bound in tools/keyboard-handlers.js.
 function onCycleKeyDown(e) {
   if (e.key !== 'Tab' || !e.ctrlKey || e.altKey || e.metaKey) return;
+  if (!shouldHandleGlobalKey(e)) return;
   const count = state.documents.length;
   if (count < 2) return;
   e.preventDefault();

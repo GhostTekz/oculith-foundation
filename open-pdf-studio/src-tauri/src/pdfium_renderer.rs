@@ -71,6 +71,31 @@ use std::sync::{Arc, Mutex};
 /// at exactly one level to avoid re-entrant self-deadlock; see those functions.
 static PDFIUM_INPROC_LOCK: Mutex<()> = Mutex::new(());
 
+/// Largest RGBA bitmap (bytes) an in-process render may allocate. PDFium's
+/// bitmap, its RGBA copy and the framed IPC copy each take this much, so a
+/// huge request (a 25000 x 20000 px region is 2 GB per copy) would take the
+/// app's memory with it. Larger requests fail with a clear error.
+pub const INPROC_BITMAP_BYTE_CAP: u64 = 1 << 30;
+
+/// The pixel size of an in-process bitmap `width_px` x `height_px` (before
+/// rounding up), or an error if it is not a positive finite size or its RGBA
+/// bytes exceed [`INPROC_BITMAP_BYTE_CAP`].
+pub fn inproc_bitmap_size(width_px: f32, height_px: f32) -> Result<(i32, i32), String> {
+    let (w, h) = (width_px.ceil(), height_px.ceil());
+    if !(w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0) {
+        return Err(format!("render size {width_px} x {height_px} px is invalid"));
+    }
+    let bytes = (w as f64) * (h as f64) * 4.0;
+    if bytes > INPROC_BITMAP_BYTE_CAP as f64 || w > i32::MAX as f32 || h > i32::MAX as f32 {
+        return Err(format!(
+            "render of {w} x {h} px ({:.0} MB) exceeds the {} MB in-process bitmap limit; lower the zoom or render a smaller region",
+            bytes / 1_048_576.0,
+            INPROC_BITMAP_BYTE_CAP / 1_048_576
+        ));
+    }
+    Ok((w as i32, h as i32))
+}
+
 /// Acquire the in-proc PDFium lock, recovering from a poisoned mutex (a prior
 /// panic mid-render) rather than permanently disabling all rendering.
 ///
@@ -342,8 +367,7 @@ pub fn render_page_to_rgba_with_annotations(
     let width_pt = page.width().value;
     let height_pt = page.height().value;
 
-    let target_w = (width_pt * scale).ceil() as i32;
-    let target_h = (height_pt * scale).ceil() as i32;
+    let (target_w, target_h) = inproc_bitmap_size(width_pt * scale, height_pt * scale)?;
 
     let rot = match rotation.rem_euclid(360) {
         0 => PdfPageRenderRotation::None,
@@ -1273,15 +1297,8 @@ pub fn render_page_region_to_rgba_with_annotations(
         .map_err(|e| format!("Page {} not found: {}", page_index, e))?;
 
     // Output bitmap pixel dimensions.
-    let bitmap_w = (region_w_pt * scale).ceil() as i32;
-    let bitmap_h = (region_h_pt * scale).ceil() as i32;
-
-    if bitmap_w <= 0 || bitmap_h <= 0 {
-        return Err(format!(
-            "render_page_region_to_rgba: computed bitmap size {}x{} is invalid",
-            bitmap_w, bitmap_h
-        ));
-    }
+    let (bitmap_w, bitmap_h) = inproc_bitmap_size(region_w_pt * scale, region_h_pt * scale)
+        .map_err(|e| format!("render_page_region_to_rgba: {e}"))?;
 
     // Build the affine matrix that maps the full page coordinate space to
     // bitmap pixels, then shifts so that `region_x_pt, region_y_pt` lands
@@ -1454,8 +1471,8 @@ pub fn render_page_part_for_print(
     let page = pages
         .get(page_index as i32)
         .map_err(|e| format!("Page {} not found: {}", page_index, e))?;
-    let bitmap_w = (w_pt * scale).ceil().max(1.0) as i32;
-    let bitmap_h = (h_pt * scale).ceil().max(1.0) as i32;
+    let (bitmap_w, bitmap_h) = inproc_bitmap_size((w_pt * scale).max(1.0), (h_pt * scale).max(1.0))
+        .map_err(|e| format!("render_page_part_for_print: {e}"))?;
     let config = PdfRenderConfig::new()
         .set_fixed_size(bitmap_w, bitmap_h)
         .transform(scale, 0.0, 0.0, scale, -x_pt * scale, -y_pt * scale)
@@ -1467,6 +1484,26 @@ pub fn render_page_part_for_print(
         .render_with_config(&config)
         .map_err(|e| format!("PDFium print render failed: {e}"))?;
     Ok((bitmap.width() as u32, bitmap.height() as u32, bitmap.as_rgba_bytes()))
+}
+
+#[cfg(test)]
+mod bitmap_cap_tests {
+    use super::*;
+
+    #[test]
+    fn in_process_bitmaps_are_capped() {
+        assert_eq!(inproc_bitmap_size(100.2, 50.0), Ok((101, 50)));
+        // 16384 x 16384 x 4 = exactly 1 GiB.
+        assert_eq!(inproc_bitmap_size(16384.0, 16384.0), Ok((16384, 16384)));
+        let error = inproc_bitmap_size(25000.0, 20000.0).unwrap_err();
+        assert!(error.contains("in-process bitmap limit"), "{error}");
+        assert!(inproc_bitmap_size(16385.0, 16384.0).is_err());
+        assert!(inproc_bitmap_size(f32::NAN, 10.0).is_err());
+        assert!(inproc_bitmap_size(f32::INFINITY, 10.0).is_err());
+        assert!(inproc_bitmap_size(0.0, 10.0).is_err());
+        assert!(inproc_bitmap_size(-5.0, 10.0).is_err());
+        assert!(inproc_bitmap_size(1e30, 1e-30).is_err());
+    }
 }
 
 #[cfg(test)]

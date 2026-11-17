@@ -5,9 +5,10 @@
 // so the reload below refreshes both.
 
 import { PDFDocument } from 'pdf-lib';
-import { getActiveDocument, getPageRotation } from '../core/state.js';
+import { state, getActiveDocument, getPageRotation } from '../core/state.js';
 import { getPdfBytes, ensureAnnotationsForPage } from './loader.js';
-import { getCacheKey, reloadFromBytes } from './page-manager.js';
+import { getCacheKey, reloadFromBytes, pageDataOf, pageDataChange } from './page-manager.js';
+import { withHistoryLock } from '../core/history-lock.js';
 import { recordPageStructure } from '../core/undo-manager.js';
 import { writePageLabels, cleanPageLabel } from './page-labels.js';
 import { extractRegionTexts, regionFractions } from './region-text.js';
@@ -28,26 +29,32 @@ export async function loadAllAnnotations(doc = getActiveDocument()) {
 
 /**
  * Write `labels` into the active document. Returns false when the document
- * changed meanwhile or has no bytes to edit.
+ * changed meanwhile or has no bytes to edit, or another page operation runs.
  */
-export async function applyDocumentLabels(labels) {
+export function applyDocumentLabels(labels) {
+  return withHistoryLock(() => applyDocumentLabelsNu(labels), false);
+}
+
+async function applyDocumentLabelsNu(labels) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return false;
   await loadAllAnnotations(doc);
   if (getActiveDocument() !== doc) return false;
-  const currentBytes = await getPdfBytes(getCacheKey());
+  const currentBytes = await getPdfBytes(getCacheKey(doc));
   if (!currentBytes) return false;
   const pdf = await PDFDocument.load(currentBytes, { ignoreEncryption: true });
   writePageLabels(pdf, labels);
   const newBytes = new Uint8Array(await pdf.save());
-  if (getActiveDocument() !== doc) return false;
+  if (getActiveDocument() !== doc || !state.documents.includes(doc)) return false;
   const annotations = doc.annotations.map(a => ({ ...a }));
   const rotations = { ...doc.pageRotations };
   const page = doc.currentPage;
+  const dataBefore = pageDataOf(doc);
   const identity = {};
   for (let p = 1; p <= pdf.getPageCount(); p++) identity[p] = p;
   await reloadFromBytes(newBytes, doc.annotations, doc.pageRotations, page, { pageMapping: identity }, doc);
-  recordPageStructure(currentBytes, annotations, rotations, page, newBytes, doc.annotations, doc.pageRotations, page);
+  recordPageStructure(currentBytes, annotations, rotations, page, newBytes, doc.annotations, doc.pageRotations, page,
+    { doc, ...pageDataChange(dataBefore, doc) });
   return true;
 }
 

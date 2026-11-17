@@ -128,6 +128,8 @@ async function assertSameIgnoringModDate(actual, expected, message) {
   const norm = async (bytes) => {
     const doc = await PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true });
     doc.setModificationDate(new Date(0));
+    // Both sides are created "now"; on a slow runner they straddle a second.
+    doc.setCreationDate(new Date(0));
     return new Uint8Array(await doc.save());
   };
   // No raw length check: the save time sits in a compressed object stream,
@@ -444,6 +446,20 @@ test('in place writes the source itself, refuses files open in a tab, and never 
   // Folder mode next to the sources: a name that exists gets " (2)", the source is never hit.
   const beside = await runOp('rotate', { delta: 90 }, { output: { dir: '/set', suffix: '' } });
   assert.deepEqual([...beside.disk.keys()], ['/set/A-101 (2).pdf', '/set/B (2).pdf', '/set/S-201 (2).pdf']);
+});
+
+test('in place refuses a file whose tab shows a page-edit working copy of it', async () => {
+  const { openDocumentPaths } = await import('./open-paths.js');
+  const disk = new Map();
+  const job = batchOpJob({
+    op: 'rotate', options: { pages: { mode: 'all' }, delta: 180 }, context: { now: NOW },
+    output: { mode: 'inPlace' }, write: async (path, bytes) => { disk.set(path, bytes); },
+    sources: [...files.keys()],
+    openPaths: openDocumentPaths([{ filePath: '/tmp/opds-edit-7.pdf', saveTargetPath: '/SET/b.pdf' }]),
+  });
+  const result = await runBatch({ files: list, readFile: readFromMap, job });
+  assert.match(result.log[2].error, /openInTab/u);
+  assert.ok(![...disk.keys()].some((p) => /b\.pdf$/iu.test(p)), 'B.pdf is not rewritten');
 });
 
 test('a page range that selects nothing in a file fails that file only', async () => {

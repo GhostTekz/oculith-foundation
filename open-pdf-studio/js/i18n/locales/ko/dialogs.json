@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "디지털 서명을 확인하는 중…",
     "barLabel": "디지털 서명",
+    "unsignedFieldsSummary_one": "서명되지 않은 서명 필드: {{count}}",
+    "unsignedFieldsSummary_other": "서명되지 않은 서명 필드: {{count}}",
+    "showUnsignedFields": "필드 표시",
+    "hideUnsignedFields": "필드 숨기기",
     "listError": "서명을 확인할 수 없습니다: {{detail}}",
     "documentTimestamp": "문서 타임스탬프",
     "documentTimestampBy": "문서 타임스탬프 ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "바이트 범위의 간격에 서명 값 외의 데이터가 포함되어 있습니다.",
       "subfilter-niet-ondersteund": "이 서명 형식은 지원되지 않습니다.",
       "zoekbudget-op": "인증서 체인 검색이 한도에 도달하여 중지되었습니다. 체인이 존재할 수도 있습니다.",
+      "hashbudget-op": "서명된 바이트를 확인하는 문서 한도에 도달했습니다. 이 서명은 확인되지 않았습니다.",
       "gat-wijkt-af-van-contents": "파일의 서명 값이 서명 사전의 서명 값과 다릅니다.",
       "interne-fout": "이 서명을 확인하는 중 내부 오류가 발생했습니다.",
       "unknown": "확인 과정에서 추가 문제가 보고되었습니다."

@@ -96,6 +96,19 @@ impl Shm {
 
     /// Write width + height to header, copy rgba into payload starting at
     /// offset HEADER_SIZE. Returns total payload bytes written.
+    /// Write a byte payload (page text) after a header that marks it as
+    /// such: width and height 0, and the byte length at offset 8.
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<u64> {
+        if bytes.len() > PAYLOAD_CAP {
+            anyhow::bail!("text too large for SHM: {} bytes > {} (cap)", bytes.len(), PAYLOAD_CAP);
+        }
+        self.mmap[0..8].fill(0);
+        self.mmap[8..16].copy_from_slice(&(bytes.len() as u64).to_le_bytes());
+        self.mmap[16..HEADER_SIZE].fill(0);
+        self.mmap[HEADER_SIZE..HEADER_SIZE + bytes.len()].copy_from_slice(bytes);
+        Ok(bytes.len() as u64)
+    }
+
     #[cfg(test)]
     pub fn write_bitmap(&mut self, width: u32, height: u32, rgba: &[u8]) -> Result<u64> {
         if rgba.len() > PAYLOAD_CAP {
@@ -139,6 +152,18 @@ mod tests {
             456
         );
         assert_eq!(file_bytes[HEADER_SIZE + 500], 0xAB);
+    }
+
+    #[test]
+    fn text_bytes_follow_a_header_with_their_length() {
+        let path = Shm::path_for("test", 995);
+        let mut shm = Shm::create("test", 995).unwrap();
+        assert_eq!(shm.write_bytes(b"{\"items\":[]}").unwrap(), 12);
+        let file_bytes = std::fs::read(path).unwrap();
+        assert_eq!(&file_bytes[0..8], &[0; 8]);
+        assert_eq!(u64::from_le_bytes(file_bytes[8..16].try_into().unwrap()), 12);
+        assert_eq!(&file_bytes[HEADER_SIZE..HEADER_SIZE + 12], b"{\"items\":[]}");
+        assert!(shm.write_bytes(&vec![0u8; PAYLOAD_CAP + 1]).is_err());
     }
 
     #[test]

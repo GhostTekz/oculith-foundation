@@ -6,9 +6,13 @@
 
 import { state, getActiveDocument } from '../core/state.js';
 import { BRON_TEKST, zoekInAnnotaties } from './search-sources.js';
+import { onDocumentClosed } from '../core/document-lifecycle.js';
 
-// Cache for extracted text content per document
+// Cache for extracted text content per document id: { pdfDoc, pages }. The
+// entry is only used for the same PDF.js document (a reload replaces it) and
+// goes when the tab closes, so a closed drawing's text is not kept.
 const textCache = new Map();
+onDocumentClosed((doc) => clearTextCache(doc?.id));
 
 // Cancellation token for progressive search
 let _searchGeneration = 0;
@@ -92,17 +96,16 @@ async function extractAllText(pdfDoc) {
   const docId = doc?.id;
   const hasTextEdits = doc?.textEdits?.length > 0;
 
-  if (docId && !hasTextEdits && textCache.has(docId)) {
-    return textCache.get(docId);
-  }
+  const cached = docId && !hasTextEdits ? textCache.get(docId) : null;
+  if (cached && cached.pdfDoc === pdfDoc) return cached.pages;
 
   const pagesText = [];
   for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
     pagesText.push(await extractPageText(pdfDoc, pageNum, doc));
   }
 
-  if (docId && !hasTextEdits) {
-    textCache.set(docId, pagesText);
+  if (docId && !hasTextEdits && documentStillOpen(docId, pdfDoc)) {
+    textCache.set(docId, { pdfDoc, pages: pagesText });
   }
 
   return pagesText;
@@ -115,6 +118,15 @@ export function clearTextCache(docId) {
   if (docId) {
     textCache.delete(docId);
   }
+}
+
+function documentStillOpen(docId, pdfDoc) {
+  return (state.documents || []).some((d) => d?.id === docId && d.pdfDoc === pdfDoc);
+}
+
+/** Whether text of `docId` is cached (for tests). */
+export function hasCachedText(docId) {
+  return textCache.has(docId);
 }
 
 /**
@@ -267,8 +279,8 @@ export function executeProgressiveSearch(onProgress) {
   const docId = doc.id;
   const hasTextEdits = doc.textEdits?.length > 0;
 
-  const cachedText = (docId && !hasTextEdits && textCache.has(docId))
-    ? textCache.get(docId) : null;
+  const cachedEntry = docId && !hasTextEdits ? textCache.get(docId) : null;
+  const cachedText = cachedEntry && cachedEntry.pdfDoc === pdfDoc ? cachedEntry.pages : null;
 
   const allResults = [];
   let searchedCount = 0;
@@ -324,9 +336,10 @@ export function executeProgressiveSearch(onProgress) {
 
     if (cancelled || generation !== _searchGeneration) return;
 
-    if (!cachedText && pagesText && docId && !hasTextEdits) {
+    // Not for a document that closed while this search ran.
+    if (!cachedText && pagesText && docId && !hasTextEdits && documentStillOpen(docId, pdfDoc)) {
       pagesText.sort((a, b) => a.pageNum - b.pageNum);
-      textCache.set(docId, pagesText);
+      textCache.set(docId, { pdfDoc, pages: pagesText });
     }
 
     allResults.sort(compareResultsVisually);

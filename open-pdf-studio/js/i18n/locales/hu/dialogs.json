@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Digitális aláírások ellenőrzése…",
     "barLabel": "Digitális aláírások",
+    "unsignedFieldsSummary_one": "{{count}} aláíratlan aláírásmező",
+    "unsignedFieldsSummary_other": "{{count}} aláíratlan aláírásmező",
+    "showUnsignedFields": "Mezők megjelenítése",
+    "hideUnsignedFields": "Mezők elrejtése",
     "listError": "Az aláírásokat nem sikerült ellenőrizni: {{detail}}",
     "documentTimestamp": "Dokumentum-időbélyeg",
     "documentTimestampBy": "Dokumentum-időbélyeg ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "A bájttartományban lévő rés nem csak az aláírás értékét tartalmazza.",
       "subfilter-niet-ondersteund": "Ez az aláírásformátum nem támogatott.",
       "zoekbudget-op": "A tanúsítványlánc keresése elérte a korlátját; lánc ettől még létezhet.",
+      "hashbudget-op": "A dokumentum aláírt bájtjainak ellenőrzése elérte a korlátját; ez az aláírás nincs ellenőrizve.",
       "gat-wijkt-af-van-contents": "A fájlban lévő aláírásérték eltér az aláírásszótárban lévőtől.",
       "interne-fout": "Belső hiba történt az aláírás ellenőrzése közben.",
       "unknown": "Az ellenőrzés további problémát jelzett."

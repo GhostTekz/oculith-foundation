@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Kontrollerar digitala signaturer…",
     "barLabel": "Digitala signaturer",
+    "unsignedFieldsSummary_one": "{{count}} osignerat signaturfält",
+    "unsignedFieldsSummary_other": "{{count}} osignerade signaturfält",
+    "showUnsignedFields": "Visa fält",
+    "hideUnsignedFields": "Dölj fält",
     "listError": "Signaturerna kunde inte kontrolleras: {{detail}}",
     "documentTimestamp": "Dokumenttidsstämpel",
     "documentTimestampBy": "Dokumenttidsstämpel ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "Luckan i byteintervallet innehåller inte enbart signaturvärdet.",
       "subfilter-niet-ondersteund": "Detta signaturformat stöds inte.",
       "zoekbudget-op": "Sökningen efter en certifikatkedja stoppades vid sin gräns; en kedja kan ändå finnas.",
+      "hashbudget-op": "Dokumentets gräns för kontroll av signerade byte nåddes; den här signaturen kontrollerades inte.",
       "gat-wijkt-af-van-contents": "Signaturvärdet i filen skiljer sig från det i signaturordlistan.",
       "interne-fout": "Ett internt fel uppstod när signaturen kontrollerades.",
       "unknown": "Kontrollen rapporterade ytterligare ett problem."

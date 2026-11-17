@@ -364,6 +364,10 @@
   "signatureVerification": {
     "checking": "Vérification des signatures numériques…",
     "barLabel": "Signatures numériques",
+    "unsignedFieldsSummary_one": "{{count}} champ de signature non signé",
+    "unsignedFieldsSummary_other": "{{count}} champs de signature non signés",
+    "showUnsignedFields": "Afficher les champs",
+    "hideUnsignedFields": "Masquer les champs",
     "listError": "Les signatures n'ont pas pu être vérifiées : {{detail}}",
     "documentTimestamp": "Horodatage du document",
     "documentTimestampBy": "Horodatage du document ({{tsa}})",
@@ -428,6 +432,7 @@
       "bytebereik-gat-geen-hex-string": "L'espace libre dans la plage d'octets ne contient pas uniquement la valeur de signature.",
       "subfilter-niet-ondersteund": "Ce format de signature n'est pas pris en charge.",
       "zoekbudget-op": "La recherche d'une chaîne de certificats s'est arrêtée à sa limite ; une chaîne peut néanmoins exister.",
+      "hashbudget-op": "La limite du document pour la vérification des octets signés a été atteinte ; cette signature n'a pas été vérifiée.",
       "gat-wijkt-af-van-contents": "La valeur de signature dans le fichier diffère de celle du dictionnaire de signature.",
       "interne-fout": "Une erreur interne s'est produite lors de la vérification de cette signature.",
       "unknown": "La vérification a signalé un problème supplémentaire."
